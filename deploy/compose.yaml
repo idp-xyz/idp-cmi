@@ -1,0 +1,116 @@
+# idp-cmi development topology: the CMI image + PostgreSQL; with --profile host also the idp-host
+# image, its worker and the HOST's deterministic model double, so a HOST release with
+# context.cmi = true resolves a ContextPackage from this CMI (ADR-0001 D10 / HOST D32) between real
+# processes. Driven by deploy/e2e.sh, which generates the secrets in .local/compose.env and the
+# HOST's config in .local/host.yaml. The host sees 127.0.0.1:8550 (CMI), 9565 (CMI metrics) and,
+# with the host profile, 127.0.0.1:8450 (HOST).
+# DEV ONLY: HS256 development tokens, plaintext http on the private networks.
+name: idp-cmi-go
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+
+networks:
+  edge: {}                     # published ports only
+  upstream: {internal: true}   # host -> cmi, host -> fakemodel
+  data: {internal: true}       # cmi, host, postgres
+
+volumes:
+  pgdata: {}
+
+services:
+  postgres:
+    image: ${IDP_PG_IMAGE:-public.ecr.aws/docker/library/postgres:17-alpine}
+    networks: [data]
+    environment:
+      POSTGRES_PASSWORD: ${IDP_PG_OWNER_PASSWORD:?run deploy/e2e.sh}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U postgres']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # ---- CMI ----
+  cmi-admin:
+    <<: *hardened
+    image: ${IDP_CMI_IMAGE:-idp-cmi:dev}
+    profiles: [tools]
+    networks: [data]
+    environment:
+      IDP_MIGRATION_DATABASE_URL: postgres://postgres:${IDP_PG_OWNER_PASSWORD:?run deploy/e2e.sh}@postgres:5432/idp_cmi?sslmode=disable
+      IDP_APP_DB_PASSWORD: ${IDP_APP_DB_PASSWORD:?run deploy/e2e.sh}
+      IDP_DEV_MODE: 'true'
+      IDP_DEV_SECRET: ${IDP_DEV_SECRET:?run deploy/e2e.sh}
+    depends_on: {postgres: {condition: service_healthy}}
+
+  cmi:
+    <<: *hardened
+    image: ${IDP_CMI_IMAGE:-idp-cmi:dev}
+    command: [serve]
+    networks: [edge, upstream, data]
+    ports: ['127.0.0.1:8550:8550', '127.0.0.1:9565:9565']
+    environment:
+      IDP_DATABASE_URL: postgres://idp_cmi_svc:${IDP_APP_DB_PASSWORD:?run deploy/e2e.sh}@postgres:5432/idp_cmi?sslmode=disable
+      IDP_CMI_LISTEN: 0.0.0.0:8550
+      IDP_CMI_SWEEP: 5s
+      IDP_DEV_MODE: 'true'
+      IDP_DEV_SECRET: ${IDP_DEV_SECRET:?run deploy/e2e.sh}
+      IDP_METRICS_LISTEN: 0.0.0.0:9565
+    depends_on: {postgres: {condition: service_healthy}}
+
+  # ---- the HOST (profile host): idp-host image built in the idp-host repository ----
+  fakemodel:
+    <<: *hardened
+    image: ${IDP_FAKEMODEL_IMAGE:-idp-host-fakemodel:dev}
+    profiles: [host]
+    networks: [upstream]
+    environment:
+      IDP_FAKEMODEL_LISTEN: 0.0.0.0:18080
+
+  host-admin:
+    <<: *hardened
+    image: ${IDP_HOST_IMAGE:-idp-host:dev}
+    profiles: [host-tools]
+    networks: [data]
+    environment:
+      IDP_MIGRATION_DATABASE_URL: postgres://postgres:${IDP_PG_OWNER_PASSWORD:?run deploy/e2e.sh}@postgres:5432/idp_host?sslmode=disable
+      IDP_APP_DB_PASSWORD: ${IDP_HOST_DB_PASSWORD:?run deploy/e2e.sh}
+      IDP_DEV_MODE: 'true'
+      IDP_DEV_SECRET: ${IDP_DEV_SECRET:?run deploy/e2e.sh}
+    depends_on: {postgres: {condition: service_healthy}}
+
+  host:
+    <<: *hardened
+    image: ${IDP_HOST_IMAGE:-idp-host:dev}
+    command: [serve]
+    profiles: [host]
+    networks: [edge, upstream, data]
+    ports: ['127.0.0.1:8450:8450']
+    environment:
+      IDP_DATABASE_URL: postgres://idp_host_svc:${IDP_HOST_DB_PASSWORD:?run deploy/e2e.sh}@postgres:5432/idp_host?sslmode=disable
+      IDP_HOST_LISTEN: 0.0.0.0:8450
+      IDP_DEV_MODE: 'true'
+      IDP_DEV_SECRET: ${IDP_DEV_SECRET:?run deploy/e2e.sh}
+      IDP_HOST_CREDENTIAL_KEY: ${IDP_HOST_CREDENTIAL_KEY:?run deploy/e2e.sh}
+      IDP_HOST_CONFIG: /etc/idp/host.yaml
+      IDP_HOST_WORKERS: '0'
+    volumes: ['../.local/host.yaml:/etc/idp/host.yaml:ro', '../.local/cmi.key:/etc/idp/cmi.key:ro']
+    depends_on: [cmi, fakemodel]
+
+  host-worker:
+    <<: *hardened
+    image: ${IDP_HOST_IMAGE:-idp-host:dev}
+    command: [worker]
+    profiles: [host]
+    networks: [upstream, data]
+    environment:
+      IDP_DATABASE_URL: postgres://idp_host_svc:${IDP_HOST_DB_PASSWORD:?run deploy/e2e.sh}@postgres:5432/idp_host?sslmode=disable
+      IDP_DEV_MODE: 'true'
+      IDP_HOST_CREDENTIAL_KEY: ${IDP_HOST_CREDENTIAL_KEY:?run deploy/e2e.sh}
+      IDP_HOST_CONFIG: /etc/idp/host.yaml
+      IDP_HOST_WORKERS: '2'
+    volumes: ['../.local/host.yaml:/etc/idp/host.yaml:ro', '../.local/cmi.key:/etc/idp/cmi.key:ro']
+    depends_on: [cmi, fakemodel]

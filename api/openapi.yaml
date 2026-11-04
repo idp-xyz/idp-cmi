@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: IDP CMI API
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Context, Memory & Knowledge Infrastructure (docs/adr/ADR-0001-cmi-design.md). Three surfaces on one
     listener: the administrative API (`/api/v1`, role cmi-admin) for sources, knowledge documents and the
@@ -62,8 +62,8 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}
       responses: {'201': {description: recorded, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}, '403': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
     get:
-      summary: List the usable records of a scope the caller may see (default scope = the caller's subject)
-      parameters: [{name: scopeKind, in: query, schema: {type: string, enum: [tenant, subject, thread, agent]}}, {name: scopeId, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer}}]
+      summary: List the usable records of a scope the caller may see (default scope = the caller's subject); flagged=true (administrators) lists the quarantine (ADR-0001 D12), across scopes unless one is given
+      parameters: [{name: scopeKind, in: query, schema: {type: string, enum: [tenant, subject, thread, agent]}}, {name: scopeId, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer}}, {name: flagged, in: query, schema: {type: boolean}}]
       responses: {'200': {description: records}}
   /v1/memory/records/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
@@ -73,6 +73,12 @@ paths:
       summary: Revoke records by id or by provenance reference (ADR-0001 D6); a writer revokes what it recorded, an administrator anything
       requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {recordId: {type: string}, ref: {type: string}, reason: {type: string}}}}}}
       responses: {'200': {description: how many records were revoked}, '404': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+  /v1/entities/{type}/{id}:
+    parameters: [{name: type, in: path, required: true, schema: {type: string}}, {$ref: '#/components/parameters/id'}]
+    get:
+      summary: The usable records and documents the caller may see that reference this business object (ADR-0001 D13)
+      parameters: [{name: limit, in: query, schema: {type: integer}}]
+      responses: {'200': {description: entity, records, documents}, '422': {$ref: '#/components/responses/Problem'}}
   /v1/context/resolve:
     post:
       summary: Assemble, seal and store a ContextPackage for the caller (ADR-0001 D5)
@@ -115,15 +121,21 @@ components:
         revocation: {type: object, properties: {at: {type: string, format: date-time}, by: {type: string}, reason: {type: string}}}
         sensitivity: {type: string, enum: [public, internal, confidential, restricted]}
         acl: {type: object, properties: {subjects: {type: array, items: {type: string}}, roles: {type: array, items: {type: string}}}}
+        entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}, description: business objects the record refers to (ADR-0001 D13)}
+        flags: {type: array, items: {type: string}, readOnly: true, description: 'write-time scan findings (ADR-0001 D12), e.g. injection:instruction_override; flagged records stay out of packages unless the policy includes them'}
         createdAt: {type: string, format: date-time}
+    Entity:
+      type: object
+      required: [type, id]
+      properties: {type: {type: string, pattern: '^[a-z][a-z0-9-]{0,62}$'}, id: {type: string}}
     Document:
       description: contract idp.telos.cmi KnowledgeDocument (metadata; the text is indexed, not returned)
       type: object
       required: [source, uri, title, sensitivity]
-      properties: {documentId: {type: string}, source: {type: string}, uri: {type: string}, title: {type: string}, version: {type: integer}, contentSha256: {type: string}, byteSize: {type: integer}, chunkCount: {type: integer}, status: {type: string, enum: [active, superseded, revoked, expired]}, validUntil: {type: string, format: date-time}, sensitivity: {type: string, enum: [public, internal, confidential, restricted]}, acl: {type: object}, revocation: {type: object}, createdBy: {type: string}, createdAt: {type: string, format: date-time}}
+      properties: {documentId: {type: string}, source: {type: string}, uri: {type: string}, title: {type: string}, version: {type: integer}, contentSha256: {type: string}, byteSize: {type: integer}, chunkCount: {type: integer}, status: {type: string, enum: [active, superseded, revoked, expired]}, validUntil: {type: string, format: date-time}, sensitivity: {type: string, enum: [public, internal, confidential, restricted]}, acl: {type: object}, revocation: {type: object}, createdBy: {type: string}, createdAt: {type: string, format: date-time}, entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}}, flags: {type: array, items: {type: string}, readOnly: true}}
     Policy:
       type: object
-      properties: {readerCeiling: {type: string}, writerCeiling: {type: string}, defaultMemoryTtlDays: {type: integer}, packageTtlSeconds: {type: integer}, updatedBy: {type: string}, updatedAt: {type: string, format: date-time}, default: {type: boolean}}
+      properties: {readerCeiling: {type: string}, writerCeiling: {type: string}, defaultMemoryTtlDays: {type: integer}, packageTtlSeconds: {type: integer}, includeFlagged: {type: boolean, description: 'let flagged content into packages, items then carry flags (ADR-0001 D12); default false'}, updatedBy: {type: string}, updatedAt: {type: string, format: date-time}, default: {type: boolean}}
     ResolveRequest:
       type: object
       required: [query]
@@ -136,3 +148,4 @@ components:
         kinds: {type: array, items: {type: string, enum: [memory, knowledge]}}
         maxAgeDays: {type: integer}
         sensitivityCeiling: {type: string, enum: [public, internal, confidential, restricted], description: may only lower the caller's ceiling}
+        entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}, description: only content referencing one of these business objects (ADR-0001 D13)}

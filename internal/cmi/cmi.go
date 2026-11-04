@@ -142,6 +142,58 @@ func (a ACL) Validate() error {
 	return nil
 }
 
+// Entity is an explicit reference to a business object (D13): a type name and the object's own id.
+type Entity struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+}
+
+var (
+	entityTypeRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+	flagRE       = regexp.MustCompile(`^injection:[a-z_]+$`)
+)
+
+// ValidateEntities checks an entity list: at most 32, each typed and identified, no duplicates.
+func ValidateEntities(es []Entity) error {
+	if len(es) > 32 {
+		return errors.New("at most 32 entities")
+	}
+	seen := map[Entity]bool{}
+	for _, e := range es {
+		if !entityTypeRE.MatchString(e.Type) || !idRE.MatchString(e.ID) {
+			return fmt.Errorf("entity %s:%s is invalid (type ^[a-z][a-z0-9-]{0,62}$, id up to 256 visible characters)", e.Type, e.ID)
+		}
+		if seen[e] {
+			return fmt.Errorf("entity %s:%s is duplicated", e.Type, e.ID)
+		}
+		seen[e] = true
+	}
+	return nil
+}
+
+// SortEntities orders entities by type then id so equal lists are equal.
+func SortEntities(es []Entity) []Entity {
+	if es == nil {
+		return []Entity{}
+	}
+	sort.Slice(es, func(i, j int) bool {
+		if es[i].Type != es[j].Type {
+			return es[i].Type < es[j].Type
+		}
+		return es[i].ID < es[j].ID
+	})
+	return es
+}
+
+// EntityKeys renders entities as "type:id" for the store's filters.
+func EntityKeys(es []Entity) []string {
+	out := make([]string, 0, len(es))
+	for _, e := range es {
+		out = append(out, e.Type+":"+e.ID)
+	}
+	return out
+}
+
 // Scope binds a memory to a tenant, a subject, a thread or an agent.
 type Scope struct {
 	Kind string `json:"kind"`
@@ -185,6 +237,8 @@ type MemoryRecord struct {
 	Revocation  *Revocation     `json:"revocation,omitempty"`
 	Sensitivity string          `json:"sensitivity"`
 	ACL         ACL             `json:"acl"`
+	Entities    []Entity        `json:"entities,omitempty"` // business objects the record refers to (D13)
+	Flags       []string        `json:"flags,omitempty"`    // write-time scan findings (D12); set by the CMI, never by the writer
 	CreatedAt   time.Time       `json:"createdAt"`
 }
 
@@ -237,6 +291,14 @@ func (m *MemoryRecord) Validate() error {
 	if m.Status != "" && m.Status != StatusActive && m.Status != StatusExpired && m.Status != StatusRevoked {
 		return errors.New("status must be active, expired or revoked")
 	}
+	if err := ValidateEntities(m.Entities); err != nil {
+		return err
+	}
+	for _, f := range m.Flags {
+		if !flagRE.MatchString(f) {
+			return fmt.Errorf("flag %q is not a scan finding", f)
+		}
+	}
 	return m.ACL.Validate()
 }
 
@@ -255,6 +317,14 @@ func (m *MemoryRecord) Normalize() {
 	if m.Status == "" {
 		m.Status = StatusActive
 	}
+	if len(m.Entities) > 0 {
+		m.Entities = SortEntities(m.Entities)
+	} else {
+		m.Entities = nil
+	}
+	if len(m.Flags) == 0 {
+		m.Flags = nil
+	}
 }
 
 // Document is a knowledge document (D4): its text is indexed in chunks, not returned whole.
@@ -271,6 +341,8 @@ type Document struct {
 	ValidUntil    time.Time   `json:"validUntil,omitzero"`
 	Sensitivity   string      `json:"sensitivity"`
 	ACL           ACL         `json:"acl"`
+	Entities      []Entity    `json:"entities,omitempty"` // business objects the document refers to (D13)
+	Flags         []string    `json:"flags,omitempty"`    // union of its chunks' write-time scan findings (D12)
 	Revocation    *Revocation `json:"revocation,omitempty"`
 	CreatedBy     string      `json:"createdBy"`
 	CreatedAt     time.Time   `json:"createdAt"`
@@ -295,6 +367,9 @@ func ValidateDocument(d *Document, text string) error {
 	}
 	if !ValidSensitivity(d.Sensitivity) {
 		return errors.New("sensitivity must be public, internal, confidential or restricted")
+	}
+	if err := ValidateEntities(d.Entities); err != nil {
+		return err
 	}
 	return d.ACL.Validate()
 }
@@ -395,7 +470,17 @@ type Item struct {
 	Sensitivity string    `json:"sensitivity"`
 	Score       float64   `json:"score"`
 	Tokens      int       `json:"tokens"`
+	Entities    []Entity  `json:"entities,omitempty"` // the item's entity references (D13)
+	Match       string    `json:"match,omitempty"`    // which retriever found it: lexical, semantic or both (D11)
+	Flags       []string  `json:"flags,omitempty"`    // present only when the tenant policy lets flagged content through (D12)
 }
+
+// Match values of an item.
+const (
+	MatchLexical  = "lexical"
+	MatchSemantic = "semantic"
+	MatchBoth     = "both"
+)
 
 // Budget is what the package may contain.
 type Budget struct {

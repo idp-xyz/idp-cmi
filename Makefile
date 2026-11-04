@@ -2,7 +2,10 @@
 PG_IMAGE ?= public.ecr.aws/docker/library/postgres:17-alpine
 PG_NAME  ?= idp-cmi-test-pg
 
-.PHONY: build test vet test-integration pg-up pg-down
+.PHONY: build test vet test-integration e2e pg-up pg-down
+
+e2e:
+	bash deploy/e2e.sh
 
 build:
 	go build -o bin/ ./cmd/...

@@ -4,12 +4,15 @@
 package postgres
 
 import (
+	"log/slog"
+
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"idp-cmi/internal/embedding"
 	"io/fs"
 	"regexp"
 	"sort"
@@ -41,8 +44,10 @@ func fail(code, format string, a ...any) error {
 
 // Store is the HOST database.
 type Store struct {
-	Pool *pgxpool.Pool
-	Now  func() time.Time // injectable clock (tests)
+	Pool     *pgxpool.Pool
+	Now      func() time.Time   // injectable clock (tests)
+	Embedder embedding.Embedder // optional second retriever (D11); nil = lexical only
+	Log      *slog.Logger       // optional
 }
 
 // Open connects as the service role and verifies that RLS applies to it.

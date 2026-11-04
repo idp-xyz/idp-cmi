@@ -11,6 +11,7 @@
 //	IDP_DATABASE_URL             service connection (a member of idp_cmi_app, never a superuser)
 //	IDP_MIGRATION_DATABASE_URL   schema owner connection (migrate, ensure-login, seed-tenant)
 //	IDP_CMI_LISTEN               default 127.0.0.1:8550
+//	IDP_CMI_CONFIG               optional YAML: embedding endpoint (ADR-0001 D11), consolidation model (D15)
 //	IDP_CMI_SWEEP                expiry sweep interval (default 1m; 0 disables)
 //	IDP_DEV_MODE                 "true": HS256 development tokens
 //	IDP_CMI_ISSUER / IDP_CMI_AUDIENCE   accepted tokens (default idp-cmi-dev / idp-cmi)
@@ -38,7 +39,9 @@ import (
 	"idp-cmi/adapters/identity"
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/api"
+	"idp-cmi/internal/config"
 	cmictx "idp-cmi/internal/context"
+	"idp-cmi/internal/embedding"
 	"idp-cmi/internal/observability"
 	"idp-cmi/internal/transport"
 )
@@ -181,7 +184,38 @@ func serve(log *slog.Logger) error {
 			}
 		}()
 	}
-	a := &api.API{Store: store, Auth: verifier, Resolver: &cmictx.Resolver{Store: store}, Log: log, Metrics: metrics, Version: version}
+	cfg, err := config.Load(env("IDP_CMI_CONFIG", ""))
+	if err != nil {
+		return fmt.Errorf("IDP_CMI_CONFIG: %w", err)
+	}
+	store.Log = log
+	var embedder embedding.Embedder
+	if e := cfg.Embedding; e != nil { // ADR-0001 D11
+		tlsCfg, err := transport.ClientTLS(e.CAFile, "", "")
+		if err != nil {
+			return fmt.Errorf("embedding: %w", err)
+		}
+		embedder = &embedding.OpenAI{BaseURL: e.BaseURL, ModelName: e.Model, APIKey: e.APIKey, Dimensions: e.Dimensions, Timeout: e.Timeout,
+			HTTP: &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsCfg}}}
+		store.Embedder = embedder
+		go func() {
+			t := time.NewTicker(e.Backfill)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					if n, err := store.BackfillEmbeddings(ctx, 100); err != nil && ctx.Err() == nil {
+						log.Warn("embedding backfill failed", "error", err)
+					} else if n > 0 {
+						log.Info("embedded rows", "rows", n, "model", embedder.Model())
+					}
+				}
+			}
+		}()
+	}
+	a := &api.API{Store: store, Auth: verifier, Resolver: &cmictx.Resolver{Store: store, Embedder: embedder, Log: log}, Log: log, Metrics: metrics, Version: version}
 	srv := &http.Server{Addr: env("IDP_CMI_LISTEN", "127.0.0.1:8550"), Handler: observability.HTTPMiddleware(tp, "idp-cmi/api", a.Handler()),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second}
 	if cert := env("IDP_CMI_TLS_CERT_FILE", ""); cert != "" {
@@ -197,7 +231,7 @@ func serve(log *slog.Logger) error {
 			errc <- srv.ListenAndServe()
 		}
 	}()
-	log.Info("idp-cmi listening", "addr", srv.Addr, "devMode", dev, "tls", srv.TLSConfig != nil, "sweep", sweep.String())
+	log.Info("idp-cmi listening", "addr", srv.Addr, "devMode", dev, "tls", srv.TLSConfig != nil, "sweep", sweep.String(), "embedding", embedder != nil)
 	select {
 	case err := <-errc:
 		return err

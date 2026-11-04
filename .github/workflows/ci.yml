@@ -2,8 +2,8 @@ name: CI
 
 # The merge gate of idp-cmi: formatting and vet, unit and contract tests (race detector on), the
 # integration suite against a throwaway PostgreSQL (the Makefile starts it in Docker), and the
-# offline image builds. The compose end-to-end (deploy/e2e.sh) is not run here yet: it needs the
-# idp-mcp fixture image, which is built from local SDK checkouts (idp-mcp/deploy/fixtures/build.sh).
+# offline image build, and the compose end-to-end of the CMI alone (deploy/e2e.sh). The joint run
+# with the idp-host image (HOST=1) needs that image built from the idp-host repository and is not run here.
 
 on:
   push:
@@ -30,4 +30,6 @@ jobs:
         run: make test-integration
       - name: Image build (static binary, docker build --network none)
         run: bash deploy/build.sh idp-cmi:ci
+      - name: Compose end-to-end (CMI image + PostgreSQL)
+        run: bash deploy/e2e.sh
 

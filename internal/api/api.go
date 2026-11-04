@@ -254,19 +254,25 @@ func (a *API) Handler() http.Handler {
 	}, writer, reader))
 	mux.Handle("GET /v1/memory/records", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		q := r.URL.Query()
+		flagged := q.Get("flagged") == "true" // D12: the quarantine review, administrators only
+		if flagged && !p.Has(admin) {
+			return 0, nil, transport.Fail(http.StatusForbidden, "FORBIDDEN", "role cmi-admin required to list flagged records")
+		}
 		scope := cmi.Scope{Kind: q.Get("scopeKind"), ID: q.Get("scopeId")}
-		if scope.Kind == "" {
+		if scope.Kind == "" && !flagged {
 			scope = cmi.Scope{Kind: cmi.ScopeSubject, ID: p.Subject}
 		}
-		if err := scope.Validate(); err != nil {
-			return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", err.Error())
+		if scope.Kind != "" {
+			if err := scope.Validate(); err != nil {
+				return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", err.Error())
+			}
 		}
 		v, err := a.visibility(r.Context(), p)
 		if err != nil {
 			return 0, nil, err
 		}
 		limit, _ := strconv.Atoi(q.Get("limit"))
-		out, err := a.Store.ListMemory(r.Context(), p.Tenant, scope, v, limit)
+		out, err := a.Store.ListMemory(r.Context(), p.Tenant, scope, v, limit, flagged)
 		return 200, map[string]any{"records": out}, err
 	}, writer, reader))
 	mux.Handle("POST /v1/memory/revoke", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
@@ -281,6 +287,17 @@ func (a *API) Handler() http.Handler {
 		n, err := a.Store.RevokeMemory(r.Context(), p.Tenant, in.RecordID, in.Ref, p.Subject, in.Reason, p.Has(admin))
 		return 200, map[string]any{"revoked": n}, err
 	}, writer))
+
+	// ---- entities (D13) ----
+	mux.Handle("GET /v1/entities/{type}/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		out, err := a.Store.ListByEntity(r.Context(), p.Tenant, cmi.Entity{Type: r.PathValue("type"), ID: r.PathValue("id")}, v, limit)
+		return 200, out, err
+	}, reader, writer))
 
 	// ---- context (readers) ----
 	mux.Handle("POST /v1/context/resolve", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {

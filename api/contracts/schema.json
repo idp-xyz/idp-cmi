@@ -1,14 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:idp:telos:cmi:1.0.0",
-  "title": "idp.telos.cmi 1.0.0",
-  "description": "idp-cmi（Context, Memory & Knowledge Infrastructure）对外发布的契约：ContextPackage（解析上下文得到的不可变、内容寻址的包，ADR-0001 D5）、ContextItem、MemoryRecord（记忆记录，D3）、Source（来源，D2）、KnowledgeDocument（知识文档的元数据，D4）、Envelope（包加摘要）。生产者是 idp-cmi，权威副本在 idp-cmi/api/contracts/，由 go test ./internal/cmi -run TestContract 保证与实现一致；idp-contracts 中的副本只能与之逐字节相同。JSON Schema 只描述形状与可本地判定的规则；摘要是否匹配由 cmi.Open 判定，可见性与时效由 CMI 的查询判定。",
+  "$id": "urn:idp:telos:cmi:1.1.0",
+  "title": "idp.telos.cmi 1.1.0",
+  "description": "idp-cmi（Context, Memory & Knowledge Infrastructure）对外发布的契约：ContextPackage（解析上下文得到的不可变、内容寻址的包，ADR-0001 D5）、ContextItem、MemoryRecord（记忆记录，D3）、Source（来源，D2）、KnowledgeDocument（知识文档的元数据，D4）、Envelope（包加摘要）、Entity（显式的业务对象引用，D13）。1.1.0 相对 1.0.0 只做新增：MemoryRecord 与 KnowledgeDocument 的 entities 与 flags（D12 写入时扫描的标记）、ContextItem 的 entities / match（D11 混合检索的命中方式）/ flags。生产者是 idp-cmi，权威副本在 idp-cmi/api/contracts/，由 go test ./internal/cmi -run TestContract 保证与实现一致；idp-contracts 中的副本只能与之逐字节相同。JSON Schema 只描述形状与可本地判定的规则；摘要是否匹配由 cmi.Open 判定，可见性与时效由 CMI 的查询判定。",
   "oneOf": [
-    {"$ref": "#/$defs/ContextPackage"},
-    {"$ref": "#/$defs/MemoryRecord"},
-    {"$ref": "#/$defs/Source"},
-    {"$ref": "#/$defs/KnowledgeDocument"},
-    {"$ref": "#/$defs/Envelope"}
+    {
+      "$ref": "#/$defs/ContextPackage"
+    },
+    {
+      "$ref": "#/$defs/MemoryRecord"
+    },
+    {
+      "$ref": "#/$defs/Source"
+    },
+    {
+      "$ref": "#/$defs/KnowledgeDocument"
+    },
+    {
+      "$ref": "#/$defs/Envelope"
+    }
   ],
   "$defs": {
     "ContextPackage": {
@@ -17,19 +27,64 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "packageId", "tenantId", "requestedBy", "purpose", "query", "items", "budget", "assembledAt", "expiresAt"],
+      "required": [
+        "schemaVersion",
+        "packageId",
+        "tenantId",
+        "requestedBy",
+        "purpose",
+        "query",
+        "items",
+        "budget",
+        "assembledAt",
+        "expiresAt"
+      ],
       "properties": {
-        "schemaVersion": {"const": "idp.cmi.package/v1"},
-        "packageId": {"type": "string", "minLength": 1},
-        "tenantId": {"type": "string", "minLength": 1},
-        "requestedBy": {"type": "string", "minLength": 1},
-        "purpose": {"type": "string", "maxLength": 200},
-        "query": {"type": "string", "minLength": 1, "maxLength": 4096},
-        "scope": {"$ref": "#/$defs/Scope"},
-        "items": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/ContextItem"}},
-        "budget": {"$ref": "#/$defs/Budget"},
-        "assembledAt": {"type": "string", "format": "date-time"},
-        "expiresAt": {"type": "string", "format": "date-time"}
+        "schemaVersion": {
+          "const": "idp.cmi.package/v1"
+        },
+        "packageId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenantId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requestedBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/ContextItem"
+          }
+        },
+        "budget": {
+          "$ref": "#/$defs/Budget"
+        },
+        "assembledAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "ContextItem": {
@@ -38,20 +93,99 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "id", "source", "trust", "ref", "excerpt", "observedAt", "sensitivity", "score", "tokens"],
+      "required": [
+        "kind",
+        "id",
+        "source",
+        "trust",
+        "ref",
+        "excerpt",
+        "observedAt",
+        "sensitivity",
+        "score",
+        "tokens"
+      ],
       "properties": {
-        "kind": {"enum": ["memory", "knowledge"]},
-        "id": {"type": "string", "minLength": 1},
-        "source": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"},
-        "trust": {"enum": ["authoritative", "informational"]},
-        "ref": {"type": "string", "minLength": 1},
-        "title": {"type": "string", "maxLength": 500},
-        "excerpt": {"type": "string", "minLength": 1},
-        "observedAt": {"type": "string", "format": "date-time"},
-        "validUntil": {"type": "string", "format": "date-time"},
-        "sensitivity": {"enum": ["public", "internal", "confidential", "restricted"]},
-        "score": {"type": "number", "minimum": 0},
-        "tokens": {"type": "integer", "minimum": 0}
+        "kind": {
+          "enum": [
+            "memory",
+            "knowledge"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"
+        },
+        "trust": {
+          "enum": [
+            "authoritative",
+            "informational"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "excerpt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ]
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entities": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/Entity"
+          },
+          "description": "引用的业务对象（D13）"
+        },
+        "match": {
+          "enum": [
+            "lexical",
+            "semantic",
+            "both"
+          ],
+          "description": "哪个检索器命中（D11）：全文、向量或两者"
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^injection:[a-z_]+$"
+          },
+          "description": "只在租户策略 includeFlagged 为真时出现：该条目带的写入时标记（D12）"
+        }
       }
     },
     "Scope": {
@@ -60,10 +194,22 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "properties": {
-        "kind": {"enum": ["tenant", "subject", "thread", "agent"]},
-        "id": {"type": "string", "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$"}
+        "kind": {
+          "enum": [
+            "tenant",
+            "subject",
+            "thread",
+            "agent"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$"
+        }
       }
     },
     "Budget": {
@@ -72,11 +218,26 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["maxTokens", "usedTokens", "maxItems"],
+      "required": [
+        "maxTokens",
+        "usedTokens",
+        "maxItems"
+      ],
       "properties": {
-        "maxTokens": {"type": "integer", "minimum": 0, "maximum": 32000},
-        "usedTokens": {"type": "integer", "minimum": 0},
-        "maxItems": {"type": "integer", "minimum": 0, "maximum": 100}
+        "maxTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32000
+        },
+        "usedTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
       }
     },
     "Provenance": {
@@ -85,12 +246,29 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["source", "ref", "observedAt", "recordedBy"],
+      "required": [
+        "source",
+        "ref",
+        "observedAt",
+        "recordedBy"
+      ],
       "properties": {
-        "source": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"},
-        "ref": {"type": "string", "pattern": "^[\\x21-\\x7e]{1,512}$"},
-        "observedAt": {"type": "string", "format": "date-time"},
-        "recordedBy": {"type": "string", "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$"}
+        "source": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"
+        },
+        "ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,512}$"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recordedBy": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$"
+        }
       }
     },
     "ACL": {
@@ -101,8 +279,22 @@
       "additionalProperties": false,
       "required": [],
       "properties": {
-        "subjects": {"type": "array", "maxItems": 256, "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$"}},
-        "roles": {"type": "array", "maxItems": 64, "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"}}
+        "subjects": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$"
+          }
+        },
+        "roles": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+          }
+        }
       }
     },
     "Validity": {
@@ -111,10 +303,18 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["validFrom"],
+      "required": [
+        "validFrom"
+      ],
       "properties": {
-        "validFrom": {"type": "string", "format": "date-time"},
-        "validUntil": {"type": "string", "format": "date-time"}
+        "validFrom": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "Revocation": {
@@ -123,11 +323,23 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "by"],
+      "required": [
+        "at",
+        "by"
+      ],
       "properties": {
-        "at": {"type": "string", "format": "date-time"},
-        "by": {"type": "string", "minLength": 1},
-        "reason": {"type": "string", "maxLength": 1000}
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1000
+        }
       }
     },
     "MemoryRecord": {
@@ -136,21 +348,96 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["recordId", "scope", "kind", "content", "tags", "provenance", "validity", "status", "sensitivity", "acl", "createdAt"],
+      "required": [
+        "recordId",
+        "scope",
+        "kind",
+        "content",
+        "tags",
+        "provenance",
+        "validity",
+        "status",
+        "sensitivity",
+        "acl",
+        "createdAt"
+      ],
       "properties": {
-        "recordId": {"type": "string", "minLength": 1},
-        "scope": {"$ref": "#/$defs/Scope"},
-        "kind": {"enum": ["episodic", "semantic"]},
-        "content": {"type": "string", "minLength": 1, "maxLength": 65536},
-        "structured": {"type": "object"},
-        "tags": {"type": "array", "maxItems": 32, "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$"}},
-        "provenance": {"$ref": "#/$defs/Provenance"},
-        "validity": {"$ref": "#/$defs/Validity"},
-        "status": {"enum": ["active", "expired", "revoked"]},
-        "revocation": {"$ref": "#/$defs/Revocation"},
-        "sensitivity": {"enum": ["public", "internal", "confidential", "restricted"]},
-        "acl": {"$ref": "#/$defs/ACL"},
-        "createdAt": {"type": "string", "format": "date-time"}
+        "recordId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "kind": {
+          "enum": [
+            "episodic",
+            "semantic"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "structured": {
+          "type": "object"
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "validity": {
+          "$ref": "#/$defs/Validity"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "expired",
+            "revoked"
+          ]
+        },
+        "revocation": {
+          "$ref": "#/$defs/Revocation"
+        },
+        "sensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ]
+        },
+        "acl": {
+          "$ref": "#/$defs/ACL"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "entities": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/Entity"
+          },
+          "description": "引用的业务对象（D13）"
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^injection:[a-z_]+$"
+          },
+          "description": "写入时扫描的标记（D12）；由 CMI 设置，写入者给的被忽略。有标记的内容默认不进上下文包"
+        }
       }
     },
     "Source": {
@@ -159,16 +446,55 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceId", "name", "displayName", "kind", "trust", "createdBy", "createdAt"],
+      "required": [
+        "sourceId",
+        "name",
+        "displayName",
+        "kind",
+        "trust",
+        "createdBy",
+        "createdAt"
+      ],
       "properties": {
-        "sourceId": {"type": "string", "minLength": 1},
-        "name": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"},
-        "displayName": {"type": "string", "minLength": 1, "maxLength": 200},
-        "kind": {"enum": ["domain-system", "document-store", "agent", "user"]},
-        "trust": {"enum": ["authoritative", "informational"]},
-        "baseUrl": {"type": "string", "pattern": "^https?://.{1,500}$"},
-        "createdBy": {"type": "string", "minLength": 1},
-        "createdAt": {"type": "string", "format": "date-time"}
+        "sourceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "kind": {
+          "enum": [
+            "domain-system",
+            "document-store",
+            "agent",
+            "user"
+          ]
+        },
+        "trust": {
+          "enum": [
+            "authoritative",
+            "informational"
+          ]
+        },
+        "baseUrl": {
+          "type": "string",
+          "pattern": "^https?://.{1,500}$"
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "KnowledgeDocument": {
@@ -177,23 +503,106 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["documentId", "source", "uri", "title", "version", "contentSha256", "byteSize", "chunkCount", "status", "sensitivity", "acl", "createdBy", "createdAt"],
+      "required": [
+        "documentId",
+        "source",
+        "uri",
+        "title",
+        "version",
+        "contentSha256",
+        "byteSize",
+        "chunkCount",
+        "status",
+        "sensitivity",
+        "acl",
+        "createdBy",
+        "createdAt"
+      ],
       "properties": {
-        "documentId": {"type": "string", "minLength": 1},
-        "source": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"},
-        "uri": {"type": "string", "minLength": 1, "maxLength": 2048},
-        "title": {"type": "string", "minLength": 1, "maxLength": 500},
-        "version": {"type": "integer", "minimum": 1},
-        "contentSha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-        "byteSize": {"type": "integer", "minimum": 1},
-        "chunkCount": {"type": "integer", "minimum": 1},
-        "status": {"enum": ["active", "superseded", "revoked", "expired"]},
-        "validUntil": {"type": "string", "format": "date-time"},
-        "sensitivity": {"enum": ["public", "internal", "confidential", "restricted"]},
-        "acl": {"$ref": "#/$defs/ACL"},
-        "revocation": {"$ref": "#/$defs/Revocation"},
-        "createdBy": {"type": "string", "minLength": 1},
-        "createdAt": {"type": "string", "format": "date-time"}
+        "documentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "contentSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "chunkCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "active",
+            "superseded",
+            "revoked",
+            "expired"
+          ]
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ]
+        },
+        "acl": {
+          "$ref": "#/$defs/ACL"
+        },
+        "revocation": {
+          "$ref": "#/$defs/Revocation"
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "entities": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/Entity"
+          },
+          "description": "引用的业务对象（D13）"
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^injection:[a-z_]+$"
+          },
+          "description": "其 chunk 写入时扫描标记的并集（D12）；被标记的 chunk 不进上下文包，其余 chunk 照常"
+        }
       }
     },
     "Envelope": {
@@ -202,10 +611,39 @@
       "x-idp-telos-owner": "idp.telos.cmi",
       "type": "object",
       "additionalProperties": false,
-      "required": ["digest", "document"],
+      "required": [
+        "digest",
+        "document"
+      ],
       "properties": {
-        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-        "document": {"$ref": "#/$defs/ContextPackage"}
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "document": {
+          "$ref": "#/$defs/ContextPackage"
+        }
+      }
+    },
+    "Entity": {
+      "title": "Entity",
+      "description": "对业务对象的显式引用（D13）：type 是实体类型名，id 是该对象在其来源系统里的标识。CMI 不抽取实体；写入者声明，HOST / EER 以它把上下文钉在订单、客户等对象上。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$"
+        }
       }
     }
   }

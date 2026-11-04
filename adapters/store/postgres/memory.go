@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"idp-cmi/internal/guard"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -12,15 +13,16 @@ import (
 )
 
 const memoryCols = `m.id::text, s.name, m.scope_kind, m.scope_id, m.kind, m.content, m.structured, m.tags, m.prov_ref, m.prov_observed_at, m.prov_recorded_by,
-	m.valid_from, m.valid_until, m.status, m.revoked_at, coalesce(m.revoked_by, ''), coalesce(m.revoked_reason, ''), m.sensitivity, m.acl_subjects, m.acl_roles, m.created_at`
+	m.valid_from, m.valid_until, m.status, m.revoked_at, coalesce(m.revoked_by, ''), coalesce(m.revoked_reason, ''), m.sensitivity, m.acl_subjects, m.acl_roles, m.created_at,
+	m.flags, ` + "(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'memory' AND e.object_id = m.id)"
 
 func scanMemory(row pgx.Row) (*cmi.MemoryRecord, error) {
 	var m cmi.MemoryRecord
 	var structured []byte
 	var validUntil, revokedAt *time.Time
-	var revokedBy, revokedReason string
+	var revokedBy, revokedReason, entities string
 	if err := row.Scan(&m.ID, &m.Provenance.Source, &m.Scope.Kind, &m.Scope.ID, &m.Kind, &m.Content, &structured, &m.Tags, &m.Provenance.Ref, &m.Provenance.ObservedAt, &m.Provenance.RecordedBy,
-		&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt); err != nil {
+		&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &entities); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fail("NOT_FOUND", "memory record not found")
 		}
@@ -35,6 +37,7 @@ func scanMemory(row pgx.Row) (*cmi.MemoryRecord, error) {
 	if revokedAt != nil {
 		m.Revocation = &cmi.Revocation{At: *revokedAt, By: revokedBy, Reason: revokedReason}
 	}
+	m.Entities = decodeEntities(entities)
 	m.Normalize()
 	return &m, nil
 }
@@ -73,6 +76,8 @@ func (s *Store) CreateMemory(ctx context.Context, tenant string, in cmi.MemoryRe
 	if !cmi.Within(in.Sensitivity, ceiling) {
 		return nil, fail("FORBIDDEN", "the writer may not record %s content (ceiling %s)", in.Sensitivity, ceiling)
 	}
+	in.Flags = guard.Scan(in.Content) // D12: the writer's own flags are ignored
+	vecs, model := s.embed(ctx, []string{in.Content})
 	var out *cmi.MemoryRecord
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		src, err := getSource(ctx, tx, in.Provenance.Source)
@@ -94,14 +99,26 @@ func (s *Store) CreateMemory(ctx context.Context, tenant string, in cmi.MemoryRe
 			structured = []byte(in.Structured)
 		}
 		id := NewUUID()
+		var vec any
+		var vecModel any
+		if vecs != nil {
+			vec, vecModel = vecs[0], model
+		}
+		flags := in.Flags
+		if flags == nil {
+			flags = []string{}
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO memory_records (id, tenant_id, source_id, scope_kind, scope_id, kind, content, structured, tags, prov_ref, prov_observed_at, prov_recorded_by,
-			valid_from, valid_until, sensitivity, acl_subjects, acl_roles, search, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, to_tsvector('simple', $7) || to_tsvector('simple', $18), $19)`,
+			valid_from, valid_until, sensitivity, acl_subjects, acl_roles, search, created_by, flags, embedding, embedding_model)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, to_tsvector('simple', $7) || to_tsvector('simple', $18), $19, $20, $21, $22)`,
 			id, tenant, src.ID, in.Scope.Kind, in.Scope.ID, in.Kind, in.Content, structured, in.Tags, in.Provenance.Ref, in.Provenance.ObservedAt, in.Provenance.RecordedBy,
-			in.Validity.ValidFrom, validUntil, in.Sensitivity, in.ACL.Subjects, in.ACL.Roles, cmi.Bigrams(in.Content), by); err != nil {
+			in.Validity.ValidFrom, validUntil, in.Sensitivity, in.ACL.Subjects, in.ACL.Roles, cmi.Bigrams(in.Content), by, flags, vec, vecModel); err != nil {
 			return err
 		}
-		if err := Audit(ctx, tx, tenant, by, "memory.create", id, map[string]any{"source": src.Name, "ref": in.Provenance.Ref, "scope": in.Scope, "kind": in.Kind, "sensitivity": in.Sensitivity}); err != nil {
+		if err := insertEntities(ctx, tx, tenant, "memory", id, in.Entities); err != nil {
+			return err
+		}
+		if err := Audit(ctx, tx, tenant, by, "memory.create", id, map[string]any{"source": src.Name, "ref": in.Provenance.Ref, "scope": in.Scope, "kind": in.Kind, "sensitivity": in.Sensitivity, "flags": flags, "entities": len(in.Entities)}); err != nil {
 			return err
 		}
 		out, err = scanMemory(tx.QueryRow(ctx, `SELECT `+memoryCols+` FROM memory_records m JOIN sources s ON s.id = m.source_id WHERE m.id = $1`, id))
@@ -124,15 +141,17 @@ func (s *Store) GetMemory(ctx context.Context, tenant, id string, v Visibility) 
 	return out, err
 }
 
-// ListMemory lists the visible, usable records of a scope (newest first).
-func (s *Store) ListMemory(ctx context.Context, tenant string, scope cmi.Scope, v Visibility, limit int) ([]cmi.MemoryRecord, error) {
+// ListMemory lists the visible, usable records of a scope (newest first). With flagged, only
+// records the write-time scan flagged are listed (D12), across scopes when scope.Kind is empty.
+func (s *Store) ListMemory(ctx context.Context, tenant string, scope cmi.Scope, v Visibility, limit int, flagged bool) ([]cmi.MemoryRecord, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
 	out := []cmi.MemoryRecord{}
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT `+memoryCols+` FROM memory_records m JOIN sources s ON s.id = m.source_id, LATERAL (SELECT m.status, m.valid_until, m.sensitivity, m.acl_subjects, m.acl_roles) x
-			WHERE m.scope_kind = $4 AND m.scope_id = $5`+visibleSQL+` ORDER BY m.created_at DESC LIMIT $6`, v.Subject, v.Roles, rank(v.Ceiling), scope.Kind, scope.ID, limit)
+			WHERE ($4 = '' OR (m.scope_kind = $4 AND m.scope_id = $5)) AND (NOT $7 OR cardinality(m.flags) > 0)`+visibleSQL+` ORDER BY m.created_at DESC LIMIT $6`,
+			v.Subject, v.Roles, rank(v.Ceiling), scope.Kind, scope.ID, limit, flagged)
 		if err != nil {
 			return err
 		}
@@ -185,45 +204,96 @@ func (s *Store) RevokeMemory(ctx context.Context, tenant, id, ref, by, reason st
 // memoryHit is a retrieval result.
 type memoryHit struct {
 	Record cmi.MemoryRecord
-	Rank   float64
 	Trust  string
+	Hit
 }
 
-// SearchMemory runs the full-text query over the records visible to v within the requested scopes.
-func (s *Store) SearchMemory(ctx context.Context, tenant, tsquery string, scopes []cmi.Scope, v Visibility, limit int) ([]memoryHit, error) {
-	var out []memoryHit
-	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		kinds := make([]string, 0, len(scopes))
-		ids := make([]string, 0, len(scopes))
-		for _, sc := range scopes {
-			kinds = append(kinds, sc.Kind)
-			ids = append(ids, sc.ID)
-		}
-		rows, err := tx.Query(ctx, `SELECT `+memoryCols+`, ts_rank(m.search, q) AS r, s.trust FROM memory_records m JOIN sources s ON s.id = m.source_id, to_tsquery('simple', $4) q,
-			LATERAL (SELECT m.status, m.valid_until, m.sensitivity, m.acl_subjects, m.acl_roles) x
-			WHERE m.search @@ q AND (m.scope_kind, m.scope_id) IN (SELECT unnest($5::text[]), unnest($6::text[]))`+visibleSQL+` ORDER BY r DESC LIMIT $7`,
-			v.Subject, v.Roles, rank(v.Ceiling), tsquery, kinds, ids, limit)
-		if err != nil {
-			return err
-		}
+// SearchMemory retrieves the records visible to v within the requested scopes: lexically over the
+// full-text index and semantically over the stored vectors (D11), merged per record.
+func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes []cmi.Scope, v Visibility) ([]memoryHit, error) {
+	kinds := make([]string, 0, len(scopes))
+	ids := make([]string, 0, len(scopes))
+	for _, sc := range scopes {
+		kinds = append(kinds, sc.Kind)
+		ids = append(ids, sc.ID)
+	}
+	entities := q.Entities
+	if entities == nil {
+		entities = []string{}
+	}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	const from = ` FROM memory_records m JOIN sources s ON s.id = m.source_id, LATERAL (SELECT m.status, m.valid_until, m.sensitivity, m.acl_subjects, m.acl_roles) x`
+	filters := ` AND (m.scope_kind, m.scope_id) IN (SELECT unnest($5::text[]), unnest($6::text[]))` + visibleSQL + ` AND ($7 OR cardinality(m.flags) = 0)` + entityFilterSQL("memory", "m.id", "$8")
+	byID := map[string]*memoryHit{}
+	var order []string
+	scan := func(rows pgx.Rows, semantic bool) error {
 		defer rows.Close()
 		for rows.Next() {
 			var h memoryHit
 			var structured []byte
 			var validUntil, revokedAt *time.Time
-			var revokedBy, revokedReason string
+			var revokedBy, revokedReason, entities string
+			var r float64
 			m := &h.Record
 			if err := rows.Scan(&m.ID, &m.Provenance.Source, &m.Scope.Kind, &m.Scope.ID, &m.Kind, &m.Content, &structured, &m.Tags, &m.Provenance.Ref, &m.Provenance.ObservedAt, &m.Provenance.RecordedBy,
-				&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &h.Rank, &h.Trust); err != nil {
+				&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &entities, &r, &h.Trust); err != nil {
 				return err
 			}
 			if validUntil != nil {
 				m.Validity.ValidUntil = *validUntil
 			}
+			m.Entities = decodeEntities(entities)
 			m.Normalize()
-			out = append(out, h)
+			hit := Hit{}
+			if semantic {
+				hit.Semantic = r
+			} else {
+				hit.Lexical = r
+			}
+			if ex := byID[m.ID]; ex != nil {
+				ex.merge(hit)
+				continue
+			}
+			h.merge(hit)
+			byID[m.ID] = &h
+			order = append(order, m.ID)
 		}
 		return rows.Err()
+	}
+	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+		if q.TSQuery != "" {
+			rows, err := tx.Query(ctx, `SELECT `+memoryCols+`, ts_rank(m.search, q)::float8 AS r, s.trust`+from+`, to_tsquery('simple', $4) q
+				WHERE m.search @@ q`+filters+` ORDER BY r DESC LIMIT $9`, v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, kinds, ids, q.IncludeFlagged, entities, limit)
+			if err != nil {
+				return err
+			}
+			if err := scan(rows, false); err != nil {
+				return err
+			}
+		}
+		if len(q.Vector) > 0 && q.Model != "" {
+			rows, err := tx.Query(ctx, `SELECT `+memoryCols+`, cosine_similarity(m.embedding, $4::real[])::float8 AS r, s.trust`+from+`
+				WHERE m.embedding IS NOT NULL AND m.embedding_model = $10`+filters+` ORDER BY r DESC NULLS LAST LIMIT $9`, v.Subject, v.Roles, rank(v.Ceiling), q.Vector, kinds, ids, q.IncludeFlagged, entities, limit, q.Model)
+			if err != nil {
+				return err
+			}
+			if err := scan(rows, true); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	out := make([]memoryHit, 0, len(order))
+	for _, id := range order {
+		if h := byID[id]; h.Semantic > 0 || h.Lexical > 0 {
+			out = append(out, *h)
+		}
+	}
+	return out, nil
 }

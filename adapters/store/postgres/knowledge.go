@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"idp-cmi/internal/guard"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -11,18 +12,23 @@ import (
 )
 
 const docCols = `d.id::text, s.name, d.uri, d.title, d.version, d.content_sha256, d.byte_size, d.chunk_count, d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles,
-	d.revoked_at, coalesce(d.revoked_by, ''), coalesce(d.revoked_reason, ''), d.created_by, d.created_at`
+	d.revoked_at, coalesce(d.revoked_by, ''), coalesce(d.revoked_reason, ''), d.created_by, d.created_at, d.flags, ` +
+	"(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'knowledge' AND e.object_id = d.id)"
 
 func scanDoc(row pgx.Row) (*cmi.Document, error) {
 	var d cmi.Document
 	var validUntil, revokedAt *time.Time
-	var revokedBy, revokedReason string
+	var revokedBy, revokedReason, entities string
 	if err := row.Scan(&d.ID, &d.Source, &d.URI, &d.Title, &d.Version, &d.ContentSHA256, &d.ByteSize, &d.ChunkCount, &d.Status, &validUntil, &d.Sensitivity, &d.ACL.Subjects, &d.ACL.Roles,
-		&revokedAt, &revokedBy, &revokedReason, &d.CreatedBy, &d.CreatedAt); err != nil {
+		&revokedAt, &revokedBy, &revokedReason, &d.CreatedBy, &d.CreatedAt, &d.Flags, &entities); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fail("NOT_FOUND", "document not found")
 		}
 		return nil, err
+	}
+	d.Entities = decodeEntities(entities)
+	if len(d.Flags) == 0 {
+		d.Flags = nil
 	}
 	if validUntil != nil {
 		d.ValidUntil = *validUntil
@@ -54,6 +60,17 @@ func (s *Store) CreateDocument(ctx context.Context, tenant string, in cmi.Docume
 		in.ACL.Roles = []string{}
 	}
 	chunks := cmi.Chunk(text, ChunkSize)
+	chunkFlags := make([][]string, len(chunks))
+	var docFlags []string
+	for i, c := range chunks {
+		chunkFlags[i] = guard.Scan(c) // D12
+		docFlags = guard.Union(docFlags, chunkFlags[i])
+	}
+	if docFlags == nil {
+		docFlags = []string{}
+	}
+	in.Entities = cmi.SortEntities(in.Entities)
+	vecs, model := s.embed(ctx, chunks)
 	var out *cmi.Document
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		src, err := getSource(ctx, tx, in.Source)
@@ -72,19 +89,31 @@ func (s *Store) CreateDocument(ctx context.Context, tenant string, in cmi.Docume
 			validUntil = in.ValidUntil
 		}
 		id := NewUUID()
-		if _, err := tx.Exec(ctx, `INSERT INTO knowledge_documents (id, tenant_id, source_id, uri, title, version, content_sha256, byte_size, chunk_count, valid_until, sensitivity, acl_subjects, acl_roles, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-			id, tenant, src.ID, in.URI, in.Title, version, cmi.ContentSHA256(text), len(text), len(chunks), validUntil, in.Sensitivity, in.ACL.Subjects, in.ACL.Roles, by); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO knowledge_documents (id, tenant_id, source_id, uri, title, version, content_sha256, byte_size, chunk_count, valid_until, sensitivity, acl_subjects, acl_roles, created_by, flags)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+			id, tenant, src.ID, in.URI, in.Title, version, cmi.ContentSHA256(text), len(text), len(chunks), validUntil, in.Sensitivity, in.ACL.Subjects, in.ACL.Roles, by, docFlags); err != nil {
 			return err
 		}
 		b := &pgx.Batch{}
 		for i, c := range chunks {
-			b.Queue(`INSERT INTO knowledge_chunks (tenant_id, document_id, seq, content, search) VALUES ($1, $2, $3, $4, to_tsvector('simple', $4) || to_tsvector('simple', $5))`, tenant, id, i, c, cmi.Bigrams(c))
+			var vec, vecModel any
+			if vecs != nil {
+				vec, vecModel = vecs[i], model
+			}
+			flags := chunkFlags[i]
+			if flags == nil {
+				flags = []string{}
+			}
+			b.Queue(`INSERT INTO knowledge_chunks (tenant_id, document_id, seq, content, search, flags, embedding, embedding_model) VALUES ($1, $2, $3, $4, to_tsvector('simple', $4) || to_tsvector('simple', $5), $6, $7, $8)`,
+				tenant, id, i, c, cmi.Bigrams(c), flags, vec, vecModel)
 		}
 		if err := tx.SendBatch(ctx, b).Close(); err != nil {
 			return err
 		}
-		if err := Audit(ctx, tx, tenant, by, "knowledge.create", id, map[string]any{"uri": in.URI, "version": version, "chunks": len(chunks), "sensitivity": in.Sensitivity}); err != nil {
+		if err := insertEntities(ctx, tx, tenant, "knowledge", id, in.Entities); err != nil {
+			return err
+		}
+		if err := Audit(ctx, tx, tenant, by, "knowledge.create", id, map[string]any{"uri": in.URI, "version": version, "chunks": len(chunks), "sensitivity": in.Sensitivity, "flags": docFlags, "entities": len(in.Entities)}); err != nil {
 			return err
 		}
 		out, err = scanDoc(tx.QueryRow(ctx, `SELECT `+docCols+` FROM knowledge_documents d JOIN sources s ON s.id = d.source_id WHERE d.id = $1`, id))
@@ -152,38 +181,103 @@ type knowledgeHit struct {
 	Document cmi.Document
 	Seq      int
 	Content  string
-	Rank     float64
 	Trust    string
+	Flags    []string
+	Hit
 }
 
-// SearchKnowledge runs the full-text query over the chunks of documents visible to v.
-func (s *Store) SearchKnowledge(ctx context.Context, tenant, tsquery string, sources []string, v Visibility, limit int) ([]knowledgeHit, error) {
-	var out []knowledgeHit
-	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, ts_rank(c.search, q) AS r, s.trust
-			FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id JOIN sources s ON s.id = d.source_id, to_tsquery('simple', $4) q,
-			LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x
-			WHERE c.search @@ q AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))`+visibleSQL+` ORDER BY r DESC LIMIT $6`,
-			v.Subject, v.Roles, rank(v.Ceiling), tsquery, sources, limit)
-		if err != nil {
-			return err
-		}
+// SearchKnowledge retrieves chunks of documents visible to v, lexically and semantically (D11),
+// merged per chunk. Flagged chunks stay out unless the policy lets them through (D12).
+func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sources []string, v Visibility) ([]knowledgeHit, error) {
+	if sources == nil {
+		sources = []string{}
+	}
+	entities := q.Entities
+	if entities == nil {
+		entities = []string{}
+	}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	const from = ` FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id JOIN sources s ON s.id = d.source_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x`
+	filters := ` AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))` + visibleSQL + ` AND ($6 OR cardinality(c.flags) = 0)` + entityFilterSQL("knowledge", "d.id", "$7")
+	type key struct {
+		id  string
+		seq int
+	}
+	byKey := map[key]*knowledgeHit{}
+	var order []key
+	scan := func(rows pgx.Rows, semantic bool) error {
 		defer rows.Close()
 		for rows.Next() {
 			var h knowledgeHit
 			d := &h.Document
 			var validUntil, revokedAt *time.Time
-			var revokedBy, revokedReason string
+			var revokedBy, revokedReason, entities string
+			var r float64
 			if err := rows.Scan(&d.ID, &d.Source, &d.URI, &d.Title, &d.Version, &d.ContentSHA256, &d.ByteSize, &d.ChunkCount, &d.Status, &validUntil, &d.Sensitivity, &d.ACL.Subjects, &d.ACL.Roles,
-				&revokedAt, &revokedBy, &revokedReason, &d.CreatedBy, &d.CreatedAt, &h.Seq, &h.Content, &h.Rank, &h.Trust); err != nil {
+				&revokedAt, &revokedBy, &revokedReason, &d.CreatedBy, &d.CreatedAt, &d.Flags, &entities, &h.Seq, &h.Content, &h.Flags, &r, &h.Trust); err != nil {
 				return err
 			}
 			if validUntil != nil {
 				d.ValidUntil = *validUntil
 			}
-			out = append(out, h)
+			d.Entities = decodeEntities(entities)
+			if len(d.Flags) == 0 {
+				d.Flags = nil
+			}
+			if len(h.Flags) == 0 {
+				h.Flags = nil
+			}
+			hit := Hit{}
+			if semantic {
+				hit.Semantic = r
+			} else {
+				hit.Lexical = r
+			}
+			k := key{d.ID, h.Seq}
+			if ex := byKey[k]; ex != nil {
+				ex.merge(hit)
+				continue
+			}
+			h.merge(hit)
+			byKey[k] = &h
+			order = append(order, k)
 		}
 		return rows.Err()
+	}
+	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+		if q.TSQuery != "" {
+			rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, c.flags, ts_rank(c.search, q)::float8 AS r, s.trust`+from+`, to_tsquery('simple', $4) q
+				WHERE c.search @@ q`+filters+` ORDER BY r DESC LIMIT $8`, v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, sources, q.IncludeFlagged, entities, limit)
+			if err != nil {
+				return err
+			}
+			if err := scan(rows, false); err != nil {
+				return err
+			}
+		}
+		if len(q.Vector) > 0 && q.Model != "" {
+			rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, c.flags, cosine_similarity(c.embedding, $4::real[])::float8 AS r, s.trust`+from+`
+				WHERE c.embedding IS NOT NULL AND c.embedding_model = $9`+filters+` ORDER BY r DESC NULLS LAST LIMIT $8`, v.Subject, v.Roles, rank(v.Ceiling), q.Vector, sources, q.IncludeFlagged, entities, limit, q.Model)
+			if err != nil {
+				return err
+			}
+			if err := scan(rows, true); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	out := make([]knowledgeHit, 0, len(order))
+	for _, k := range order {
+		if h := byKey[k]; h.Semantic > 0 || h.Lexical > 0 {
+			out = append(out, *h)
+		}
+	}
+	return out, nil
 }

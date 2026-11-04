@@ -1,0 +1,166 @@
+# idp-cmi: the API, the expiry sweeper and the embedding backfill in one Deployment. Replicas share
+# nothing but the database; the sweeper and the backfill are idempotent, so any number may run.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: idp-cmi
+  namespace: idp-cmi
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: idp-cmi-env
+  namespace: idp-cmi
+data:
+  IDP_CMI_LISTEN: "0.0.0.0:8550"
+  IDP_CMI_CONFIG: "/etc/idp/config/cmi.yaml"
+  IDP_CMI_SWEEP: "1m"
+  IDP_CMI_ISSUER: "https://idp.example.com/realms/idp"
+  IDP_CMI_AUDIENCE: "idp-cmi"
+  IDP_CMI_JWKS_URL: "https://idp.example.com/realms/idp/protocol/openid-connect/certs"
+  IDP_CMI_TENANT_CLAIM: "tenant_id"
+  IDP_CMI_ROLES_CLAIM: "roles"
+  IDP_CMI_TLS_CERT_FILE: "/etc/idp/tls/tls.crt"
+  IDP_CMI_TLS_KEY_FILE: "/etc/idp/tls/tls.key"
+  IDP_IDENTITY_CA_FILE: "/etc/idp/identity-ca/ca.crt"
+  IDP_METRICS_LISTEN: "0.0.0.0:9565"
+  IDP_LOG_LEVEL: "info"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4318"
+---
+# The embedding endpoint (ADR-0001 D11) and the consolidation model (D15). No secrets inside:
+# credentials are referenced as files from the Secrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: idp-cmi-config
+  namespace: idp-cmi
+data:
+  cmi.yaml: |
+    embedding:
+      baseUrl: https://models.example.com/v1
+      model: text-embedding-3-small
+      apiKeyFile: /etc/idp/model-keys/embedding
+      caFile: /etc/idp/model-ca/ca.crt
+    consolidation:
+      baseUrl: https://models.example.com/v1
+      model: claude-sonnet-5-5
+      apiKeyFile: /etc/idp/model-keys/consolidation
+      caFile: /etc/idp/model-ca/ca.crt
+      source: distiller
+      interval: 1h
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idp-cmi
+  namespace: idp-cmi
+  labels:
+    app.kubernetes.io/component: cmi
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: cmi
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: cmi
+    spec:
+      serviceAccountName: idp-cmi
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cmi
+          image: idp-cmi
+          command: ["/usr/local/bin/idp-cmi", "serve"]
+          ports:
+            - name: api
+              containerPort: 8550
+            - name: metrics
+              containerPort: 9565
+          envFrom:
+            - configMapRef:
+                name: idp-cmi-env
+          env:
+            - name: IDP_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: idp-cmi-db
+                  key: service-url
+          volumeMounts:
+            - name: config
+              mountPath: /etc/idp/config
+              readOnly: true
+            - name: tls
+              mountPath: /etc/idp/tls
+              readOnly: true
+            - name: identity-ca
+              mountPath: /etc/idp/identity-ca
+              readOnly: true
+            - name: model-keys
+              mountPath: /etc/idp/model-keys
+              readOnly: true
+            - name: model-ca
+              mountPath: /etc/idp/model-ca
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: api
+              scheme: HTTPS
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: api
+              scheme: HTTPS
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 200m, memory: 128Mi}
+            limits: {cpu: "2", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: idp-cmi-config
+        - name: tls
+          secret:
+            secretName: idp-cmi-tls
+        - name: identity-ca
+          secret:
+            secretName: idp-cmi-identity-ca
+        - name: model-keys
+          secret:
+            secretName: idp-cmi-model-keys
+        - name: model-ca
+          secret:
+            secretName: idp-cmi-model-ca
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: idp-cmi
+  namespace: idp-cmi
+  labels:
+    app.kubernetes.io/component: cmi
+spec:
+  selector:
+    app.kubernetes.io/component: cmi
+  ports:
+    - name: api
+      port: 8550
+      targetPort: api

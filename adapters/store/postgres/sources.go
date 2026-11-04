@@ -102,6 +102,7 @@ type Policy struct {
 	WriterCeiling        string    `json:"writerCeiling"`
 	DefaultMemoryTTLDays int       `json:"defaultMemoryTtlDays"`
 	PackageTTLSeconds    int       `json:"packageTtlSeconds"`
+	IncludeFlagged       bool      `json:"includeFlagged"` // D12: let flagged content into packages (items then carry flags); default false = quarantine
 	UpdatedBy            string    `json:"updatedBy,omitempty"`
 	UpdatedAt            time.Time `json:"updatedAt,omitzero"`
 	Default              bool      `json:"default"`
@@ -124,8 +125,8 @@ func (p Policy) Validate() error {
 func policyOf(ctx context.Context, tx pgx.Tx, tenant string) (Policy, error) {
 	var p Policy
 	var by *string
-	err := tx.QueryRow(ctx, `SELECT reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, updated_by, updated_at FROM tenant_policies WHERE tenant_id = $1`, tenant).
-		Scan(&p.ReaderCeiling, &p.WriterCeiling, &p.DefaultMemoryTTLDays, &p.PackageTTLSeconds, &by, &p.UpdatedAt)
+	err := tx.QueryRow(ctx, `SELECT reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, include_flagged, updated_by, updated_at FROM tenant_policies WHERE tenant_id = $1`, tenant).
+		Scan(&p.ReaderCeiling, &p.WriterCeiling, &p.DefaultMemoryTTLDays, &p.PackageTTLSeconds, &p.IncludeFlagged, &by, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DefaultPolicy, nil
 	}
@@ -155,10 +156,10 @@ func (s *Store) SetPolicy(ctx context.Context, tenant string, p Policy, by strin
 	}
 	var out Policy
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `INSERT INTO tenant_policies (tenant_id, reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, updated_by) VALUES ($1, $2, $3, $4, $5, $6)
+		if _, err := tx.Exec(ctx, `INSERT INTO tenant_policies (tenant_id, reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, include_flagged, updated_by) VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT (tenant_id) DO UPDATE SET reader_ceiling = EXCLUDED.reader_ceiling, writer_ceiling = EXCLUDED.writer_ceiling, default_memory_ttl_days = EXCLUDED.default_memory_ttl_days,
-			  package_ttl_seconds = EXCLUDED.package_ttl_seconds, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-			tenant, p.ReaderCeiling, p.WriterCeiling, p.DefaultMemoryTTLDays, p.PackageTTLSeconds, by); err != nil {
+			  package_ttl_seconds = EXCLUDED.package_ttl_seconds, include_flagged = EXCLUDED.include_flagged, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+			tenant, p.ReaderCeiling, p.WriterCeiling, p.DefaultMemoryTTLDays, p.PackageTTLSeconds, p.IncludeFlagged, by); err != nil {
 			return err
 		}
 		if err := Audit(ctx, tx, tenant, by, "policy.set", "", p); err != nil {

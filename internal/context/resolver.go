@@ -6,6 +6,7 @@ package context
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,18 +15,20 @@ import (
 
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/cmi"
+	"idp-cmi/internal/embedding"
 )
 
 // Request is a resolve call.
 type Request struct {
-	Query              string      `json:"query"`
-	Purpose            string      `json:"purpose,omitempty"`
-	Scope              *cmi.Scope  `json:"scope,omitempty"`   // the thread / agent / subject the caller works in
-	Budget             *cmi.Budget `json:"budget,omitempty"`  // maxTokens (default 2000, at most 32000), maxItems (default 20, at most 100)
-	Sources            []string    `json:"sources,omitempty"` // knowledge sources to consider (empty = all visible)
-	Kinds              []string    `json:"kinds,omitempty"`   // memory | knowledge (empty = both)
-	MaxAgeDays         int         `json:"maxAgeDays,omitempty"`
-	SensitivityCeiling string      `json:"sensitivityCeiling,omitempty"` // may only lower the principal's ceiling
+	Query              string       `json:"query"`
+	Purpose            string       `json:"purpose,omitempty"`
+	Scope              *cmi.Scope   `json:"scope,omitempty"`   // the thread / agent / subject the caller works in
+	Budget             *cmi.Budget  `json:"budget,omitempty"`  // maxTokens (default 2000, at most 32000), maxItems (default 20, at most 100)
+	Sources            []string     `json:"sources,omitempty"` // knowledge sources to consider (empty = all visible)
+	Kinds              []string     `json:"kinds,omitempty"`   // memory | knowledge (empty = both)
+	MaxAgeDays         int          `json:"maxAgeDays,omitempty"`
+	SensitivityCeiling string       `json:"sensitivityCeiling,omitempty"` // may only lower the principal's ceiling
+	Entities           []cmi.Entity `json:"entities,omitempty"`           // only content referencing one of these business objects (D13)
 }
 
 // Validate checks a request.
@@ -60,14 +63,16 @@ func (r *Request) Validate() error {
 	if r.SensitivityCeiling != "" && !cmi.ValidSensitivity(r.SensitivityCeiling) {
 		return errors.New("sensitivityCeiling is not a level")
 	}
-	return nil
+	return cmi.ValidateEntities(r.Entities)
 }
 
-// Resolver assembles packages.
+// Resolver assembles packages. With an Embedder the query is also matched semantically (D11).
 type Resolver struct {
-	Store *postgres.Store
-	Now   func() time.Time
-	NewID func() string
+	Store    *postgres.Store
+	Embedder embedding.Embedder
+	Now      func() time.Time
+	NewID    func() string
+	Log      *slog.Logger
 }
 
 var tokenRE = regexp.MustCompile(`[\p{L}\p{N}_]+`)
@@ -108,12 +113,13 @@ func TSQuery(query string) string {
 }
 
 type candidate struct {
-	item    cmi.Item
-	trust   int // 0 authoritative, 1 informational
-	fresh   float64
-	rank    float64
-	dedupe  string
-	created time.Time
+	item     cmi.Item
+	trust    int // 0 authoritative, 1 informational
+	fresh    float64
+	lexical  float64
+	semantic float64
+	dedupe   string
+	created  time.Time
 }
 
 // Resolve assembles, seals and stores a package for the principal.
@@ -143,15 +149,26 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 			wantKnowledge = true
 		}
 	}
-	tsq := TSQuery(req.Query)
+	policy, err := r.Store.GetPolicy(ctx, tenant)
+	if err != nil {
+		return nil, nil, err
+	}
+	q := postgres.Query{TSQuery: TSQuery(req.Query), Entities: cmi.EntityKeys(req.Entities), IncludeFlagged: policy.IncludeFlagged, Limit: 200}
+	if r.Embedder != nil {
+		if vecs, err := r.Embedder.Embed(ctx, []string{req.Query}); err == nil && len(vecs) == 1 {
+			q.Vector, q.Model = vecs[0], r.Embedder.Model()
+		} else if r.Log != nil {
+			r.Log.Warn("query embedding failed; lexical retrieval only", "error", err)
+		}
+	}
 	var cands []candidate
-	if tsq != "" {
+	if q.TSQuery != "" || len(q.Vector) > 0 {
 		if wantMemory {
 			scopes := []cmi.Scope{{Kind: cmi.ScopeTenant}, {Kind: cmi.ScopeSubject, ID: v.Subject}}
 			if req.Scope != nil && req.Scope.Kind != cmi.ScopeTenant {
 				scopes = append(scopes, *req.Scope)
 			}
-			hits, err := r.Store.SearchMemory(ctx, tenant, tsq, scopes, v, 200)
+			hits, err := r.Store.SearchMemory(ctx, tenant, q, scopes, v)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -163,17 +180,17 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 				if !m.Validity.ValidUntil.IsZero() && !m.Validity.ValidUntil.After(now) {
 					continue // expired by the resolver's clock, even before the sweeper marks it
 				}
-				cands = append(cands, candidate{item: cmi.Item{Kind: cmi.ItemMemory, ID: m.ID, Source: m.Provenance.Source, Trust: h.Trust, Ref: m.Provenance.Ref, Excerpt: excerpt(m.Content, 1200),
-					ObservedAt: m.Provenance.ObservedAt, ValidUntil: m.Validity.ValidUntil, Sensitivity: m.Sensitivity}, trust: trustRank(h.Trust), fresh: freshness(now, m.Provenance.ObservedAt), rank: h.Rank,
+				item := cmi.Item{Kind: cmi.ItemMemory, ID: m.ID, Source: m.Provenance.Source, Trust: h.Trust, Ref: m.Provenance.Ref, Excerpt: excerpt(m.Content, 1200),
+					ObservedAt: m.Provenance.ObservedAt, ValidUntil: m.Validity.ValidUntil, Sensitivity: m.Sensitivity, Entities: m.Entities, Match: h.Match}
+				if policy.IncludeFlagged {
+					item.Flags = m.Flags
+				}
+				cands = append(cands, candidate{item: item, trust: trustRank(h.Trust), fresh: freshness(now, m.Provenance.ObservedAt), lexical: h.Lexical, semantic: h.Semantic,
 					dedupe: "m:" + m.Provenance.Source + "/" + m.Provenance.Ref, created: m.CreatedAt})
 			}
 		}
 		if wantKnowledge {
-			sources := req.Sources
-			if sources == nil {
-				sources = []string{} // a NULL array would make the source filter false for every row
-			}
-			hits, err := r.Store.SearchKnowledge(ctx, tenant, tsq, sources, v, 200)
+			hits, err := r.Store.SearchKnowledge(ctx, tenant, q, req.Sources, v)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -185,15 +202,33 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 				if !d.ValidUntil.IsZero() && !d.ValidUntil.After(now) {
 					continue
 				}
-				cands = append(cands, candidate{item: cmi.Item{Kind: cmi.ItemKnowledge, ID: d.ID, Source: d.Source, Trust: h.Trust, Ref: d.URI + "#" + itoa(h.Seq), Title: d.Title, Excerpt: excerpt(h.Content, 1500),
-					ObservedAt: d.CreatedAt, ValidUntil: d.ValidUntil, Sensitivity: d.Sensitivity}, trust: trustRank(h.Trust), fresh: freshness(now, d.CreatedAt), rank: h.Rank,
+				item := cmi.Item{Kind: cmi.ItemKnowledge, ID: d.ID, Source: d.Source, Trust: h.Trust, Ref: d.URI + "#" + itoa(h.Seq), Title: d.Title, Excerpt: excerpt(h.Content, 1500),
+					ObservedAt: d.CreatedAt, ValidUntil: d.ValidUntil, Sensitivity: d.Sensitivity, Entities: d.Entities, Match: h.Match}
+				if policy.IncludeFlagged {
+					item.Flags = h.Flags
+				}
+				cands = append(cands, candidate{item: item, trust: trustRank(h.Trust), fresh: freshness(now, d.CreatedAt), lexical: h.Lexical, semantic: h.Semantic,
 					dedupe: "k:" + d.Source + "/" + d.URI + "#" + itoa(h.Seq), created: d.CreatedAt})
 			}
 		}
 	}
-	// order: trust, then freshness-weighted relevance; ties by recency
+	// relevance: lexical ranks normalized to the best lexical hit, semantic cosine as is, the larger
+	// wins; then trust, then freshness-weighted relevance; ties by recency
+	var maxLex float64
+	for _, c := range cands {
+		if c.lexical > maxLex {
+			maxLex = c.lexical
+		}
+	}
 	for i := range cands {
-		cands[i].item.Score = round4(cands[i].rank * (0.5 + 0.5*cands[i].fresh))
+		rel := cands[i].semantic
+		if maxLex > 0 && cands[i].lexical/maxLex > rel {
+			rel = cands[i].lexical / maxLex
+		}
+		if rel < 0 {
+			rel = 0
+		}
+		cands[i].item.Score = round4(rel * (0.5 + 0.5*cands[i].fresh))
 		cands[i].item.Tokens = cmi.Tokens(cands[i].item.Excerpt)
 	}
 	sort.SliceStable(cands, func(a, b int) bool {
@@ -217,10 +252,6 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 		seen[c.dedupe] = true
 		pkg.Budget.UsedTokens += c.item.Tokens
 		pkg.Items = append(pkg.Items, c.item)
-	}
-	policy, err := r.Store.GetPolicy(ctx, tenant)
-	if err != nil {
-		return nil, nil, err
 	}
 	pkg.ExpiresAt = now.Add(time.Duration(policy.PackageTTLSeconds) * time.Second).UTC().Truncate(time.Second)
 	env, err := cmi.Seal(pkg)
