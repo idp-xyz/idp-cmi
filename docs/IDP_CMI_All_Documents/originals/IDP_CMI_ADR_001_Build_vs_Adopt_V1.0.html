@@ -1,0 +1,943 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IDP-CMI Build vs Adopt ADR V1.0</title><style>
+:root{color-scheme:light;--bg:#f5f7fa;--fg:#152c48;--muted:#62758b;--blue:#24598b;--line:#d6dfe9;--paper:#fff;--tag:#eaf3fb}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,'Noto Sans CJK SC','Microsoft YaHei','PingFang SC',sans-serif;background:var(--bg);color:var(--fg);line-height:1.8;font-size:14px}header{padding:16px 29px;background:#15365c;color:white;display:flex;justify-content:space-between;gap:16px;align-items:center}header b{font-size:21px;letter-spacing:.7px}header small{font-size:12px;color:#d1e4fa}.layout{display:grid;grid-template-columns:260px minmax(0,1fr);max-width:1590px;margin:auto}aside{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--line);padding:25px 15px;background:#f7f9fc}aside .label{text-transform:uppercase;font-size:11px;letter-spacing:1.5px;color:var(--muted);margin-bottom:12px}aside a{display:block;text-decoration:none;padding:7px 9px;font-size:11.5px;color:#526a84;border-radius:6px;line-height:1.5}aside a:hover{background:#e8eff8;color:#24598b}main{max-width:1190px;min-width:0;padding:32px 42px 65px}.control{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 28px}.control button{border:1px solid #b9cbdc;color:#244d78;padding:9px 14px;background:white;border-radius:6px;cursor:pointer;font-size:12px}.control input{flex:1;min-width:155px;border:1px solid #b9cbdc;padding:8px 12px;border-radius:6px}.paper{padding:36px;background:var(--paper);border:1px solid var(--line);border-radius:10px;box-shadow:0 2px 6px #203e600b}h1{font-size:clamp(26px,3vw,38px);line-height:1.35;letter-spacing:-.8px;margin:2px 0 22px}h2{border-top:1px solid var(--line);padding-top:30px;margin-top:42px;font-size:22px;scroll-margin-top:18px}h3{font-size:17px;margin-top:25px}p{margin:13px 0;color:#31455f}strong{color:#142d4c}blockquote{border-left:4px solid #5987bc;padding:9px 18px;background:#eef5fc;margin:20px 0;color:#2f537a;border-radius:3px}blockquote p{margin:6px 0}a{color:#265e96;overflow-wrap:anywhere}code{background:#eef2f7;padding:2px 4px;border-radius:4px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace}pre{background:#172b42;color:#edf5ff;padding:15px;border-radius:6px;overflow-x:auto;line-height:1.6}pre code{background:transparent;color:inherit}table{border-collapse:collapse;width:100%;font-size:12px;line-height:1.65;display:block;overflow-x:auto;margin:17px 0 27px}th,td{padding:10px 11px;border:1px solid var(--line);min-width:110px;vertical-align:top}th{color:#244b79;background:#eaf1f9;font-weight:700}td:first-child{font-weight:550}ul,ol{padding-left:24px}li{margin:7px 0}hr{border:0;border-top:1px solid var(--line);margin:34px 0}.diagram{padding:18px;border:1px solid var(--line);background:#fafcff;border-radius:9px;overflow-x:auto}.diagram svg{width:100%;min-width:630px;height:auto}.status{display:inline-block;border:1px solid #bbcadd;color:#52697e;border-radius:6px;padding:3px 9px;font-size:11px;background:#f2f6fa;margin-bottom:10px}.search-hit{background:#fff1bb}.tip{color:#5e728a;font-size:11px;margin-top:20px}@media(max-width:900px){.layout{display:block}aside{display:none}main{padding:17px}.paper{padding:20px}table{font-size:11px}}@media print{@page{size:A4;margin:16mm}body{background:white;font-size:10px}.layout{display:block}header,aside,.control,.tip{display:none!important}main{padding:0;max-width:none}.paper{border:0;box-shadow:none;padding:0}h1{font-size:25px}h2{font-size:17px;break-after:avoid;margin-top:30px}h3{font-size:14px;break-after:avoid}table{font-size:8px;display:table;overflow:visible}th,td{min-width:0;padding:5px;overflow-wrap:anywhere;word-break:break-word}tr{break-inside:avoid}.diagram{break-inside:avoid}.diagram svg{min-width:0}a{color:#223b60}}
+</style></head><body><header><b>IDP <small>Context & Memory Infrastructure</small></b><small>ADR-001 · 2026-10-15 · Proposed</small></header><div class="layout"><aside><div class="label">章节目录 · 15 SECTIONS</div><a href="#sec-01" data-toc="1">0. 决策摘要（Executive Decision）</a><a href="#sec-02" data-toc="1">1. 背景与真实问题</a><a href="#sec-03" data-toc="1">2. 备选路线评估</a><a href="#sec-04" data-toc="1">3. 功能模块级决策矩阵</a><a href="#sec-05" data-toc="1">4. 逻辑与部署架构</a><a href="#sec-06" data-toc="1">5. Canonical vs Engine State：数据主权契约</a><a href="#sec-07" data-toc="1">6. CMI Memory Engine SPI V1（方案级合同）</a><a href="#sec-08" data-toc="1">7. 开源技术尽调：证据与不确定性</a><a href="#sec-09" data-toc="1">8. 具体 PoC 方案：同数据集、同模型、同预算</a><a href="#sec-10" data-toc="1">9. 风险登记与控制</a><a href="#sec-11" data-toc="1">10. 责任界面：HOST / EER / MCP Infrastructure / CMI</a><a href="#sec-12" data-toc="1">11. 执行工单与依赖顺序（Technical Design 输入）</a><a href="#sec-13" data-toc="1">12. 直接写入下一版 Technical Design 的接口清单</a><a href="#sec-14" data-toc="1">13. 拟议验收及决策批准记录</a><a href="#sec-15" data-toc="1">14. 一手资料索引与核验说明（截至 2026-10-15）</a><p class="tip">Proposed ≠ Approved。可使用打印功能输出适合评审的 PDF。</p></aside><main><div class="control"><input id="q" placeholder="查找：许可证、删除、Graphiti、MCP、PoC…"><button id="reset">清除</button><button id="print">打印 / PDF</button></div><div class="paper"><div class="status">DRAFT FOR ARCHITECTURE REVIEW</div><h1>IDP-CMI 构建与复用架构决策记录（Build vs Adopt）V1.0</h1>
+<p><strong>文件编号</strong>：CMI-ADR-001<br />
+<strong>版本/日期</strong>：V1.0 / 2026-10-15<br />
+<strong>决策状态</strong>：<strong>Proposed / 待架构委员会评审批准</strong>，尚未冻结到代码仓库、未上线、未经真实业务 PoC。<br />
+<strong>决策责任</strong>：IDP 架构负责人（待指派）；产品责任人、数据安全负责人、技术负责人和法务参与会签。<br />
+<strong>上游输入</strong>：<code>IDP_CMI_Core_Specification_V1.0.md</code>（五项核心契约及 G0–G7 验收）；<code>IDP_CMI_Enterprise_Memory_Infrastructure_RFC_V1.0.md</code>；IDP EER Whitepaper Master V2.0；HOST/EER 独立性决策。<br />
+<strong>范围</strong>：独立可部署的 IDP Context &amp; Memory Infrastructure (CMI)，不改动现有 EER / HOST 核心责任。</p>
+<blockquote>
+<p>读者须知：本 ADR 定义要批准的技术方向、实施边界和验证准则；<strong>不是</strong> Hindsight、Mem0、Graphiti 性能已实测或 CMI 已建成的声明。项目功能/许可证来自 2026-10-15 核对的上游公开资料，生产功能与组件许可证还需锁定实际版本和依赖树再复核。</p>
+</blockquote>
+<h2 id="sec-01">0. 决策摘要（Executive Decision）</h2>
+<h3>ADR-D01：采用「自主核心 + 成熟开源基础设施 + 适配器式算法组件」</h3>
+<ul>
+<li><strong>BUILD（IDP 自主实现）</strong>：CMI Public API 与独立服务框架、领域语义和 Canonical Store、Source/Memory 生命周期与版本账本、权限治理与撤权可见性、Context Compiler、Adapter Contract、跨引擎迁移/索引投影控制、证据和上下文清单。</li>
+<li><strong>ADOPT（直接使用开源基础）</strong>：PostgreSQL、pgvector、PostgreSQL FTS、对象存储兼容 S3 协议实现；缓存使用 Valkey 或经许可证核对的 Redis 发行版。OIDC、遥测、队列等优先对接成熟组件而非自造协议。</li>
+<li><strong>EVALUATE（先评测再选择）</strong>：Hindsight 作为第一 PoC 引擎；Mem0 为同数据集对照。<strong>两者都尚未批准为生产主引擎</strong>。只让引擎成为<strong>派生记忆的候选生成和召回组件</strong>，禁止其独占规范数据与授权决策。</li>
+<li><strong>DEFER（条件成熟再做）</strong>：Graphiti/时序图投影、跨租户联合知识网络、专有向量集群、自学习治理、复杂反思控制循环。</li>
+<li><strong>REFERENCE ONLY（先参考，不直接绑定）</strong>：OpenViking 的上下文分层组织和按需加载。主项目为 AGPLv3；任何部署/分发/托管服务方式的采用先法务审查，并校验具体组件许可证。</li>
+</ul>
+<p><strong>主线技术决策不是“选 Hindsight 还是 Mem0”，而是“设计一个没有任何记忆引擎仍能完成安全读写、来源溯源和最小上下文编译的 CMI 内核”，然后把更智能的召回和反思作为增强组件接入。</strong></p>
+<h3>决策要点（必须区分）</h3>
+<ol>
+<li><strong>软件独立性</strong>：CMI 独立启动、鉴权、读写、健康检测不依赖 HOST/EER 或 IDP MCP Infrastructure。</li>
+<li><strong>数据权威性</strong>：CMI Canonical Store 为 IDP 记忆记录、生命周期及授权可见性的权威；EER 是其 Execution/Evidence 的权威；ERP/WMS/Parcel 等是其业务事实领域的权威。三者不得混同。</li>
+<li><strong>引擎可替换性</strong>：开源引擎可以拥有自己的内部索引、cache、mental models/banks，但只作为<strong>派生/候选状态</strong>；没有规范化映射、删除传播和索引重建能力，不批准生产化。</li>
+<li><strong>接口稳定性</strong>：HOST/EER 只依赖 CMI 的版本化契约；不直接调用具体引擎的 <code>bank_id</code>、Graphiti node/edge 或内部表。</li>
+<li><strong>安全性</strong>：不得因为召回服务不可用、缓存命中或图谱关系而绕过权限，且在当前来源撤权后必须阻断新内容暴露。</li>
+<li><strong>实现节奏</strong>：优先模块化单体 + 异步 worker，不先拆分多个微服务。避免复制 EER 的调度器、State Machine 及业务执行层。</li>
+</ol>
+<h2 id="sec-02">1. 背景与真实问题</h2>
+<p>企业 Agent 常需要跨会话召回客户规则、历史异常和经验；但仅有向量库会遗漏时序、来源与权限，直接绑定单一记忆框架又使 HOST/EER 遭到版本、Schema 和许可锁定。IDP 已有 EER，且 HOST 被设计为无 EER 也可完成核心工作闭环。CMI 应支持这两者，同时成为可对外提供的独立基础设施。</p>
+<p><strong>成功不等于</strong>能回答“用户以前说过什么”，而是能在授权与业务有效时点下回答“本次任务应该得到哪些经过来源追溯的信息”，同时可以可靠撤权、审计、迁移与复现；仍由业务 SoR 返回事实并由 EER/获准业务服务执行动作。</p>
+<p><strong>不做</strong>：通用 Agent Runtime、LLM Serving、流程编排、业务副作用/补偿、作为 EER Evidence 唯一存储；也不另造一个 MCP Gateway/Registry/路由治理产品。</p>
+<h2 id="sec-03">2. 备选路线评估</h2>
+<table>
+<thead>
+<tr>
+<th>路线</th>
+<th>架构控制权</th>
+<th>初期速度</th>
+<th>长期替换成本</th>
+<th>不可接受的条件</th>
+<th>决策</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A. 全部自研，包括嵌入/ANN/图存储/记忆算法</td>
+<td>高</td>
+<td>慢</td>
+<td>持续基础算法维护大</td>
+<td>严重占用产品治理研发</td>
+<td>Reject</td>
+</tr>
+<tr>
+<td>B. Fork Hindsight/Mem0，业务逻辑改在其主仓库中</td>
+<td>低至中</td>
+<td>快</td>
+<td>深度上游耦合，升级冲突</td>
+<td>CMI 数据主权失控</td>
+<td>Reject as primary architecture</td>
+</tr>
+<tr>
+<td>C. 自主领域核心 + 开源基础设施 + 适配器</td>
+<td>高</td>
+<td>中等</td>
+<td>受控，需自己承担胶水/兼容层</td>
+<td>必须兑现独立验收和工程规范</td>
+<td><strong>Proposed Accept</strong></td>
+</tr>
+<tr>
+<td>D. 纯自研薄封装，记忆只存入某 SaaS</td>
+<td>低</td>
+<td>很快</td>
+<td>数据出域与费用/可用性锁定</td>
+<td>不满足独立私有化目标</td>
+<td>Reject for core</td>
+</tr>
+</tbody>
+</table>
+<p><strong>反证条件</strong>：若实施成本显著高于真实客户需求，可先用 Hindsight 为单一产品建立受限 PoC，<strong>但不得把该 PoC 的引擎内部模型宣布为 CMI 公共契约</strong>。服务独立的价值须在 Parcel 等真实案例的接入与维护成本中验证。</p>
+<h2 id="sec-04">3. 功能模块级决策矩阵</h2>
+<p>决策缩写：<strong>B</strong> 自研；<strong>A</strong> 直接采用；<strong>P</strong> 插件对照 PoC；<strong>R</strong> 研究参考；<strong>D</strong> 延后。每个模块必须在 <code>decisions.csv</code> 中可追踪；这里显示结构主线。</p>
+<table>
+<thead>
+<tr>
+<th>编号</th>
+<th>模块</th>
+<th>策略</th>
+<th>默认候选</th>
+<th>决策与验收理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CMI-01</td>
+<td>Public REST/gRPC API</td>
+<td>B</td>
+<td>IDP</td>
+<td>CMI 自有版本、错误和授权模型；不暴露引擎专名</td>
+</tr>
+<tr>
+<td>CMI-02</td>
+<td>MCP Server Adapter</td>
+<td>B + A SDK</td>
+<td>MCP 2026-07-28 SDK</td>
+<td>仅协议适配，无内嵌 Gateway；新正式版优先，不兼容旧版的专属桥接不在范围</td>
+</tr>
+<tr>
+<td>CMI-03</td>
+<td>SourceRecord Registry</td>
+<td>B</td>
+<td>PostgreSQL</td>
+<td>来源、哈希、版本、删除依赖必须可控</td>
+</tr>
+<tr>
+<td>CMI-04</td>
+<td>MemoryRecord/Revision Ledger</td>
+<td>B</td>
+<td>PostgreSQL</td>
+<td>Canonical claim 与版本、双时态、CAS</td>
+</tr>
+<tr>
+<td>CMI-05</td>
+<td>ContextBundle/Manifest</td>
+<td>B</td>
+<td>PostgreSQL + 对象存储</td>
+<td>复现、出处、模型版本与当前有效性复核</td>
+</tr>
+<tr>
+<td>CMI-06</td>
+<td>Lifecycle/Erasure Coordinator</td>
+<td>B</td>
+<td>事务 + outbox worker</td>
+<td>撤权同步屏蔽，派生索引异步清理可跟踪</td>
+</tr>
+<tr>
+<td>CMI-07</td>
+<td>Identity &amp; Tenant Access</td>
+<td>B 集成层 + A IdP/PDP</td>
+<td>OIDC / 已有企业 IAM</td>
+<td>自主策略实施；不自造 OAuth/OIDC 协议栈</td>
+</tr>
+<tr>
+<td>CMI-08</td>
+<td>Domain Policy &amp; ACL Recheck</td>
+<td>B</td>
+<td>应用强制 + PostgreSQL RLS</td>
+<td>服务端授权，拒绝客户端 <code>tenant/status/trust</code> 自报</td>
+</tr>
+<tr>
+<td>CMI-09</td>
+<td>Retrieval Federation / Ranking</td>
+<td>B 组合层 + A 基础检索</td>
+<td>FTS + pgvector</td>
+<td>有来源、范围和授权后再聚合候选</td>
+</tr>
+<tr>
+<td>CMI-10</td>
+<td>Embeddings</td>
+<td>A 可切换</td>
+<td>本地或获准 API 模型</td>
+<td>版本维度/驻留/隐私统一登记，禁止静默换 embedding</td>
+</tr>
+<tr>
+<td>CMI-11</td>
+<td>Memory Extraction</td>
+<td>P</td>
+<td>Hindsight 与 Mem0</td>
+<td>谁准确、便宜、可删除，须同数据验证</td>
+</tr>
+<tr>
+<td>CMI-12</td>
+<td>Reflection / Experience Extraction</td>
+<td>P / D</td>
+<td>Hindsight</td>
+<td>反思输出保持候选；程序性升级需人工/政策审核</td>
+</tr>
+<tr>
+<td>CMI-13</td>
+<td>Context Compiler</td>
+<td>B</td>
+<td>IDP</td>
+<td>权限、时序、token 预算、优先级与稳定清单</td>
+</tr>
+<tr>
+<td>CMI-14</td>
+<td>Approximate Vector Search</td>
+<td>A</td>
+<td>pgvector</td>
+<td>自研 ANN 没必要；安全过滤/召回需评测</td>
+</tr>
+<tr>
+<td>CMI-15</td>
+<td>Text Index</td>
+<td>A</td>
+<td>PostgreSQL FTS</td>
+<td>基础词法召回，先不引入第二搜索集群</td>
+</tr>
+<tr>
+<td>CMI-16</td>
+<td>Temporal Knowledge Graph</td>
+<td>D + P</td>
+<td>Graphiti</td>
+<td>真实多跳/时态收益证明后启用；避免重复主索引</td>
+</tr>
+<tr>
+<td>CMI-17</td>
+<td>SQL / Metadata Persistence</td>
+<td>A</td>
+<td>PostgreSQL</td>
+<td>事务、扩展能力与工具生态成熟</td>
+</tr>
+<tr>
+<td>CMI-18</td>
+<td>Cache / TTL</td>
+<td>A</td>
+<td>Valkey / Redis 经版本核实</td>
+<td>仅加速；缓存不可成为授权唯一依据</td>
+</tr>
+<tr>
+<td>CMI-19</td>
+<td>Object Store</td>
+<td>A</td>
+<td>MinIO/其他 S3-compatible</td>
+<td>许可证、部署版本、加密/KMS 需单独审查</td>
+</tr>
+<tr>
+<td>CMI-20</td>
+<td>Async Outbox/Workers</td>
+<td>B 领域逻辑 + A 基建</td>
+<td>PostgreSQL outbox + worker</td>
+<td>先不引入第二分布式消息平台；必要时接 Kafka</td>
+</tr>
+<tr>
+<td>CMI-21</td>
+<td>Observability</td>
+<td>A 底座 + B 指标</td>
+<td>OpenTelemetry/Prometheus</td>
+<td>源文本/PII 不写普通 tracing</td>
+</tr>
+<tr>
+<td>CMI-22</td>
+<td>Engine Adapter/Compatibility</td>
+<td>B</td>
+<td>CMI SPI v1</td>
+<td>需要禁用/迁移/重建/删除事件 ACK 等语义</td>
+</tr>
+<tr>
+<td>CMI-23</td>
+<td>OpenViking context filesystem</td>
+<td>R</td>
+<td>独立架构研究</td>
+<td>核心 AGPLv3，严禁默认为可闭源集成</td>
+</tr>
+<tr>
+<td>CMI-24</td>
+<td>Multi-region / Dedicated clusters</td>
+<td>D</td>
+<td>待 SLO 与合同验证</td>
+<td>V1 不提前引入多活系统复杂度</td>
+</tr>
+</tbody>
+</table>
+<h2 id="sec-05">4. 逻辑与部署架构</h2>
+<div class="diagram"><svg width="1410pt" height="742pt"
+ viewBox="0.00 0.00 676.78 356.28" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(2.08 2.08) rotate(0) translate(8.64 347.64)">
+<title>CMI</title>
+<g id="clust2" class="cluster">
+<title>cluster_cmi</title>
+<path fill="#fafcff" stroke="#6490c3" d="M20,-8C20,-8 442,-8 442,-8 448,-8 454,-14 454,-20 454,-20 454,-283 454,-283 454,-289 448,-295 442,-295 442,-295 20,-295 20,-295 14,-295 8,-289 8,-283 8,-283 8,-20 8,-20 8,-14 14,-8 20,-8"/>
+<text text-anchor="middle" x="231" y="-279" font-family="DejaVu Sans" font-size="15.00" fill="#265687">IDP&#45;CMI &#160;• &#160;independent deployment</text>
+</g>
+<!-- host -->
+<g id="node1" class="node">
+<title>host</title>
+<path fill="#ecf2fb" stroke="#bdcadd" d="M177.5,-339C177.5,-339 114.5,-339 114.5,-339 108.5,-339 102.5,-333 102.5,-327 102.5,-327 102.5,-315 102.5,-315 102.5,-309 108.5,-303 114.5,-303 114.5,-303 177.5,-303 177.5,-303 183.5,-303 189.5,-309 189.5,-315 189.5,-315 189.5,-327 189.5,-327 189.5,-333 183.5,-339 177.5,-339"/>
+<text text-anchor="middle" x="146" y="-317.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">IDP HOST</text>
+</g>
+<!-- api -->
+<g id="node4" class="node">
+<title>api</title>
+<path fill="#dcecfb" stroke="#7baee0" d="M327.5,-262C327.5,-262 182.5,-262 182.5,-262 176.5,-262 170.5,-256 170.5,-250 170.5,-250 170.5,-238 170.5,-238 170.5,-232 176.5,-226 182.5,-226 182.5,-226 327.5,-226 327.5,-226 333.5,-226 339.5,-232 339.5,-238 339.5,-238 339.5,-250 339.5,-250 339.5,-256 333.5,-262 327.5,-262"/>
+<text text-anchor="middle" x="255" y="-240.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">CMI Public API / Policy</text>
+</g>
+<!-- host&#45;&gt;api -->
+<g id="edge8" class="edge">
+<title>host&#45;&gt;api</title>
+<path fill="none" stroke="#69849f" d="M170.73,-302.98C186.79,-291.94 207.81,-277.47 224.84,-265.75"/>
+<polygon fill="#69849f" stroke="#69849f" points="226.23,-267.34 229.99,-262.21 223.85,-263.88 226.23,-267.34"/>
+</g>
+<!-- eer -->
+<g id="node2" class="node">
+<title>eer</title>
+<path fill="#e9f5f1" stroke="#bdcadd" d="M281,-339C281,-339 229,-339 229,-339 223,-339 217,-333 217,-327 217,-327 217,-315 217,-315 217,-309 223,-303 229,-303 229,-303 281,-303 281,-303 287,-303 293,-309 293,-315 293,-315 293,-327 293,-327 293,-333 287,-339 281,-339"/>
+<text text-anchor="middle" x="255" y="-317.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">IDP EER</text>
+</g>
+<!-- eer&#45;&gt;api -->
+<g id="edge9" class="edge">
+<title>eer&#45;&gt;api</title>
+<path fill="none" stroke="#69849f" d="M255,-302.98C255,-292.7 255,-279.45 255,-268.21"/>
+<polygon fill="#69849f" stroke="#69849f" points="257.1,-268.21 255,-262.21 252.9,-268.21 257.1,-268.21"/>
+</g>
+<!-- third -->
+<g id="node3" class="node">
+<title>third</title>
+<path fill="#f2f4f7" stroke="#bdcadd" d="M474,-339C474,-339 332,-339 332,-339 326,-339 320,-333 320,-327 320,-327 320,-315 320,-315 320,-309 326,-303 332,-303 332,-303 474,-303 474,-303 480,-303 486,-309 486,-315 486,-315 486,-327 486,-327 486,-333 480,-339 474,-339"/>
+<text text-anchor="middle" x="403" y="-317.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">External Hosts / Apps</text>
+</g>
+<!-- third&#45;&gt;api -->
+<g id="edge10" class="edge">
+<title>third&#45;&gt;api</title>
+<path fill="none" stroke="#69849f" d="M369.42,-302.98C347.07,-291.66 317.64,-276.74 294.22,-264.87"/>
+<polygon fill="#69849f" stroke="#69849f" points="295.01,-262.92 288.71,-262.08 293.11,-266.67 295.01,-262.92"/>
+</g>
+<!-- registry -->
+<g id="node5" class="node">
+<title>registry</title>
+<path fill="#e8f4ff" stroke="#bdcadd" d="M267.5,-194C267.5,-194 28.5,-194 28.5,-194 22.5,-194 16.5,-188 16.5,-182 16.5,-182 16.5,-170 16.5,-170 16.5,-164 22.5,-158 28.5,-158 28.5,-158 267.5,-158 267.5,-158 273.5,-158 279.5,-164 279.5,-170 279.5,-170 279.5,-182 279.5,-182 279.5,-188 273.5,-194 267.5,-194"/>
+<text text-anchor="middle" x="148" y="-172.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">Canonical Source + Memory Ledger</text>
+</g>
+<!-- api&#45;&gt;registry -->
+<g id="edge1" class="edge">
+<title>api&#45;&gt;registry</title>
+<path fill="none" stroke="#69849f" d="M227.17,-225.83C213.05,-217.12 195.81,-206.49 181.02,-197.37"/>
+<polygon fill="#69849f" stroke="#69849f" points="181.9,-195.45 175.69,-194.08 179.7,-199.02 181.9,-195.45"/>
+</g>
+<!-- compiler -->
+<g id="node6" class="node">
+<title>compiler</title>
+<path fill="#e9f3fd" stroke="#bdcadd" d="M433.5,-194C433.5,-194 318.5,-194 318.5,-194 312.5,-194 306.5,-188 306.5,-182 306.5,-182 306.5,-170 306.5,-170 306.5,-164 312.5,-158 318.5,-158 318.5,-158 433.5,-158 433.5,-158 439.5,-158 445.5,-164 445.5,-170 445.5,-170 445.5,-182 445.5,-182 445.5,-188 439.5,-194 433.5,-194"/>
+<text text-anchor="middle" x="376" y="-172.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">Context Compiler</text>
+</g>
+<!-- api&#45;&gt;compiler -->
+<g id="edge2" class="edge">
+<title>api&#45;&gt;compiler</title>
+<path fill="none" stroke="#69849f" d="M286.48,-225.83C302.58,-217.05 322.28,-206.3 339.1,-197.13"/>
+<polygon fill="#69849f" stroke="#69849f" points="340.42,-198.8 344.68,-194.08 338.41,-195.11 340.42,-198.8"/>
+</g>
+<!-- outbox -->
+<g id="node9" class="node">
+<title>outbox</title>
+<path fill="#e9f3fd" stroke="#bdcadd" d="M240,-126C240,-126 56,-126 56,-126 50,-126 44,-120 44,-114 44,-114 44,-102 44,-102 44,-96 50,-90 56,-90 56,-90 240,-90 240,-90 246,-90 252,-96 252,-102 252,-102 252,-114 252,-114 252,-120 246,-126 240,-126"/>
+<text text-anchor="middle" x="148" y="-104.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">Lifecycle / Outbox / Erasure</text>
+</g>
+<!-- registry&#45;&gt;outbox -->
+<g id="edge3" class="edge">
+<title>registry&#45;&gt;outbox</title>
+<path fill="none" stroke="#69849f" d="M148,-157.66C148,-149.99 148,-140.85 148,-132.58"/>
+<polygon fill="#69849f" stroke="#69849f" points="150.1,-132.45 148,-126.45 145.9,-132.45 150.1,-132.45"/>
+</g>
+<!-- pg -->
+<g id="node10" class="node">
+<title>pg</title>
+<path fill="#f4f4f4" stroke="#bdcadd" d="M647.5,-126C647.5,-126 474.5,-126 474.5,-126 468.5,-126 462.5,-120 462.5,-114 462.5,-114 462.5,-102 462.5,-102 462.5,-96 468.5,-90 474.5,-90 474.5,-90 647.5,-90 647.5,-90 653.5,-90 659.5,-96 659.5,-102 659.5,-102 659.5,-114 659.5,-114 659.5,-120 653.5,-126 647.5,-126"/>
+<text text-anchor="middle" x="561" y="-104.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">PostgreSQL / Object Store</text>
+</g>
+<!-- registry&#45;&gt;pg -->
+<g id="edge11" class="edge">
+<title>registry&#45;&gt;pg</title>
+<path fill="none" stroke="#69849f" d="M257.78,-157.95C315.6,-148.91 387.86,-137.51 456.29,-126.44"/>
+<polygon fill="#69849f" stroke="#69849f" points="456.89,-128.47 462.48,-125.44 456.22,-124.32 456.89,-128.47"/>
+</g>
+<!-- proj -->
+<g id="node7" class="node">
+<title>proj</title>
+<path fill="#edfaef" stroke="#bdcadd" d="M201.5,-58C201.5,-58 46.5,-58 46.5,-58 40.5,-58 34.5,-52 34.5,-46 34.5,-46 34.5,-28 34.5,-28 34.5,-22 40.5,-16 46.5,-16 46.5,-16 201.5,-16 201.5,-16 207.5,-16 213.5,-22 213.5,-28 213.5,-28 213.5,-46 213.5,-46 213.5,-52 207.5,-58 201.5,-58"/>
+<text text-anchor="middle" x="124" y="-40.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">FTS / pgvector</text>
+<text text-anchor="middle" x="124" y="-26.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">Rebuildable Projections</text>
+</g>
+<!-- proj&#45;&gt;compiler -->
+<g id="edge6" class="edge">
+<title>proj&#45;&gt;compiler</title>
+<path fill="none" stroke="#69849f" d="M191.6,-58.01C215.79,-66.39 242.79,-77.18 266,-90 298.41,-107.89 331.48,-134.86 352.77,-153.61"/>
+<polygon fill="#69849f" stroke="#69849f" points="351.52,-155.3 357.4,-157.71 354.3,-152.16 351.52,-155.3"/>
+</g>
+<!-- adapter -->
+<g id="node8" class="node">
+<title>adapter</title>
+<path fill="#f1edfb" stroke="#bdcadd" d="M399,-58C399,-58 253,-58 253,-58 247,-58 241,-52 241,-46 241,-46 241,-28 241,-28 241,-22 247,-16 253,-16 253,-16 399,-16 399,-16 405,-16 411,-22 411,-28 411,-28 411,-46 411,-46 411,-52 405,-58 399,-58"/>
+<text text-anchor="middle" x="326" y="-40.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">Memory Engine SPI</text>
+<text text-anchor="middle" x="326" y="-26.6" font-family="DejaVu Sans" font-size="13.00" fill="#193657">Hindsight / Mem0 PoC</text>
+</g>
+<!-- adapter&#45;&gt;compiler -->
+<g id="edge7" class="edge">
+<title>adapter&#45;&gt;compiler</title>
+<path fill="none" stroke="#69849f" d="M333.45,-58.42C342.63,-83.56 358.17,-126.14 367.71,-152.29"/>
+<polygon fill="#69849f" stroke="#69849f" points="365.74,-153.01 369.77,-157.93 369.68,-151.57 365.74,-153.01"/>
+</g>
+<!-- outbox&#45;&gt;proj -->
+<g id="edge4" class="edge">
+<title>outbox&#45;&gt;proj</title>
+<path fill="none" stroke="#69849f" d="M142.07,-89.94C139.36,-82.16 136.09,-72.77 133.09,-64.13"/>
+<polygon fill="#69849f" stroke="#69849f" points="135.01,-63.27 131.06,-58.29 131.05,-64.65 135.01,-63.27"/>
+</g>
+<!-- outbox&#45;&gt;adapter -->
+<g id="edge5" class="edge">
+<title>outbox&#45;&gt;adapter</title>
+<path fill="none" stroke="#69849f" d="M192,-89.94C215.07,-81 243.6,-69.94 268.41,-60.33"/>
+<polygon fill="#69849f" stroke="#69849f" points="269.46,-62.17 274.29,-58.04 267.94,-58.25 269.46,-62.17"/>
+</g>
+</g>
+</svg>
+</div>
+<p>部署 P0：<code>cmi-api</code> 单进程或单服务（可水平扩）、<code>cmi-worker</code> 异步任务、PostgreSQL+pgvector/FTS、获准的对象存储、可选缓存；记忆引擎为<strong>独立进程/容器</strong>，有单独 service credential 和禁止对公网直露的管理 API。单机 Docker Compose 可开发，生产 Kubernetes/独立虚机均可，但<strong>逻辑模块不等于要求微服务拆分</strong>。</p>
+<h3>4.1 与 IDP MCP Infrastructure 的关系（重要）</h3>
+<p>CMI 对外可提供直接 REST/gRPC API 和 <strong>标准 MCP Server 能力</strong>；IDP MCP Infrastructure 是独立 MCP 连接与治理产品，可选择代理 CMI 的 MCP Server，但 <strong>CMI 的独立部署、鉴权、读写、健康检查不得依赖它</strong>。MCP Infrastructure 不接管 Memory Lifecycle/数据授权；CMI 不重造 Registry、通用 Gateway 和 MCP Client/Host。</p>
+<p><strong>协议边界</strong>：针对 IDP 已定 2026-07-28 最新正式 MCP 基线，CMI MCP Adapter 仅面向 <strong>Modern Stateless</strong> 核心：每个请求带版本与能力元信息；HTTP POST；无旧式 <code>initialize</code>、会话或 <code>Mcp-Session-Id</code> 适配，不引入 Legacy Adapter。与标准 Server/Client 的兼容测试在协议层执行，但 REST/gRPC 业务能力与 MCP 无耦合。</p>
+<p><strong>避免误用</strong>：不因为 Hindsight 内置 MCP endpoint 就直接允许其暴露生产租户数据。必须通过 CMI Policy Enforcement 或经形式化验证能等价执行授权的代理层，且不得信任仅由请求给出的 <code>bank_id</code>。</p>
+<h2 id="sec-06">5. Canonical vs Engine State：数据主权契约</h2>
+<h3>5.1 三种数据必须分开</h3>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>权威持有者</th>
+<th>举例</th>
+<th>引擎崩溃处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>原始权威业务事实</td>
+<td>Parcel/ERP/WMS/EER 各自业务域</td>
+<td>当前运单状态；ExecutionRecord/Evidence</td>
+<td>必须回源核验，不以记忆替代</td>
+</tr>
+<tr>
+<td>CMI 规范记忆与来源账本</td>
+<td>CMI Canonical Store</td>
+<td>SourceRecord、MemoryRecord/revision、授权、有效期、删除状态</td>
+<td>CMI 仍可查询元数据/FTS；重建派生能力</td>
+</tr>
+<tr>
+<td>引擎衍生状态</td>
+<td>独立 Engine Store（非权威）</td>
+<td>bank/向量索引/内部知识图/反思模型</td>
+<td>标记缺失并重建；安全回退/降级</td>
+</tr>
+</tbody>
+</table>
+<p>核心挑战不只是同步复制两个数据库。**引擎提取的候选必须投递回 CMI 经统一规则验证、去重并写入 Canonical Store。**引擎侧自主产生的新事实、推断和修订若不经过 CMI，不得直接进入公共检索输出。</p>
+<h3>5.2 写管线（write ownership）</h3>
+<ol>
+<li>外部提交 <code>SourceIngestRequest</code>；CMI 自行校验身份、purpose、来源权限，创建 SourceRecord；禁止传入可直接生效的状态/权威度。</li>
+<li>Registry 与 transactional outbox 同事务提交 <code>SourceAccepted</code>；异步引擎可抽取 candidate claims；外部处理器只拿到合规最小材料。</li>
+<li>CMI 将 candidates 标准化，校验每个 claim 的 <code>source_refs</code>、租户和有效时间；检查与现有 claim 冲突、重复及适用范围。</li>
+<li>Policy + 规则（需要时人工审批）决定候选可否转为 <code>active</code>；<strong>源授权变化可以随时阻断可见性</strong>。CAS 写新 revision 与 outbox。</li>
+<li>Outbox worker 幂等投影 FTS/vector/可选图谱；记录 <code>generation</code>, <code>projection_watermark</code>, 失败重试与 Dead Letter。</li>
+</ol>
+<p><strong>一致性</strong>：CMI Registry 是事务锚点；衍生系统采用可观测的最终一致。<code>engine_ack</code> 是投影处理回执，不是事实获批或业务执行成功。</p>
+<h3>5.3 读管线（read ownership）</h3>
+<p><code>authn + purpose</code> → <code>effective ACL prefilter</code> → <code>FTS/vector/engine candidates</code> → <code>registry resolve by IDs</code> → <code>valid_time/known_at/scope/classification/current policy recheck</code> → <code>dedup/rerank</code> → <code>cite sources</code> → <code>Context Compiler packing</code>。</p>
+<p>引擎返回纯文本但<strong>无法可靠映射到规范 memory_id/revision/source_refs</strong> 的情况：<strong>不得以“可信历史事实”身份进入 ContextBundle</strong>。可作为独立 <code>external_untrusted</code> 建议经过约束后候选使用，或直接拒绝该引擎的生产接口。这个限制须写进 PoC Gate。</p>
+<h3>5.4 删除、撤权和迁移</h3>
+<ul>
+<li><code>revoke</code> 必须以 CMI 主账本<strong>同步不可见</strong>开始，旧索引/引擎未删净不能继续外泄。</li>
+<li><code>erase</code> 清除原文、规范记录明文、向量、图、引擎 bank、缓存、可读 Bundle、派生摘要；向外引擎/供应商发出 <code>delete request</code> 并跟踪回执与法定例外。</li>
+<li>对引擎不支持删除某条 claim、只能删除整个 bank 的情况，必须证明 <strong>bank 粒度和租户/作用域的映射安全</strong>，或者以重建策略确保可验证的彻底移除；否则拒绝其生产资格。</li>
+<li>迁移时采用 canonical snapshot → 新引擎 projection → 双引擎影子召回（返回只以主链判定）→ 一致性/准确率验证 → 受控切换；禁止两个引擎竞争写同一记忆规范版本。</li>
+<li>保留“最小合法擦除 Tombstone”而不留存可重识别正文；加密备份/PITR 恢复必须经过撤权/擦除屏蔽重放，再重新对外提供服务。</li>
+</ul>
+<h2 id="sec-07">6. CMI Memory Engine SPI V1（方案级合同）</h2>
+<p>下表为内部插件能力，<strong>不是</strong>任何具体开源项目已满足的声明。</p>
+<table>
+<thead>
+<tr>
+<th>方法/事件</th>
+<th>必需</th>
+<th>功能</th>
+<th>失败语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>health()</code></td>
+<td>MUST</td>
+<td>引擎健康和版本/模型配置</td>
+<td>超时快速降级</td>
+</tr>
+<tr>
+<td><code>extract(source_ref,content_ref,profile)</code></td>
+<td>P0 MUST for extraction-enabled plugin</td>
+<td>返回结构化候选 + 来源锚点</td>
+<td>失效不会更改规范主账本</td>
+</tr>
+<tr>
+<td><code>index(records,generation,idempotency_key)</code></td>
+<td>MUST</td>
+<td>已批准数据的派生索引</td>
+<td>至少一次投递，幂等去重</td>
+</tr>
+<tr>
+<td><code>search(query,scope,filters,top_k)</code></td>
+<td>MUST</td>
+<td>返回可映射的候选规范 IDs</td>
+<td>不可映射拒绝投影级可信结果</td>
+</tr>
+<tr>
+<td><code>delete(ids_or_scope,operation_id)</code></td>
+<td>MUST</td>
+<td>派生记忆完整删除</td>
+<td>ACK 附 scope/count/版本；需后验扫描</td>
+</tr>
+<tr>
+<td><code>rebuild(snapshot_ref,generation)</code></td>
+<td>MUST</td>
+<td>独立从规范主账本重建</td>
+<td>可回滚的双 generation 管理</td>
+</tr>
+<tr>
+<td><code>capabilities()</code></td>
+<td>MUST</td>
+<td>versions/filter/deletion/costs/mcp 等声明</td>
+<td>能力不足则禁用对应 feature</td>
+</tr>
+<tr>
+<td><code>reflect(...)</code></td>
+<td>OPTIONAL</td>
+<td>产生经验/建议 candidate</td>
+<td>不得修改 active 或批准策略</td>
+</tr>
+<tr>
+<td><code>graph_query(...)</code></td>
+<td>OPTIONAL</td>
+<td>多跳与有效时间查询</td>
+<td>结果回 Registry 核验</td>
+</tr>
+</tbody>
+</table>
+<p><strong>强制限制</strong>：任何引擎 API 不得接收应用方自行构造的授权结论；所有外送 LLM/tokenizer/embedding 必须登记数据驻留和配置版本。进程级强隔离与网络出站限制可按敏感级别配置。</p>
+<p><strong>兼容评估关键项</strong>：删除粒度、跨租户数据边界、引擎内部自行 consolidation 是否可被 CMI 禁止/审计、是否支持精确回溯 SourceRef、embedding 维度/版本与全量重建、版本锁定、备份还原、是否允许同主库共享 pgvector（默认否，以免耦合 schema）。</p>
+<h2 id="sec-08">7. 开源技术尽调：证据与不确定性</h2>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>核验到的上游能力/许可</th>
+<th>IDP 首期角色</th>
+<th>尚未证明的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/vectorize-io/hindsight">Hindsight</a></td>
+<td>公开 MIT；Retain/Recall/Reflect；自托管；PostgreSQL/pgvector；内置 MCP endpoint</td>
+<td>优先 PoC candidate extraction/retrieval</td>
+<td>删除传播粒度、claims ID 回映射、隔离、内置自主反思造成的权威越界、开销</td>
+</tr>
+<tr>
+<td><a href="https://github.com/mem0ai/mem0">Mem0</a></td>
+<td>公开 Apache-2.0；memory add/search/update/delete</td>
+<td>同条件对照 PoC</td>
+<td>更新覆盖/时间事实、删除确认/副本、来源粒度、稳定性</td>
+</tr>
+<tr>
+<td><a href="https://github.com/getzep/graphiti">Graphiti</a></td>
+<td>公开 Apache-2.0；动态/时序图谱、关系查找</td>
+<td>特定多跳需求的 P1 实验插件</td>
+<td>Graph DB 运维成本、图/内存双写不一致、跨租户图泄漏</td>
+</tr>
+<tr>
+<td><a href="https://github.com/volcengine/OpenViking">OpenViking</a></td>
+<td>当前 README：主项目 AGPLv3，部分子目录 Apache-2.0</td>
+<td>研究 L0/L1/L2/context filesystem，不直接嵌入</td>
+<td>商业使用许可、派生作品和网络服务义务、版本/license 混用</td>
+</tr>
+<tr>
+<td><a href="https://github.com/pgvector/pgvector">pgvector</a></td>
+<td>Postgres 内向量检索，HNSW/IVFFlat；文档警示 ANN 过滤后置及多租户索引干扰</td>
+<td>直接采用</td>
+<td>指定数据规模与 ACL 下 recall/latency/partition 实测</td>
+</tr>
+<tr>
+<td><a href="https://blog.modelcontextprotocol.io/posts/2026-07-28/">MCP 2026-07-28</a></td>
+<td>Modern Stateless、无协议 session 与旧 initialize；版本元信息每请求</td>
+<td>MCP Adapter 协议目标</td>
+<td>SDK 的特定 release 能否完整覆盖需求的测试</td>
+</tr>
+</tbody>
+</table>
+<p><strong>许可证清单</strong>必须由发布团队生成 SBOM，包括 transitive deps、容器基础镜像、SDK、模型权重许可证以及 MinIO/Redis 实际选择版本；不能仅凭仓库根目录 LICENSE 推断整个分发包全是同一许可证。需要 LEGAL-01 完成商业合规会签才可进行对外收费部署。</p>
+<p><strong>性能声明边界</strong>：不引用厂商基准作为性能结论；厂商描述的生产实践不替代我方实际测量。不把“独立部署”误写成“完全无依赖”，需要数据库、密钥/鉴权及其他配套服务。</p>
+<h2 id="sec-09">8. 具体 PoC 方案：同数据集、同模型、同预算</h2>
+<h3>8.1 三组被测方案</h3>
+<ul>
+<li><strong>S0 Baseline</strong>：CMI Canonical Store + PostgreSQL FTS/pgvector + 最小规则检索，<strong>无专业记忆引擎</strong>。</li>
+<li><strong>S1</strong>：S0 + Hindsight Adapter（独立服务、锁定版本）。</li>
+<li><strong>S2</strong>：S0 + Mem0 Adapter（独立服务、锁定版本）。</li>
+</ul>
+<p>相同的输入、授权身份、实体版本、tokenizer、embedding / LLM 可比配置、硬件与成本统计口径。某引擎需要不同模型时分两组报告：<strong>产品默认配置结果</strong>与<strong>尽可能控制变量的配置结果</strong>。所有选型都必须通过 S0 确认内核可以退化运行。</p>
+<h3>8.2 评测数据建议</h3>
+<p>构建 <strong>240 个任务样本（初始建议值，不是已经拥有的数据）</strong>，包含正常记忆回忆、客户规则变更、冲突事实、跨多会话、时间点回溯、用户撤权/擦除、Prompt Injection、跨租户越权、Source 撤回、Parcel 地址/门牌/渠道异常、EER Evidence 来源引用和反思经验治理。每个样本由行业人员标注真值、必引来源、允许/禁止记忆、时序窗口、预期行为。分为公开合成与经审批脱敏真实数据；测评数据禁止用未经授权的客户生产数据。</p>
+<h3>8.3 必过安全/架构 Gate（任何一项失败不准入）</h3>
+<ul>
+<li><strong>GATE-A1 主权</strong>：关闭/卸载所有外部引擎，CMI 可独立完成 canonical 读写、RLS/ABAC、基本检索及上下文编译；HOST/EER 无 CMI 仍能独立运行。</li>
+<li><strong>GATE-A2 语义</strong>：引擎结果可确定性映射回当前有效 <code>memory_id/revision/source_refs</code>；不能只有不透明答案文本。</li>
+<li><strong>GATE-A3 授权</strong>：跨租户、跨主体、撤权后、过期源的非授权明文输出为 <strong>0 次（在覆盖的测试中）</strong>；不承诺测试之外绝对无漏洞。</li>
+<li><strong>GATE-A4 删除</strong>：完成规范/引擎/索引/缓存/快照删除流程且保存可核验完成证据；不支持删除的引擎不得被选为生产插件。</li>
+<li><strong>GATE-A5 迁移</strong>：canonical → 新引擎重建可重复；切换中无失效旧内容重新变可见。</li>
+<li><strong>GATE-A6 合规</strong>：许可证、数据驻留、供应商调用及 SBOM 会签，缺失不可对外商用。</li>
+</ul>
+<h3>8.4 可加权比较的质量/成本指标（仅在所有 Gate 通过后）</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>定义</th>
+<th style="text-align:right">建议权重</th>
+<th>报告说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Grounded recall@k</td>
+<td>gold 支持事实在可追溯结果中的覆盖</td>
+<td style="text-align:right">25%</td>
+<td>在同召回预算下报告</td>
+</tr>
+<tr>
+<td>Temporal correctness</td>
+<td>双时态与冲突事实的准确判断</td>
+<td style="text-align:right">20%</td>
+<td>与业务事件生效/登记时间分开</td>
+</tr>
+<tr>
+<td>Context answer quality</td>
+<td>基于固定 prompt 和 token 预算输出的正确性</td>
+<td style="text-align:right">20%</td>
+<td>人工复核 + 可复验自动度量</td>
+</tr>
+<tr>
+<td>P95 latency</td>
+<td>用户可感知检索/编译延迟</td>
+<td style="text-align:right">10%</td>
+<td>冷/热、租户规模和退化模式分列</td>
+</tr>
+<tr>
+<td>Cost per 1000 tasks</td>
+<td>LLM、embedding、数据库、存储、基础设施</td>
+<td style="text-align:right">10%</td>
+<td>不只计算 token</td>
+</tr>
+<tr>
+<td>Delete/rebuild operability</td>
+<td>删除/重建耗时、失败率、手工操作量</td>
+<td style="text-align:right">10%</td>
+<td>Gate 通过之外比较维护性</td>
+</tr>
+<tr>
+<td>Upgrade/license/operations</td>
+<td>上游版本变更、运维复杂度、合规开销</td>
+<td style="text-align:right">5%</td>
+<td>审计打分并附证据</td>
+</tr>
+</tbody>
+</table>
+<p>上表权重是待确认的<strong>选型政策建议</strong>，不是预先断言谁领先；性能上线阈值须依据真实工作负载基线与客户 SLA 制定，不虚构目前的 P95 毫秒值或收益百分比。<strong>综合分不能覆盖安全 Gate 的否决权。</strong></p>
+<h3>8.5 结论分支（避免预设答案）</h3>
+<ul>
+<li>若 S1 通过所有 Gate 且显著提升任务效果/总成本优于 S0，则选用 Hindsight 为 <strong>Version-pinned Engine Plugin</strong>。</li>
+<li>若 S2 优于 S1 且过关，则选用 Mem0。</li>
+<li>若两者有无法修复的删除/回溯/授权映射问题，则维持 S0，先自研有限的候选抽取/混合检索，暂不引入专业引擎。</li>
+<li>Graphiti 只有在某些跨实体时序查询对 S0/S1/S2 带来经验证的明显新增收益时，进入下一轮试点。</li>
+</ul>
+<h2 id="sec-10">9. 风险登记与控制</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>主要风险</th>
+<th>概率/影响（预评）</th>
+<th>对应控制</th>
+<th>Gate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>R-01</td>
+<td>引擎自行 consolidation 改写/泄露记忆</td>
+<td>中/高</td>
+<td>非权威隔离、候选回写批准、版本对账</td>
+<td>A2</td>
+</tr>
+<tr>
+<td>R-02</td>
+<td>HNSW 多租户过滤导致漏召回</td>
+<td>中/中高</td>
+<td>RLS + 分区/精确候选集 + recall 回归</td>
+<td>A3</td>
+</tr>
+<tr>
+<td>R-03</td>
+<td>授权变更与缓存/Bundle 复用竞争</td>
+<td>高/高</td>
+<td>读取及消费前复验策略版本、deny by default</td>
+<td>A3</td>
+</tr>
+<tr>
+<td>R-04</td>
+<td>源删除不传播到嵌入/图/快照</td>
+<td>高/高</td>
+<td>依赖边、撤权同步屏蔽、删除回执与扫描</td>
+<td>A4</td>
+</tr>
+<tr>
+<td>R-05</td>
+<td>上游升级变更 schema / 默认行为</td>
+<td>中/中</td>
+<td>Pin digest/commit、隔离适配、CI 兼容测试</td>
+<td>A5</td>
+</tr>
+<tr>
+<td>R-06</td>
+<td>AGPL/其他组件/模型权重合规误判</td>
+<td>中/高</td>
+<td>SBOM + 法务评审 + 许可清单</td>
+<td>A6</td>
+</tr>
+<tr>
+<td>R-07</td>
+<td>CMI 记忆被误认为 SoR 事实</td>
+<td>高/高</td>
+<td>authority_scope + source label；SoR 校验、禁止执行副作用</td>
+<td>A2</td>
+</tr>
+<tr>
+<td>R-08</td>
+<td>提示注入通过检索转为执行指令</td>
+<td>高/高</td>
+<td>内容数据隔离、信任标记、低信任不入系统消息</td>
+<td>A3</td>
+</tr>
+<tr>
+<td>R-09</td>
+<td>双引擎重复写导致不可重复生命周期</td>
+<td>中/高</td>
+<td>一个 CMI 主账本、引擎只为投影，不做主写者</td>
+<td>A1/A5</td>
+</tr>
+<tr>
+<td>R-10</td>
+<td>本地模型质量不足或 GPU 资源冲突</td>
+<td>中/中</td>
+<td>模型可配置、离线评测、配额和回退</td>
+<td>POC</td>
+</tr>
+<tr>
+<td>R-11</td>
+<td>MCP Infrastructure/CMI 双重治理相互冲突</td>
+<td>中/中</td>
+<td>Transport Auth 与数据授权边界分离</td>
+<td>A1/A3</td>
+</tr>
+</tbody>
+</table>
+<h2 id="sec-11">10. 责任界面：HOST / EER / MCP Infrastructure / CMI</h2>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>发起方</th>
+<th>权威责任</th>
+<th>CMI 执行</th>
+<th>CMI 明确不执行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HOST Chat / AgentRun</td>
+<td>HOST</td>
+<td>会话及 AgentRun 状态</td>
+<td>构建可追溯 ContextBundle</td>
+<td>代管 AgentRun 或工具执行</td>
+</tr>
+<tr>
+<td>EER 业务事件与证据</td>
+<td>EER</td>
+<td>Execution State、Evidence、Verifier</td>
+<td>引用、索引、经审批提炼经验</td>
+<td>重写 EER Evidence；判断业务最终成功</td>
+</tr>
+<tr>
+<td>Parcel 订单/运单实时信息</td>
+<td>Parcel</td>
+<td>当前事实/字段有效性</td>
+<td>历史案例检索；创建来源引用</td>
+<td>修改业务对象或替代实时验证</td>
+</tr>
+<tr>
+<td>MCP 协议入口</td>
+<td>CMI MCP Server 或 MCP Infrastructure</td>
+<td>各自接口/网关及传输层</td>
+<td>核验自身请求身份/内容授权</td>
+<td>把 MCP 网关当作 CMI 内部数据库授权者</td>
+</tr>
+<tr>
+<td>Client 无法连接 CMI</td>
+<td>HOST/EER 自行负责退化</td>
+<td>其核心业务闭环</td>
+<td>CMI 无法保证可用</td>
+<td>强制拦截/替换其执行路线</td>
+</tr>
+</tbody>
+</table>
+<h2 id="sec-12">11. 执行工单与依赖顺序（Technical Design 输入）</h2>
+<table>
+<thead>
+<tr>
+<th>里程碑</th>
+<th>实施任务</th>
+<th>工件</th>
+<th>验收依赖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T0 评审冻结</td>
+<td>ADR 会签、许可候选白名单、数据处理目的矩阵</td>
+<td>ADR Accepted + decision log</td>
+<td>组织批准</td>
+</tr>
+<tr>
+<td>T1 无引擎内核</td>
+<td>PostgreSQL DDL、RLS、Source/Memory/Bundle API、事务 outbox</td>
+<td>Migration + API Integration Tests</td>
+<td>G0–G4</td>
+</tr>
+<tr>
+<td>T2 基础检索</td>
+<td>FTS/pgvector、受控编译、Bundle 复验、撤权 &amp; erasure</td>
+<td>Retrieval/Privacy Suite</td>
+<td>G5–G6</td>
+</tr>
+<tr>
+<td>T3 Adapter + PoC</td>
+<td>Hindsight/ Mem0 沙箱集成、240 样本、成本与召回数据</td>
+<td>Runbook + Result Table</td>
+<td>GATE-A1…A6</td>
+</tr>
+<tr>
+<td>T4 Parcel 验证</td>
+<td>HOST/EER/Parcel 授权只读与执行结果回传</td>
+<td>真实案例回放、业务归因</td>
+<td>G7</td>
+</tr>
+<tr>
+<td>T5 生产门槛</td>
+<td>威胁建模、密钥/审计、备份恢复、负载/DR、许可证</td>
+<td>Go-Live Signoff</td>
+<td>生产准入</td>
+</tr>
+</tbody>
+</table>
+<p><strong>第一批开发不得做</strong>：Graphiti 生产化、长期自主策略自学习、通用跨企业分享、自动“记忆→EER 指令”、对 MCP 旧协议兼容层、独立打造 Vector DB、再写一个企业 Agent Runtime。</p>
+<h2 id="sec-13">12. 直接写入下一版 Technical Design 的接口清单</h2>
+<ul>
+<li><code>storage/canonical</code>：SourceRecord、MemoryRecord revision、ContextBundle、policy_ref、source→memory→bundle 依赖表、tombstone/erasure_request、outbox_event、projection_checkpoint、engine_mapping。</li>
+<li><code>domain/lifecycle</code>：<code>propose</code>, <code>transition(expected_revision)</code>, <code>invalidate(source_ref)</code>, <code>erase(op_id)</code>，事务/重入/并发/重放状态机。</li>
+<li><code>security</code>：<code>authorize(principal,purpose,action,resource)</code>，read prefilter 与 post-check，RLS，token <code>iss/aud/scope</code>，Bundle read-time validation。</li>
+<li><code>retrieval</code>：<code>search(query,valid_time,known_at,scope)</code>，FTS+vector merge，candidate→canonical resolve，freshness &amp; trust filter，ranker。</li>
+<li><code>context</code>：<code>compile(task,model_profile,budget)</code>，包预算、固定字段、来源引用、manifest 与 hash、不可把检索文本提升为 system 指令。</li>
+<li><code>engines</code>：<code>EngineAdapterV1</code>、capability matrix、HindsightAdapter、Mem0Adapter（仅 PoC）、rebuild/delete/ACK/telemetry。</li>
+<li><code>adapters</code>：HOST Context Consumer、EER Evidence/Event Consumer、CMI Modern MCP Server Adapter（均独立可选）。</li>
+<li><code>test</code>：schema、跨租户、时序、撤权、erase、migration、no-engine fallback、MCP 互操作、Parcel 回归。</li>
+</ul>
+<h2 id="sec-14">13. 拟议验收及决策批准记录</h2>
+<table>
+<thead>
+<tr>
+<th>决策项目</th>
+<th>申请批准的结论</th>
+<th>当前状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>001 核心路线</td>
+<td>自主核心 + 开源基础 + 可插拔引擎</td>
+<td>Proposed</td>
+</tr>
+<tr>
+<td>002 数据主权</td>
+<td>CMI Canonical Store 是记忆有效性/授权主账本</td>
+<td>Proposed</td>
+</tr>
+<tr>
+<td>003 选型</td>
+<td>Hindsight 首轮 PoC、Mem0 同条件对照；不提前选主引擎</td>
+<td>Proposed</td>
+</tr>
+<tr>
+<td>004 Graphiti</td>
+<td>证明复杂图谱收益后再引入</td>
+<td>Proposed</td>
+</tr>
+<tr>
+<td>005 OpenViking</td>
+<td>参考研究为主；具体采用需独立许可评审</td>
+<td>Proposed</td>
+</tr>
+<tr>
+<td>006 MCP</td>
+<td>独立 CMI Server Adapter，仅 2026-07-28 Modern Stateless；可选与 MCP Infra 集成</td>
+<td>Proposed</td>
+</tr>
+<tr>
+<td>007 安全</td>
+<td>ABAC + 来源依赖、撤权同步屏蔽、擦除异步核实</td>
+<td>Proposed</td>
+</tr>
+<tr>
+<td>008 部署</td>
+<td>P0 模块化单体 + worker，后续按 SLO 拆分</td>
+<td>Proposed</td>
+</tr>
+</tbody>
+</table>
+<p><strong>批准所需签名字段</strong>：Architecture Owner ______；Security/Data Owner ______；Engineering Owner ______；Product Owner <strong><strong><strong>；Legal Reviewer（许可项）</strong></strong></strong>；批准日期 ______。被批准前文件状态仍为 Proposed，不代表已经完成上述签名。</p>
+<h2 id="sec-15">14. 一手资料索引与核验说明（截至 2026-10-15）</h2>
+<ol>
+<li><a href="https://github.com/vectorize-io/hindsight">Hindsight GitHub / MIT / Retain-Recall-Reflect / Deployment</a>；此处描述官方功能，未独立验证对 CMI 自有契约的适配能力。</li>
+<li><a href="https://github.com/mem0ai/mem0">Mem0 GitHub / Apache-2.0</a>；OSS 与商业服务功能边界以当前发布包为准。</li>
+<li><a href="https://github.com/getzep/graphiti">Graphiti GitHub / Apache-2.0</a>；不是旧版 Zep CE。</li>
+<li><a href="https://github.com/volcengine/OpenViking">OpenViking GitHub / 各组件分许可证</a>；当前主项目 AGPLv3，局部模块 Apache-2.0。</li>
+<li><a href="https://github.com/pgvector/pgvector#filtering">pgvector 官方 README / ANN Filter &amp; Multitenancy</a>，多租户向量共享索引会影响 recall。</li>
+<li><a href="https://blog.modelcontextprotocol.io/posts/2026-07-28/">Model Context Protocol 正式 2026-07-28 版本说明</a>；<a href="https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/changelog.mdx">变更日志</a>。</li>
+<li><a href="https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/index.mdx">MCP 2026-07-28 Overview</a>；<a href="https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/docs/2026-07-28/tutorials/security/authorization.mdx">HTTP Authorization Tutorial</a>。</li>
+</ol>
+<p><strong>证据强度分级</strong>：上述仓库/规范可支持“公开文档列出某能力与许可”；不能替代指定版本依赖树的法律确认、真实负载性能测试、商用 SLA 或 CMI 的功能完整性验收。</p>
+<hr />
+<p><strong>ADR 状态变更记录</strong></p>
+<ul>
+<li>V1.0 / 2026-10-15 — Proposed；完成模块级 Build/Adopt 边界、接口安全门槛与 PoC 方案；待会签与真实实现。</li>
+</ul>
+</div></main></div><script>
+const q=document.getElementById('q');q.addEventListener('input',()=>{const needle=q.value.trim().toLowerCase();document.querySelectorAll('.paper h2').forEach(h=>{if(!needle){h.style.background='';return}const sectionText=[];let s=h.nextElementSibling;while(s&&s.tagName!=='H2'){sectionText.push(s.textContent);s=s.nextElementSibling}h.style.background=(h.textContent+' '+sectionText.join(' ')).toLowerCase().includes(needle)?'#fff1bb':''})});
+document.getElementById('reset').addEventListener('click',()=>{q.value='';q.dispatchEvent(new Event('input'))});document.getElementById('print').addEventListener('click',()=>window.print());
+</script></body></html>

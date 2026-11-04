@@ -810,6 +810,77 @@ func TestCMIEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("candidates-and-disputes", func(t *testing.T) {
+		// D21: a candidate is written but never packed until an administrator admits it
+		now := e.now
+		cand := memory("assistant", "run:8001", "subject", "carol", "Carol may prefer a locker instead of the depot (unconfirmed).", "internal", now)
+		cand["status"] = "candidate"
+		c := e.must(201, "POST", "/v1/memory/records", "bob", cand)
+		if c["status"] != "candidate" {
+			t.Fatalf("%v", c)
+		}
+		if strings.Contains(fmt.Sprint(items(e.must(200, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "locker depot unconfirmed"}))), "unconfirmed") {
+			t.Fatal("candidate packed")
+		}
+		e.must(403, "GET", "/v1/memory/records?status=candidate", "carol", nil)
+		if q := e.must(200, "GET", "/v1/memory/records?status=candidate", "alice", nil)["records"].([]any); len(q) != 1 {
+			t.Fatalf("review queue: %v", q)
+		}
+		id := c["recordId"].(string)
+		e.must(403, "POST", "/v1/memory/records/"+id+"/transitions", "bob", map[string]any{"to": "active", "reason": "x"})
+		e.must(422, "POST", "/v1/memory/records/"+id+"/transitions", "alice", map[string]any{"to": "active"})
+		e.must(409, "POST", "/v1/memory/records/"+id+"/transitions", "alice", map[string]any{"to": "disputed", "reason": "not from candidate"})
+		e.must(409, "POST", "/v1/memory/records/"+id+"/transitions", "alice", map[string]any{"to": "active", "reason": "stale"}, "If-Match", "9")
+		adm := e.must(200, "POST", "/v1/memory/records/"+id+"/transitions", "alice", map[string]any{"to": "active", "reason": "confirmed with the customer", "approvalRef": "ticket:4411"}, "If-Match", "1")
+		if adm["status"] != "active" || adm["version"] != 2.0 {
+			t.Fatalf("%v", adm)
+		}
+		if !strings.Contains(fmt.Sprint(items(e.must(200, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "locker depot unconfirmed"}))), "unconfirmed") {
+			t.Fatal("admitted record not packed")
+		}
+		// an authoritative record that contradicts it disputes it; an informational one may not
+		contra := memory("assistant", "run:8002", "subject", "carol", "Carol confirmed she wants the depot, not a locker.", "internal", now)
+		contra["structured"] = map[string]any{"contradicts": []string{id}}
+		e.must(422, "POST", "/v1/memory/records", "bob", contra)
+		contra["provenance"].(map[string]any)["source"] = "orders"
+		auth := e.must(201, "POST", "/v1/memory/records", "bob", contra)
+		got := e.must(200, "GET", "/v1/memory/records/"+id, "alice", nil)
+		if got["status"] != "disputed" || got["disputedBy"] != auth["recordId"] || got["version"] != 3.0 {
+			t.Fatalf("%v", got)
+		}
+		its := items(e.must(200, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "locker depot"}))
+		if j := fmt.Sprint(its); strings.Contains(j, "unconfirmed") || !strings.Contains(j, "confirmed she wants the depot") {
+			t.Fatalf("%v", its)
+		}
+		if q := e.must(200, "GET", "/v1/memory/records?status=disputed", "alice", nil)["records"].([]any); len(q) != 1 {
+			t.Fatalf("%v", q)
+		}
+		res := e.must(200, "POST", "/v1/memory/records/"+id+"/transitions", "alice", map[string]any{"to": "revoked", "reason": "the authoritative record stands"})
+		if res["status"] != "revoked" || res["version"] != 4.0 {
+			t.Fatalf("%v", res)
+		}
+		// distilled statements can be made to wait for admission
+		e.must(200, "PUT", "/api/v1/policy", "alice", map[string]any{"readerCeiling": "internal", "writerCeiling": "confidential", "defaultMemoryTtlDays": 0, "packageTtlSeconds": 3600, "consolidatedAsCandidate": true})
+		for i, text := range []string{"Dan asked about customs twice.", "Dan asked for the HS code list.", "Dan complained about a customs delay.", "Dan asked whether duties are prepaid.", "Dan asked for a customs broker contact."} {
+			m := memory("assistant", fmt.Sprintf("run:%d", 8100+i), "thread", "thr-c2", text, "internal", now.Add(time.Duration(i)*time.Minute))
+			m["kind"] = "episodic"
+			e.must(201, "POST", "/v1/memory/records", "bob", m)
+		}
+		if sum := e.must(200, "POST", "/api/v1/memory/consolidate", "alice", map[string]any{"scope": map[string]any{"kind": "thread", "id": "thr-c2"}}); sum["created"] != 1.0 {
+			t.Fatalf("%v", sum)
+		}
+		var candidates int
+		for _, r := range e.must(200, "GET", "/v1/memory/records?status=candidate", "alice", nil)["records"].([]any) {
+			if strings.HasPrefix(r.(map[string]any)["content"].(string), "Consolidated from 5 notes: Dan") {
+				candidates++
+			}
+		}
+		if candidates != 1 {
+			t.Fatalf("distilled statement not a candidate: %d", candidates)
+		}
+		e.must(200, "PUT", "/api/v1/policy", "alice", map[string]any{"readerCeiling": "internal", "writerCeiling": "confidential", "defaultMemoryTtlDays": 0, "packageTtlSeconds": 3600, "consolidatedAsCandidate": false})
+	})
+
 	t.Run("audit-and-policy", func(t *testing.T) {
 		if n := len(e.must(200, "GET", "/api/v1/audit", "alice", nil)["events"].([]any)); n < 6 {
 			t.Fatalf("audit events %d", n)

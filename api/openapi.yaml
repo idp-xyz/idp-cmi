@@ -100,17 +100,23 @@ paths:
     get: {summary: One evaluation with its evidence, responses: {'200': {description: evaluation}, '404': {$ref: '#/components/responses/Problem'}}}
   /v1/memory/records:
     post:
-      summary: Append a memory record (ADR-0001 D3); provenance and a registered source are required, the writer's ceiling bounds the sensitivity. Idempotency-Key (D19) makes retries safe
+      summary: 'Append a memory record (ADR-0001 D3); provenance and a registered source are required, the writer''s ceiling bounds the sensitivity. status may be candidate (D21). structured.contradicts (record ids, authoritative sources only) disputes those records. Idempotency-Key (D19) makes retries safe
       parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}
       responses: {'201': {description: recorded, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}, '403': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
     get:
-      summary: List the usable records of a scope the caller may see (default scope = the caller's subject); flagged=true (administrators) lists the quarantine (ADR-0001 D12), across scopes unless one is given
-      parameters: [{name: scopeKind, in: query, schema: {type: string, enum: [tenant, subject, thread, agent]}}, {name: scopeId, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer}}, {name: flagged, in: query, schema: {type: boolean}}]
+      summary: List the usable records of a scope the caller may see (default scope = the caller's subject); flagged=true (administrators) lists the quarantine (ADR-0001 D12), status=candidate|disputed (administrators) the review queue (D21), across scopes unless one is given
+      parameters: [{name: scopeKind, in: query, schema: {type: string, enum: [tenant, subject, thread, agent]}}, {name: scopeId, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer}}, {name: flagged, in: query, schema: {type: boolean}}, {name: status, in: query, schema: {type: string, enum: [candidate, disputed]}}]
       responses: {'200': {description: records}}
   /v1/memory/records/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
     get: {summary: Get a record the caller may see (any status), responses: {'200': {description: record}, '404': {$ref: '#/components/responses/Problem'}}}
+  /v1/memory/records/{id}/transitions:
+    parameters: [{$ref: '#/components/parameters/id'}, {$ref: '#/components/parameters/ifMatch'}]
+    post:
+      summary: 'Move a record between statuses by decision (ADR-0001 D21): candidate -> active | revoked, active -> disputed | revoked, disputed -> active | revoked; administrators; reason required, approvalRef optional; recorded in the audit'
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [to, reason], properties: {to: {type: string, enum: [active, disputed, revoked]}, reason: {type: string}, approvalRef: {type: string}}}}}}
+      responses: {'200': {description: the record after the transition}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
   /v1/memory/revoke:
     post:
       summary: Revoke records by id or by provenance reference (ADR-0001 D6); a writer revokes what it recorded, an administrator anything. If-Match (D19) names the expected version of the single record
@@ -163,7 +169,8 @@ components:
         tags: {type: array, items: {type: string}}
         provenance: {type: object, required: [source, ref, observedAt], properties: {source: {type: string}, ref: {type: string}, observedAt: {type: string, format: date-time}, recordedBy: {type: string}}}
         validity: {type: object, properties: {validFrom: {type: string, format: date-time}, validUntil: {type: string, format: date-time}}}
-        status: {type: string, enum: [active, expired, revoked]}
+        status: {type: string, enum: [candidate, active, disputed, expired, revoked]}
+        disputedBy: {type: string, readOnly: true, description: the record that contradicts this one (ADR-0001 D21)}
         revocation: {type: object, properties: {at: {type: string, format: date-time}, by: {type: string}, reason: {type: string}}}
         sensitivity: {type: string, enum: [public, internal, confidential, restricted]}
         acl: {type: object, properties: {subjects: {type: array, items: {type: string}}, roles: {type: array, items: {type: string}}}}
@@ -195,7 +202,7 @@ components:
         createdAt: {type: string, format: date-time}
     Policy:
       type: object
-      properties: {readerCeiling: {type: string}, writerCeiling: {type: string}, defaultMemoryTtlDays: {type: integer}, packageTtlSeconds: {type: integer}, includeFlagged: {type: boolean, description: 'let flagged content into packages, items then carry flags (ADR-0001 D12); default false'}, consolidateMinRecords: {type: integer, description: 'episodic records a group needs before it is distilled (D15, default 5)'}, consolidatedTtlDays: {type: integer, description: 'validity of distilled statements (D15, default 90)'}, updatedBy: {type: string}, updatedAt: {type: string, format: date-time}, default: {type: boolean}}
+      properties: {readerCeiling: {type: string}, writerCeiling: {type: string}, defaultMemoryTtlDays: {type: integer}, packageTtlSeconds: {type: integer}, includeFlagged: {type: boolean, description: 'let flagged content into packages, items then carry flags (ADR-0001 D12); default false'}, consolidateMinRecords: {type: integer, description: 'episodic records a group needs before it is distilled (D15, default 5)'}, consolidatedTtlDays: {type: integer, description: 'validity of distilled statements (D15, default 90)'}, consolidatedAsCandidate: {type: boolean, description: 'distilled statements are written as candidates for an administrator to admit (D21)'}, updatedBy: {type: string}, updatedAt: {type: string, format: date-time}, default: {type: boolean}}
     ResolveRequest:
       type: object
       required: [query]

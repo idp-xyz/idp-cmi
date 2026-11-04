@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"idp-cmi/internal/guard"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,7 +16,7 @@ import (
 
 const memoryCols = `m.id::text, s.name, m.scope_kind, m.scope_id, m.kind, CASE WHEN m.erasure_id IS NULL THEN m.content ELSE '[erased]' END, CASE WHEN m.erasure_id IS NULL THEN m.structured ELSE NULL END, m.tags, CASE WHEN m.erasure_id IS NULL THEN m.prov_ref ELSE '[erased]' END, m.prov_observed_at, m.prov_recorded_by,
 	m.valid_from, m.valid_until, m.status, m.revoked_at, coalesce(m.revoked_by, ''), coalesce(m.revoked_reason, ''), m.sensitivity, m.acl_subjects, m.acl_roles, m.created_at,
-	m.flags, m.version, ` + "(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'memory' AND e.object_id = m.id)"
+	m.flags, m.version, coalesce(m.disputed_by::text, ''), ` + "(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'memory' AND e.object_id = m.id)"
 
 func scanMemory(row pgx.Row) (*cmi.MemoryRecord, error) {
 	var m cmi.MemoryRecord
@@ -22,7 +24,7 @@ func scanMemory(row pgx.Row) (*cmi.MemoryRecord, error) {
 	var validUntil, revokedAt *time.Time
 	var revokedBy, revokedReason, entities string
 	if err := row.Scan(&m.ID, &m.Provenance.Source, &m.Scope.Kind, &m.Scope.ID, &m.Kind, &m.Content, &structured, &m.Tags, &m.Provenance.Ref, &m.Provenance.ObservedAt, &m.Provenance.RecordedBy,
-		&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &m.Version, &entities); err != nil {
+		&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &m.Version, &m.DisputedBy, &entities); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fail("NOT_FOUND", "memory record not found")
 		}
@@ -85,6 +87,13 @@ func (s *Store) insertMemory(ctx context.Context, tx pgx.Tx, tenant string, in c
 	if err := in.Validate(); err != nil {
 		return nil, fail("INVALID", "%s", err)
 	}
+	if in.Status != cmi.StatusActive && in.Status != cmi.StatusCandidate {
+		return nil, fail("INVALID", "a record is written as active or candidate; %s is reached by transition", in.Status)
+	}
+	contradicts, err := contradictions(in.Structured)
+	if err != nil {
+		return nil, fail("INVALID", "%s", err)
+	}
 	if !cmi.Within(in.Sensitivity, ceiling) {
 		return nil, fail("FORBIDDEN", "the writer may not record %s content (ceiling %s)", in.Sensitivity, ceiling)
 	}
@@ -115,13 +124,29 @@ func (s *Store) insertMemory(ctx context.Context, tx pgx.Tx, tenant string, in c
 	if flags == nil {
 		flags = []string{}
 	}
+	if len(contradicts) > 0 && src.Trust != cmi.TrustAuthoritative {
+		return nil, fail("INVALID", "only a record from an authoritative source may contradict others (D21)")
+	}
 	id := NewUUID()
 	if _, err := tx.Exec(ctx, `INSERT INTO memory_records (id, tenant_id, source_id, scope_kind, scope_id, kind, content, structured, tags, prov_ref, prov_observed_at, prov_recorded_by,
-		valid_from, valid_until, sensitivity, acl_subjects, acl_roles, search, created_by, flags, embedding, embedding_model)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, to_tsvector('simple', $7) || to_tsvector('simple', $18), $19, $20, $21, $22)`,
+		valid_from, valid_until, sensitivity, acl_subjects, acl_roles, search, created_by, flags, embedding, embedding_model, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, to_tsvector('simple', $7) || to_tsvector('simple', $18), $19, $20, $21, $22, $23)`,
 		id, tenant, src.ID, in.Scope.Kind, in.Scope.ID, in.Kind, in.Content, structured, in.Tags, in.Provenance.Ref, in.Provenance.ObservedAt, in.Provenance.RecordedBy,
-		in.Validity.ValidFrom, validUntil, in.Sensitivity, in.ACL.Subjects, in.ACL.Roles, cmi.Bigrams(in.Content), by, flags, vec, vecModel); err != nil {
+		in.Validity.ValidFrom, validUntil, in.Sensitivity, in.ACL.Subjects, in.ACL.Roles, cmi.Bigrams(in.Content), by, flags, vec, vecModel, in.Status); err != nil {
 		return nil, err
+	}
+	if len(contradicts) > 0 && in.Status == cmi.StatusActive {
+		// D21: active records in the same scope that the new authoritative record names are disputed
+		tag, err := tx.Exec(ctx, `UPDATE memory_records SET status = 'disputed', disputed_by = $1, version = version + 1
+			WHERE id = ANY($2::uuid[]) AND status = 'active' AND scope_kind = $3 AND scope_id = $4`, id, contradicts, in.Scope.Kind, in.Scope.ID)
+		if err != nil {
+			return nil, err
+		}
+		if tag.RowsAffected() > 0 {
+			if err := Audit(ctx, tx, tenant, by, "memory.dispute", id, map[string]any{"disputed": contradicts, "rows": tag.RowsAffected()}); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := insertEntities(ctx, tx, tenant, "memory", id, in.Entities); err != nil {
 		return nil, err
@@ -149,14 +174,29 @@ func (s *Store) GetMemory(ctx context.Context, tenant, id string, v Visibility) 
 // ListMemory lists the visible, usable records of a scope (newest first). With flagged, only
 // records the write-time scan flagged are listed (D12), across scopes when scope.Kind is empty.
 func (s *Store) ListMemory(ctx context.Context, tenant string, scope cmi.Scope, v Visibility, limit int, flagged bool) ([]cmi.MemoryRecord, error) {
+	return s.listMemory(ctx, tenant, scope, v, limit, flagged, "")
+}
+
+// ReviewMemory lists records in a review status (candidate | disputed) for administrators (D21),
+// across scopes unless one is given; ACL and ceiling still apply.
+func (s *Store) ReviewMemory(ctx context.Context, tenant string, scope cmi.Scope, v Visibility, limit int, status string) ([]cmi.MemoryRecord, error) {
+	if status != cmi.StatusCandidate && status != cmi.StatusDisputed {
+		return nil, fail("INVALID", "status must be candidate or disputed")
+	}
+	return s.listMemory(ctx, tenant, scope, v, limit, false, status)
+}
+
+func (s *Store) listMemory(ctx context.Context, tenant string, scope cmi.Scope, v Visibility, limit int, flagged bool, status string) ([]cmi.MemoryRecord, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	// the usable predicate, or the review status instead of 'active' ($8 is always bound)
+	pred := strings.Replace(visibleSQL, "x.status = 'active'", "x.status = CASE WHEN $8 = '' THEN 'active' ELSE $8 END", 1)
 	out := []cmi.MemoryRecord{}
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT `+memoryCols+` FROM memory_records m JOIN sources s ON s.id = m.source_id, LATERAL (SELECT m.status, m.valid_until, m.sensitivity, m.acl_subjects, m.acl_roles) x
-			WHERE ($4 = '' OR (m.scope_kind = $4 AND m.scope_id = $5)) AND (NOT $7 OR cardinality(m.flags) > 0)`+visibleSQL+` ORDER BY m.created_at DESC LIMIT $6`,
-			v.Subject, v.Roles, rank(v.Ceiling), scope.Kind, scope.ID, limit, flagged)
+			WHERE ($4 = '' OR (m.scope_kind = $4 AND m.scope_id = $5)) AND (NOT $7 OR cardinality(m.flags) > 0)`+pred+` ORDER BY m.created_at DESC LIMIT $6`,
+			v.Subject, v.Roles, rank(v.Ceiling), scope.Kind, scope.ID, limit, flagged, status)
 		if err != nil {
 			return err
 		}
@@ -257,7 +297,7 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 			var r float64
 			m := &h.Record
 			if err := rows.Scan(&m.ID, &m.Provenance.Source, &m.Scope.Kind, &m.Scope.ID, &m.Kind, &m.Content, &structured, &m.Tags, &m.Provenance.Ref, &m.Provenance.ObservedAt, &m.Provenance.RecordedBy,
-				&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &m.Version, &entities, &r, &h.Trust); err != nil {
+				&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &m.Version, &m.DisputedBy, &entities, &r, &h.Trust); err != nil {
 				return err
 			}
 			if validUntil != nil {
@@ -314,4 +354,92 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 		}
 	}
 	return out, nil
+}
+
+// contradictions reads structured.contradicts: the ids of records the new one supersedes in fact.
+func contradictions(structured json.RawMessage) ([]string, error) {
+	if len(structured) == 0 {
+		return nil, nil
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(structured, &m) != nil {
+		return nil, nil
+	}
+	raw, ok := m["contradicts"]
+	if !ok {
+		return nil, nil
+	}
+	var ids []string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return nil, errors.New("structured.contradicts must be a list of record ids")
+	}
+	if len(ids) > 32 {
+		return nil, errors.New("structured.contradicts lists more than 32 records")
+	}
+	for _, id := range ids {
+		if !IsUUID(id) {
+			return nil, fmt.Errorf("structured.contradicts: %q is not a record id", id)
+		}
+	}
+	return ids, nil
+}
+
+// Transitions a record may take by an explicit decision (D21); expiry and revocation by reference
+// are elsewhere. The map is from -> allowed to.
+var Transitions = map[string][]string{
+	cmi.StatusCandidate: {cmi.StatusActive, cmi.StatusRevoked},
+	cmi.StatusActive:    {cmi.StatusDisputed, cmi.StatusRevoked},
+	cmi.StatusDisputed:  {cmi.StatusActive, cmi.StatusRevoked},
+}
+
+// Transition moves a record to another status with a reason (and an optional approval reference),
+// guarded by the expected version when given; it records the decision in the audit.
+func (s *Store) Transition(ctx context.Context, tenant, id, to, reason, approvalRef, by string, ifMatch int) (*cmi.MemoryRecord, error) {
+	if strings.TrimSpace(reason) == "" || len(reason) > 500 {
+		return nil, fail("INVALID", "reason is required (at most 500 characters)")
+	}
+	if len(approvalRef) > 256 {
+		return nil, fail("INVALID", "approvalRef is too long")
+	}
+	var out *cmi.MemoryRecord
+	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+		var from string
+		var version int
+		if err := tx.QueryRow(ctx, `SELECT status, version FROM memory_records WHERE id = $1 AND erasure_id IS NULL FOR UPDATE`, id).Scan(&from, &version); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fail("NOT_FOUND", "memory record not found")
+			}
+			return err
+		}
+		if ifMatch != 0 && ifMatch != version {
+			return fail("CONFLICT", "record %s is at version %d, not %d", id, version, ifMatch)
+		}
+		allowed := false
+		for _, t := range Transitions[from] {
+			allowed = allowed || t == to
+		}
+		if !allowed {
+			return fail("CONFLICT", "a %s record cannot become %s", from, to)
+		}
+		q := `UPDATE memory_records SET status = $2, version = version + 1`
+		args := []any{id, to}
+		switch to {
+		case cmi.StatusRevoked:
+			q += `, revoked_at = now(), revoked_by = $3, revoked_reason = $4`
+			args = append(args, by, reason)
+		case cmi.StatusActive:
+			q += `, disputed_by = NULL`
+		}
+		q += ` WHERE id = $1`
+		if _, err := tx.Exec(ctx, q, args...); err != nil {
+			return err
+		}
+		if err := Audit(ctx, tx, tenant, by, "memory.transition", id, map[string]any{"from": from, "to": to, "reason": reason, "approvalRef": approvalRef, "version": version + 1}); err != nil {
+			return err
+		}
+		var err error
+		out, err = scanMemory(tx.QueryRow(ctx, `SELECT `+memoryCols+` FROM memory_records m JOIN sources s ON s.id = m.source_id WHERE m.id = $1`, id))
+		return err
+	})
+	return out, err
 }

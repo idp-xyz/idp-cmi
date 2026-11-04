@@ -98,16 +98,17 @@ func (s *Store) ListSources(ctx context.Context, tenant string) ([]cmi.Source, e
 
 // Policy is a tenant's CMI policy (D7): sensitivity ceilings per role, default memory TTL, package TTL.
 type Policy struct {
-	ReaderCeiling         string    `json:"readerCeiling"`
-	WriterCeiling         string    `json:"writerCeiling"`
-	DefaultMemoryTTLDays  int       `json:"defaultMemoryTtlDays"`
-	PackageTTLSeconds     int       `json:"packageTtlSeconds"`
-	IncludeFlagged        bool      `json:"includeFlagged"`        // D12: let flagged content into packages (items then carry flags); default false = quarantine
-	ConsolidateMinRecords int       `json:"consolidateMinRecords"` // D15: episodic records a group needs before it is distilled (default 5)
-	ConsolidatedTTLDays   int       `json:"consolidatedTtlDays"`   // D15: validity of distilled statements (default 90)
-	UpdatedBy             string    `json:"updatedBy,omitempty"`
-	UpdatedAt             time.Time `json:"updatedAt,omitzero"`
-	Default               bool      `json:"default"`
+	ReaderCeiling           string    `json:"readerCeiling"`
+	WriterCeiling           string    `json:"writerCeiling"`
+	DefaultMemoryTTLDays    int       `json:"defaultMemoryTtlDays"`
+	PackageTTLSeconds       int       `json:"packageTtlSeconds"`
+	IncludeFlagged          bool      `json:"includeFlagged"`          // D12: let flagged content into packages (items then carry flags); default false = quarantine
+	ConsolidateMinRecords   int       `json:"consolidateMinRecords"`   // D15: episodic records a group needs before it is distilled (default 5)
+	ConsolidatedTTLDays     int       `json:"consolidatedTtlDays"`     // D15: validity of distilled statements (default 90)
+	ConsolidatedAsCandidate bool      `json:"consolidatedAsCandidate"` // D21: distilled statements wait for an administrator\'s admission
+	UpdatedBy               string    `json:"updatedBy,omitempty"`
+	UpdatedAt               time.Time `json:"updatedAt,omitzero"`
+	Default                 bool      `json:"default"`
 }
 
 // DefaultPolicy applies to tenants without a stored policy.
@@ -130,8 +131,8 @@ func (p Policy) Validate() error {
 func policyOf(ctx context.Context, tx pgx.Tx, tenant string) (Policy, error) {
 	var p Policy
 	var by *string
-	err := tx.QueryRow(ctx, `SELECT reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, include_flagged, consolidate_min_records, consolidated_ttl_days, updated_by, updated_at FROM tenant_policies WHERE tenant_id = $1`, tenant).
-		Scan(&p.ReaderCeiling, &p.WriterCeiling, &p.DefaultMemoryTTLDays, &p.PackageTTLSeconds, &p.IncludeFlagged, &p.ConsolidateMinRecords, &p.ConsolidatedTTLDays, &by, &p.UpdatedAt)
+	err := tx.QueryRow(ctx, `SELECT reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, include_flagged, consolidate_min_records, consolidated_ttl_days, consolidated_as_candidate, updated_by, updated_at FROM tenant_policies WHERE tenant_id = $1`, tenant).
+		Scan(&p.ReaderCeiling, &p.WriterCeiling, &p.DefaultMemoryTTLDays, &p.PackageTTLSeconds, &p.IncludeFlagged, &p.ConsolidateMinRecords, &p.ConsolidatedTTLDays, &p.ConsolidatedAsCandidate, &by, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DefaultPolicy, nil
 	}
@@ -167,12 +168,12 @@ func (s *Store) SetPolicy(ctx context.Context, tenant string, p Policy, by strin
 	}
 	var out Policy
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `INSERT INTO tenant_policies (tenant_id, reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, include_flagged, consolidate_min_records, consolidated_ttl_days, updated_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		if _, err := tx.Exec(ctx, `INSERT INTO tenant_policies (tenant_id, reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, include_flagged, consolidate_min_records, consolidated_ttl_days, consolidated_as_candidate, updated_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 			ON CONFLICT (tenant_id) DO UPDATE SET reader_ceiling = EXCLUDED.reader_ceiling, writer_ceiling = EXCLUDED.writer_ceiling, default_memory_ttl_days = EXCLUDED.default_memory_ttl_days,
 			  package_ttl_seconds = EXCLUDED.package_ttl_seconds, include_flagged = EXCLUDED.include_flagged, consolidate_min_records = EXCLUDED.consolidate_min_records,
-			  consolidated_ttl_days = EXCLUDED.consolidated_ttl_days, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-			tenant, p.ReaderCeiling, p.WriterCeiling, p.DefaultMemoryTTLDays, p.PackageTTLSeconds, p.IncludeFlagged, p.ConsolidateMinRecords, p.ConsolidatedTTLDays, by); err != nil {
+			  consolidated_ttl_days = EXCLUDED.consolidated_ttl_days, consolidated_as_candidate = EXCLUDED.consolidated_as_candidate, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+			tenant, p.ReaderCeiling, p.WriterCeiling, p.DefaultMemoryTTLDays, p.PackageTTLSeconds, p.IncludeFlagged, p.ConsolidateMinRecords, p.ConsolidatedTTLDays, p.ConsolidatedAsCandidate, by); err != nil {
 			return err
 		}
 		if err := Audit(ctx, tx, tenant, by, "policy.set", "", p); err != nil {

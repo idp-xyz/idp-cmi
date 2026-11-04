@@ -1,0 +1,919 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="IDP-CMI Technical Design V1.0: canonical data store, RLS, transaction outbox, context compiler and acceptance gates"><title>IDP-CMI Technical Design V1.0</title><style>
+:root{--ink:#162b41;--muted:#607489;--line:#dce5ef;--blue:#1b548b;--bg:#f4f7fb;--panel:#fff;--thead:#e9f1fa}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.78 "Inter","PingFang SC","Microsoft YaHei",system-ui,sans-serif}.top{background:#122d4a;color:#fff;padding:17px 28px;display:flex;align-items:center;justify-content:space-between;gap:15px}.top strong{font-size:19px;letter-spacing:1px}.top small{color:#b9d2e9;font-size:11px}.frame{display:grid;grid-template-columns:270px minmax(0,1fr);max-width:1670px;margin:auto}.nav{height:calc(100vh - 65px);overflow:auto;position:sticky;top:0;padding:24px 17px;background:#eef3fa;border-right:1px solid var(--line)}.nav label{display:block;font-size:10px;letter-spacing:2px;color:var(--muted);font-weight:700;margin:6px 10px 13px}.nav a{display:block;text-decoration:none;color:#4c6782;font-size:12px;padding:8px 9px;border-radius:7px}.nav a:hover,.nav a:focus{background:#dfeaf7;color:#1b4b7c}.main{min-width:0;max-width:1260px;padding:34px 48px 75px;margin:0 auto}.hero{border:1px solid #cfddec;border-top:4px solid #28649a;background:var(--panel);padding:24px 28px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 15px rgba(25,57,91,.04)}.meta{display:flex;gap:8px;flex-wrap:wrap}.meta span{font-size:11px;background:#f0f5fb;color:#385979;border:1px solid #d6e2ee;border-radius:4px;padding:4px 9px}.hero h1{font-size:27px;margin:14px 0 3px}.hero p{margin:0;color:var(--muted)}article{border:1px solid var(--line);background:#fff;border-radius:9px;padding:26px 31px}article h1:first-child{display:none}h2{font-size:21px;color:#204b75;padding-top:30px;margin-top:37px;border-top:1px solid var(--line);scroll-margin-top:20px}h3{font-size:16px;color:#2b5377;margin-top:28px;scroll-margin-top:20px}h4{font-size:14px;color:#315b82}p,li{line-height:1.84}strong{font-weight:700}table{width:100%;border-collapse:collapse;font-size:12px;line-height:1.55;margin:15px 0 26px;display:block;overflow-x:auto;border:1px solid var(--line);border-radius:6px}th,td{border-bottom:1px solid var(--line);padding:10px 12px;min-width:120px;text-align:left;vertical-align:top}th{background:var(--thead);font-weight:700;color:#2b5075}tr:last-child td{border-bottom:0}td:first-child{font-weight:550}code{padding:2px 4px;border-radius:4px;background:#edf2f8;font-size:12px;color:#244c77}pre{padding:18px 20px;border-radius:7px;background:#10273f;color:#d7eafa;white-space:pre;overflow:auto;line-height:1.55}pre code{padding:0;background:none;color:inherit;font-size:12px}blockquote{border-left:3px solid #5485b4;margin:20px 0;padding:8px 17px;background:#edf4fa;color:#385b80}a{color:#1b5d99}.diagram{border:1px solid #d6e0eb;border-radius:7px;background:white;overflow:auto;margin:22px 0 26px;padding:13px;text-align:center}.diagram svg{max-width:100%;height:auto}footer{margin-top:26px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;padding-top:17px}.buttons{display:flex;gap:9px;flex-wrap:wrap;margin:18px 0 0}.buttons button,.buttons a{font:inherit;font-size:12px;padding:7px 11px;border-radius:5px;background:#275c8c;border:1px solid #275c8c;color:white;text-decoration:none;cursor:pointer}.buttons .outline{background:#fff;color:#275c8c}.small{font-size:11px;color:#677e94}#find{border:1px solid #cbdae9;background:white;border-radius:5px;width:100%;padding:9px;font-size:12px}#findstatus{font-size:11px;color:var(--muted);margin-top:7px}@media(max-width:950px){.frame{grid-template-columns:220px minmax(0,1fr)}.main{padding:25px}.nav{padding:16px 9px}}@media(max-width:700px){.frame{display:block}.nav{height:auto;position:relative;border-bottom:1px solid var(--line);border-right:0;max-height:200px}.main{padding:12px}article{padding:20px 15px}.hero{padding:18px}.hero h1{font-size:23px}.top{padding:13px 16px}}@media print{@page{size:A4;margin:15mm}body{background:white;color:black;font-size:9pt}.nav,.top,.buttons,#find{display:none!important}.frame{display:block}.main{padding:0;max-width:none}article,.hero{padding:0;border:0;box-shadow:none}h2,h3{break-after:avoid}table{font-size:7.5pt;display:table;overflow:visible;table-layout:fixed}tr{break-inside:avoid}.diagram{break-inside:avoid}a{text-decoration:none;color:#163f67}}
+</style></head><body><header class="top"><strong>IDP <small>CMI / TECHNICAL DESIGN</small></strong><small>2026.10.15 · Engineering Review Draft</small></header><div class="frame"><nav class="nav" aria-label="章节目录"><label>CHAPTER NAVIGATION</label><input id="find" type="search" placeholder="搜索章节标题"><div id="findstatus" aria-live="polite"></div><div id="links"><a href="#s-00">0. 决策摘要</a>
+<a href="#s-01">1. 部署拓扑与领域模块</a>
+<a href="#s-02">2. 核心数据模型与物理落地</a>
+<a href="#s-03">3. 租户和资源授权（不可省略）</a>
+<a href="#s-04">4. 生命周期与并发事务设计</a>
+<a href="#s-05">5. Context Compiler 内部设计</a>
+<a href="#s-06">6. API 详细设计</a>
+<a href="#s-07">7. FTS / pgvector / Graphiti 的阶段化索引</a>
+<a href="#s-08">8. HOST / EER / Parcel 接入</a>
+<a href="#s-09">9. 工程验收 Gate 与负例</a>
+<a href="#s-10">10. PR 顺序、依赖与交付证据</a>
+<a href="#s-11">11. 上线前必须作出的开放决策</a>
+<a href="#s-12">12. 版本、核验状态及后续批准</a></div></nav><main class="main"><section class="hero"><div class="meta"><span>CMI-TD-001</span><span>V1.0</span><span>Draft / 待评审</span><span>独立核心 · 开源基础 · 可插拔引擎</span></div><h1>IDP-CMI Technical Design V1.0</h1><p>从已冻结的产品架构走向可验证的物理模型、事务、接口、上下文编译和安全设计。</p><div class="buttons"><button onclick="window.print()">打印 / 保存 PDF</button><a class="outline" href="IDP_CMI_Technical_Design_V1.0.md">查看 Markdown</a><a class="outline" href="sql/001_canonical.sql">查看数据库 DDL</a></div></section><article><h1 id="s-h-0">IDP-CMI Technical Design V1.0</h1>
+<p><strong>IDP Context &amp; Memory Infrastructure / 企业级上下文与记忆基础设施</strong><br />
+编号：CMI-TD-001 · 日期：2026-10-15 · 状态：<strong>Draft for Engineering / Security / DBA Review</strong><br />
+上游基线：《IDP-CMI Core Specification V1.0》与《ADR-001 Build vs Adopt V1.0》；本文件不替代二者。<br />
+交付属性：<strong>数据库/接口/算法/事务的参考技术设计 + 可静态验证工件；不是已部署或经数据库真实执行的产品</strong>。</p>
+<h2 id="s-00">0. 决策摘要</h2>
+<p><strong>目标</strong>：在不安装 EER、HOST、Hindsight、Mem0 的情况下，CMI S0 基线可独立完成受控来源登记、候选/已批准记忆保存、FTS 检索、生命周期变更、ContextBundle 编译和撤权屏蔽；并可在后续通过 SPI 插入记忆算法引擎。</p>
+<table>
+<thead>
+<tr>
+  <th>范围</th>
+  <th>V1 基线决策</th>
+  <th>明确不承担的职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Authority</td>
+  <td>IDP-CMI Owns Source/Memory/Bundle/Erasure canonical metadata</td>
+  <td>不取代 SoR、EER Execution State/Evidence、HOST AgentRun</td>
+</tr>
+<tr>
+  <td>Persistence</td>
+  <td>PostgreSQL 规范账本 + DB revision + transactional outbox</td>
+  <td>不把向量/Graph/引擎 bank 当唯一数据源</td>
+</tr>
+<tr>
+  <td>Retrieval</td>
+  <td>PostgreSQL FTS first; pgvector after embedding profile selected</td>
+  <td>不依赖不透明引擎文字作为可信记忆</td>
+</tr>
+<tr>
+  <td>Context Compiler</td>
+  <td>IDP 自有，预算、来源、时间、稳定排序、权限复验</td>
+  <td>不持有 HOST 的 system prompt 或模型推理责任</td>
+</tr>
+<tr>
+  <td>IAM</td>
+  <td>外部可信 IdP/PDP 接入，tenant RLS 防御层</td>
+  <td>不自己实现 OAuth 认证协议或以 RLS 代替 ABAC</td>
+</tr>
+<tr>
+  <td>External engines</td>
+  <td>Hindsight / Mem0 对照评估，插件仅操作派生数据</td>
+  <td>不让插件直接晋升 Active / 修改 canonical revision</td>
+</tr>
+<tr>
+  <td>MCP</td>
+  <td>仅可选标准 Server Adapter，现代协议 2026-07-28</td>
+  <td>不依赖 IDP MCP Infrastructure；不开发旧版适配</td>
+</tr>
+</tbody>
+</table>
+<h3 id="s-00-1">0.1 非功能不变量</h3>
+<ul>
+<li><strong>IND-T01</strong> 无 HOST/EER/外部引擎启动依赖，API/worker 的核心健康检查不访问它们。</li>
+<li><strong>IND-T02</strong> 当前权限始终优先于任何缓存、历史 Bundle 与派生索引；ACL/PDP 无法判断即拒绝，不使用缓存成功作为替代。</li>
+<li><strong>IND-T03</strong> PostgreSQL 规范写入 + 修订 + 事务 outbox 原子提交；索引及外部引擎只做可追踪、可重建的最终一致投影。</li>
+<li><strong>IND-T04</strong> EER 的 Verifier/Evidence 和业务 SoR 状态不可从 MemoryRecord 推断代替。</li>
+<li><strong>IND-T05</strong> 擦除的普通禁止读路径必须同步生效；物理删除逐域跟踪完成，不假装备份立即被同步删除。</li>
+<li><strong>IND-T06</strong> 数据权威、来源类型与模型 confidence 三者不混淆。</li>
+</ul>
+<h2 id="s-01">1. 部署拓扑与领域模块</h2>
+<div class="diagram"><!-- Generated by graphviz version 2.42.4 (0)
+ -->
+<!-- Title: CMI Pages: 1 -->
+<svg role="img" aria-label="IDP-CMI architecture diagram" width="513pt" height="578pt"
+ viewBox="0.00 0.00 512.80 577.80" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(14.4 563.4)">
+<title>CMI</title>
+<g id="clust1" class="cluster">
+<title>cluster_core</title>
+<path fill="#f7faff" stroke="#86a7cf" d="M20,-66C20,-66 308,-66 308,-66 314,-66 320,-72 320,-78 320,-78 320,-493 320,-493 320,-499 314,-505 308,-505 308,-505 20,-505 20,-505 14,-505 8,-499 8,-493 8,-493 8,-78 8,-78 8,-72 14,-66 20,-66"/>
+<text text-anchor="middle" x="164" y="-489" font-family="Noto Sans CJK SC" font-size="15.00">IDP&#45;CMI · Standalone Core</text>
+</g>
+<!-- host -->
+<g id="node1" class="node">
+<title>host</title>
+<path fill="#f3f7fc" stroke="#c7d6e6" d="M71.5,-549C71.5,-549 14.5,-549 14.5,-549 8.5,-549 2.5,-543 2.5,-537 2.5,-537 2.5,-525 2.5,-525 2.5,-519 8.5,-513 14.5,-513 14.5,-513 71.5,-513 71.5,-513 77.5,-513 83.5,-519 83.5,-525 83.5,-525 83.5,-537 83.5,-537 83.5,-543 77.5,-549 71.5,-549"/>
+<text text-anchor="middle" x="43" y="-527.9" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">IDP HOST</text>
+</g>
+<!-- api -->
+<g id="node4" class="node">
+<title>api</title>
+<path fill="#e2eefe" stroke="#c7d6e6" d="M171,-472C171,-472 57,-472 57,-472 51,-472 45,-466 45,-460 45,-460 45,-440 45,-440 45,-434 51,-428 57,-428 57,-428 171,-428 171,-428 177,-428 183,-434 183,-440 183,-440 183,-460 183,-460 183,-466 177,-472 171,-472"/>
+<text text-anchor="middle" x="114" y="-453.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">API / Trusted AuthN</text>
+<text text-anchor="middle" x="114" y="-440.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Policy Enforcement</text>
+</g>
+<!-- host&#45;&gt;api -->
+<g id="edge10" class="edge">
+<title>host&#45;&gt;api</title>
+<path fill="none" stroke="#7890a8" d="M58.41,-512.86C67.83,-502.38 80.06,-488.76 90.66,-476.97"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="92.43,-478.4 95.08,-472.05 89.05,-475.36 92.43,-478.4"/>
+</g>
+<!-- eer -->
+<g id="node2" class="node">
+<title>eer</title>
+<path fill="#f3f7fc" stroke="#c7d6e6" d="M386,-468C386,-468 340,-468 340,-468 334,-468 328,-462 328,-456 328,-456 328,-444 328,-444 328,-438 334,-432 340,-432 340,-432 386,-432 386,-432 392,-432 398,-438 398,-444 398,-444 398,-456 398,-456 398,-462 392,-468 386,-468"/>
+<text text-anchor="middle" x="363" y="-446.9" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">IDP EER</text>
+</g>
+<!-- lifecycle -->
+<g id="node5" class="node">
+<title>lifecycle</title>
+<path fill="#f3f7fc" stroke="#c7d6e6" d="M286.5,-398C286.5,-398 163.5,-398 163.5,-398 157.5,-398 151.5,-392 151.5,-386 151.5,-386 151.5,-366 151.5,-366 151.5,-360 157.5,-354 163.5,-354 163.5,-354 286.5,-354 286.5,-354 292.5,-354 298.5,-360 298.5,-366 298.5,-366 298.5,-386 298.5,-386 298.5,-392 292.5,-398 286.5,-398"/>
+<text text-anchor="middle" x="225" y="-379.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Memory Lifecycle</text>
+<text text-anchor="middle" x="225" y="-366.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">CAS + visibility barrier</text>
+</g>
+<!-- eer&#45;&gt;lifecycle -->
+<g id="edge11" class="edge">
+<title>eer&#45;&gt;lifecycle</title>
+<path fill="none" stroke="#7890a8" d="M331.52,-431.99C328.98,-430.63 326.45,-429.29 324,-428 307.24,-419.17 288.81,-409.63 272.44,-401.22"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="273.33,-399.12 266.51,-398.17 271.25,-403.17 273.33,-399.12"/>
+</g>
+<!-- third -->
+<g id="node3" class="node">
+<title>third</title>
+<path fill="#f3f7fc" stroke="#c7d6e6" d="M252.5,-549C252.5,-549 117.5,-549 117.5,-549 111.5,-549 105.5,-543 105.5,-537 105.5,-537 105.5,-525 105.5,-525 105.5,-519 111.5,-513 117.5,-513 117.5,-513 252.5,-513 252.5,-513 258.5,-513 264.5,-519 264.5,-525 264.5,-525 264.5,-537 264.5,-537 264.5,-543 258.5,-549 252.5,-549"/>
+<text text-anchor="middle" x="185" y="-527.9" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Third&#45;party Agent / App</text>
+</g>
+<!-- third&#45;&gt;api -->
+<g id="edge12" class="edge">
+<title>third&#45;&gt;api</title>
+<path fill="none" stroke="#7890a8" d="M169.59,-512.86C160.17,-502.38 147.94,-488.76 137.34,-476.97"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="138.95,-475.36 132.92,-472.05 135.57,-478.4 138.95,-475.36"/>
+</g>
+<!-- api&#45;&gt;lifecycle -->
+<g id="edge1" class="edge">
+<title>api&#45;&gt;lifecycle</title>
+<path fill="none" stroke="#7890a8" d="M146.4,-427.98C159.06,-419.77 173.66,-410.3 186.82,-401.76"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="188.15,-403.62 192.36,-398.17 185.67,-399.8 188.15,-403.62"/>
+</g>
+<!-- compiler -->
+<g id="node6" class="node">
+<title>compiler</title>
+<path fill="#f3f7fc" stroke="#c7d6e6" d="M151.5,-118C151.5,-118 28.5,-118 28.5,-118 22.5,-118 16.5,-112 16.5,-106 16.5,-106 16.5,-86 16.5,-86 16.5,-80 22.5,-74 28.5,-74 28.5,-74 151.5,-74 151.5,-74 157.5,-74 163.5,-80 163.5,-86 163.5,-86 163.5,-106 163.5,-106 163.5,-112 157.5,-118 151.5,-118"/>
+<text text-anchor="middle" x="90" y="-99.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Context Compiler</text>
+<text text-anchor="middle" x="90" y="-86.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Budget + provenance</text>
+</g>
+<!-- api&#45;&gt;compiler -->
+<g id="edge2" class="edge">
+<title>api&#45;&gt;compiler</title>
+<path fill="none" stroke="#7890a8" d="M88.04,-427.86C59.91,-402.41 19,-356.83 19,-307 19,-307 19,-307 19,-239 19,-198.21 11.64,-183.91 31,-148 36.16,-138.43 43.89,-129.84 52.07,-122.56"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="53.72,-124.15 57.21,-118.2 50.78,-120.68 53.72,-124.15"/>
+</g>
+<!-- retrieval -->
+<g id="node7" class="node">
+<title>retrieval</title>
+<path fill="#f3f7fc" stroke="#c7d6e6" d="M174,-192C174,-192 54,-192 54,-192 48,-192 42,-186 42,-180 42,-180 42,-160 42,-160 42,-154 48,-148 54,-148 54,-148 174,-148 174,-148 180,-148 186,-154 186,-160 186,-160 186,-180 186,-180 186,-186 180,-192 174,-192"/>
+<text text-anchor="middle" x="114" y="-173.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Authorized Retrieval</text>
+<text text-anchor="middle" x="114" y="-160.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">FTS / optional vector</text>
+</g>
+<!-- api&#45;&gt;retrieval -->
+<g id="edge3" class="edge">
+<title>api&#45;&gt;retrieval</title>
+<path fill="none" stroke="#7890a8" d="M114,-427.65C114,-377.9 114,-254.31 114,-198.78"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="116.28,-198.54 114,-192.04 111.73,-198.54 116.28,-198.54"/>
+</g>
+<!-- store -->
+<g id="node8" class="node">
+<title>store</title>
+<path fill="#e5f5ef" stroke="#c7d6e6" d="M300,-118C300,-118 198,-118 198,-118 192,-118 186,-112 186,-106 186,-106 186,-86 186,-86 186,-80 192,-74 198,-74 198,-74 300,-74 300,-74 306,-74 312,-80 312,-86 312,-86 312,-106 312,-106 312,-112 306,-118 300,-118"/>
+<text text-anchor="middle" x="249" y="-99.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Canonical Store</text>
+<text text-anchor="middle" x="249" y="-86.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Revision + Source</text>
+</g>
+<!-- lifecycle&#45;&gt;store -->
+<g id="edge4" class="edge">
+<title>lifecycle&#45;&gt;store</title>
+<path fill="none" stroke="#7890a8" d="M182.02,-353.81C170.86,-346.07 160.23,-336.15 154,-324 146.7,-309.76 152.92,-303.96 154,-288 156,-258.46 149.02,-248.1 163,-222 172.51,-204.23 184.42,-207.74 197,-192 213.7,-171.1 227.9,-144.09 237.22,-124.21"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="239.3,-125.14 239.95,-118.29 235.17,-123.24 239.3,-125.14"/>
+</g>
+<!-- outbox -->
+<g id="node9" class="node">
+<title>outbox</title>
+<path fill="#e5f5ef" stroke="#c7d6e6" d="M299.5,-324C299.5,-324 176.5,-324 176.5,-324 170.5,-324 164.5,-318 164.5,-312 164.5,-312 164.5,-300 164.5,-300 164.5,-294 170.5,-288 176.5,-288 176.5,-288 299.5,-288 299.5,-288 305.5,-288 311.5,-294 311.5,-300 311.5,-300 311.5,-312 311.5,-312 311.5,-318 305.5,-324 299.5,-324"/>
+<text text-anchor="middle" x="238" y="-302.9" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Transactional Outbox</text>
+</g>
+<!-- lifecycle&#45;&gt;outbox -->
+<g id="edge5" class="edge">
+<title>lifecycle&#45;&gt;outbox</title>
+<path fill="none" stroke="#7890a8" d="M229.04,-353.86C230.43,-346.57 232,-338.37 233.43,-330.88"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="235.72,-331.07 234.7,-324.26 231.25,-330.21 235.72,-331.07"/>
+</g>
+<!-- retrieval&#45;&gt;compiler -->
+<g id="edge9" class="edge">
+<title>retrieval&#45;&gt;compiler</title>
+<path fill="none" stroke="#7890a8" d="M106.93,-147.79C104.51,-140.53 101.77,-132.3 99.2,-124.61"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="101.32,-123.76 97.1,-118.31 97,-125.2 101.32,-123.76"/>
+</g>
+<!-- retrieval&#45;&gt;store -->
+<g id="edge8" class="edge">
+<title>retrieval&#45;&gt;store</title>
+<path fill="none" stroke="#7890a8" d="M153.41,-147.98C169.08,-139.63 187.2,-129.96 203.42,-121.31"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="204.64,-123.24 209.31,-118.17 202.5,-119.22 204.64,-123.24"/>
+</g>
+<!-- pg -->
+<g id="node12" class="node">
+<title>pg</title>
+<path fill="#e5f5ef" stroke="#c7d6e6" d="M324.5,-44C324.5,-44 173.5,-44 173.5,-44 167.5,-44 161.5,-38 161.5,-32 161.5,-32 161.5,-12 161.5,-12 161.5,-6 167.5,0 173.5,0 173.5,0 324.5,0 324.5,0 330.5,0 336.5,-6 336.5,-12 336.5,-12 336.5,-32 336.5,-32 336.5,-38 330.5,-44 324.5,-44"/>
+<text text-anchor="middle" x="249" y="-25.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">PostgreSQL + Object Store</text>
+<text text-anchor="middle" x="249" y="-12.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">S0 required</text>
+</g>
+<!-- store&#45;&gt;pg -->
+<g id="edge14" class="edge">
+<title>store&#45;&gt;pg</title>
+<path fill="none" stroke="#7890a8" d="M249,-73.79C249,-66.67 249,-58.63 249,-51.07"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="251.28,-50.81 249,-44.31 246.73,-50.81 251.28,-50.81"/>
+</g>
+<!-- worker -->
+<g id="node10" class="node">
+<title>worker</title>
+<path fill="#f3f7fc" stroke="#c7d6e6" d="M290,-258C290,-258 186,-258 186,-258 180,-258 174,-252 174,-246 174,-246 174,-234 174,-234 174,-228 180,-222 186,-222 186,-222 290,-222 290,-222 296,-222 302,-228 302,-234 302,-234 302,-246 302,-246 302,-252 296,-258 290,-258"/>
+<text text-anchor="middle" x="238" y="-236.9" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Projection Worker</text>
+</g>
+<!-- outbox&#45;&gt;worker -->
+<g id="edge6" class="edge">
+<title>outbox&#45;&gt;worker</title>
+<path fill="none" stroke="#7890a8" d="M238,-287.85C238,-280.82 238,-272.56 238,-264.95"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="240.28,-264.7 238,-258.2 235.73,-264.7 240.28,-264.7"/>
+</g>
+<!-- worker&#45;&gt;retrieval -->
+<g id="edge7" class="edge">
+<title>worker&#45;&gt;retrieval</title>
+<path fill="none" stroke="#7890a8" stroke-dasharray="5,2" d="M206.71,-221.84C192.01,-213.78 174.24,-204.03 158.2,-195.24"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="159.17,-193.17 152.37,-192.04 156.98,-197.16 159.17,-193.17"/>
+</g>
+<!-- engine -->
+<g id="node11" class="node">
+<title>engine</title>
+<path fill="#f5f0ff" stroke="#c7d6e6" d="M472,-192C472,-192 340,-192 340,-192 334,-192 328,-186 328,-180 328,-180 328,-160 328,-160 328,-154 334,-148 340,-148 340,-148 472,-148 472,-148 478,-148 484,-154 484,-160 484,-160 484,-180 484,-180 484,-186 478,-192 472,-192"/>
+<text text-anchor="middle" x="406" y="-173.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Hindsight / Mem0</text>
+<text text-anchor="middle" x="406" y="-160.4" font-family="Noto Sans CJK SC" font-size="12.00" fill="#1b3455">Optional Engine Plugin</text>
+</g>
+<!-- worker&#45;&gt;engine -->
+<g id="edge13" class="edge">
+<title>worker&#45;&gt;engine</title>
+<path fill="none" stroke="#7890a8" stroke-dasharray="5,2" d="M280.39,-221.84C300.83,-213.57 325.66,-203.52 347.83,-194.54"/>
+<polygon fill="#7890a8" stroke="#7890a8" points="348.84,-196.59 354.01,-192.04 347.13,-192.37 348.84,-196.59"/>
+</g>
+</g>
+</svg></div>
+
+<p><strong>推荐实际进程</strong>：<code>cmi-api</code>（模块化后端）、<code>cmi-worker</code>（投影/清理）、<code>postgres</code>、<code>object-store</code>；选定 Embedding 模型后才安装 pgvector 并开启向量投影；外部 engine 独立运行。缓存仅在有可测收益时引入。<code>live</code> 不探测外部系统，<code>ready</code> 只检查当前启用的核心依赖（DB 与策略访问能力）；外部引擎断开时给出 degraded，而非强制整个 S0 不可用。</p>
+<p><strong>模块目录</strong>：<code>domain/source</code>, <code>domain/memory</code>, <code>domain/context</code>, <code>policy</code>, <code>storage/postgres</code>, <code>projections</code>, <code>engines/spi</code>, <code>adapters/{host,eer,mcp}</code>, <code>ops</code>, <code>tests</code>。模块不等于微服务数量。</p>
+<h2 id="s-02">2. 核心数据模型与物理落地</h2>
+<h3 id="s-02-1">2.1 数据对象对照表</h3>
+<table>
+<thead>
+<tr>
+  <th>逻辑契约</th>
+  <th>PostgreSQL 实体</th>
+  <th>关键数据库不变量</th>
+  <th>安全要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>SourceRecord</td>
+  <td><code>source_record</code>, <code>source_revision</code></td>
+  <td><code>(tenant,system,key)</code> 稳定唯一；版本只追加；原始 URI/哈希按版本固定</td>
+  <td>Source trust 不等于事实权威；对象存储另鉴权</td>
+</tr>
+<tr>
+  <td>MemoryRecord</td>
+  <td><code>memory_record</code>, <code>memory_revision</code></td>
+  <td>同租户 ID、CAS current_revision、追加 revision、claim 单位可追溯</td>
+  <td>非 active 默认不可见；模型提取只可 candidate</td>
+</tr>
+<tr>
+  <td>Source→Memory</td>
+  <td><code>memory_source_link</code></td>
+  <td>固定 <code>(source_id,source_revision)</code>；联合 tenant FK</td>
+  <td>读时再核来源撤权与权限</td>
+</tr>
+<tr>
+  <td>Visibility</td>
+  <td><code>visibility_block</code></td>
+  <td><code>tenant+resource_kind+id</code> 同步屏蔽</td>
+  <td>任何 FTS/ANN/引擎召回都要二次判定</td>
+</tr>
+<tr>
+  <td>ContextBundle</td>
+  <td><code>context_bundle</code>, <code>context_bundle_item</code></td>
+  <td>固定 Manifest 哈希、模型与 tokenizer、TTL、预算约束</td>
+  <td>当前资源权限和来源版本复核；Bundle 失效联动</td>
+</tr>
+<tr>
+  <td>Erasure</td>
+  <td><code>privacy_operation</code>, <code>erasure_tombstone</code></td>
+  <td>Phase A block → Phase B purge → Phase C verify</td>
+  <td>Tombstone 不存 claim/URI/哈希/可还原正文</td>
+</tr>
+<tr>
+  <td>Delivery</td>
+  <td><code>outbox_event</code>, <code>projection_receipt</code></td>
+  <td>与领域状态原子写；投影多次重放幂等</td>
+  <td>事件只携最小引用，不能推送敏感 claim</td>
+</tr>
+<tr>
+  <td>Plugin</td>
+  <td><code>engine_mapping</code></td>
+  <td>engine/generation/规范 ID 映射</td>
+  <td>外部 engine 无权跨租户查询或晋升事实</td>
+</tr>
+<tr>
+  <td>Audit</td>
+  <td><code>audit_event_ref</code></td>
+  <td>只存外部审计证据引用</td>
+  <td>不向日志写敏感正文</td>
+</tr>
+<tr>
+  <td>Idempotency</td>
+  <td><code>idempotency_record</code></td>
+  <td><code>(tenant,principal,operation,key)</code> 唯一</td>
+  <td>同键异参数 409；结果正文不裸存</td>
+</tr>
+</tbody>
+</table>
+<p><strong>已生成</strong>：<code>sql/001_canonical.sql</code>, <code>sql/002_rls.sql</code>, <code>sql/003_projections_optional.sql</code>。SQL 是供 DBA 审核的设计迁移草案，尚未在 PostgreSQL 上实际执行。若采用 Flyway/Alembic，应按生产版本重新整理迁移 ID、权限和回滚策略。</p>
+<h3 id="s-02-2">2.2 关系及擦除边界</h3>
+<pre><code class="language-mermaid">flowchart LR
+  SR[source_record] --&gt; SRV[source_revision]
+  MR[memory_record] --&gt; MRV[memory_revision]
+  SRV --&gt; LINK[memory_source_link]
+  MRV --&gt; LINK
+  MR --&gt;|id+revision references| BND[context_bundle_item]
+  BND --&gt; CBI[context_bundle]
+  MRV -.-&gt; FTS[FTS / Vector projections]
+  MRV -.-&gt; ENG[Engine mappings]
+  SR --&gt;|revocation| BLOCK[visibility_block]
+  MR --&gt;|revocation| BLOCK
+  CBI --&gt;|invalidated| BLOCK
+  BLOCK --&gt; ERASE[privacy_operation]
+  ERASE --&gt; TOMB[erasure_tombstone]
+</code></pre>
+<p><strong>关键设计细节</strong>：<code>context_bundle_item</code> 有意使用软引用，不能让强 FK 阻止对 Memory/Source 明文的合法擦除；物理擦除时仍必须删掉敏感派生 Manifest/blob，并使旧 Bundle 不可对外消费。<code>erasure_tombstone</code> 的 ID 本身仍是受保护的个人信息关联风险，须单独保留期限、最小权限及合法依据。</p>
+<h3 id="s-02-3">2.3 数据不可变与历史记录</h3>
+<p>正常修订使用 Append Revision；<code>memory_record.current_revision</code> 与当前 status 使用 CAS 更新，不默默覆盖旧 claim。合法擦除是追加不可变原则的受控例外：完成净化时旧明文历史也需要删除/加密销毁；审计仅保留法定允许的最小证据。数据库级 Trigger/GRANT 可以阻断普通业务修改修订行，<strong>但必须预留有专门授权的 erasure worker 路径</strong>。</p>
+<h3 id="s-02-4">2.4 双时态语义与限制</h3>
+<ul>
+<li>业务时态 <code>valid_from</code>, <code>valid_to</code> 指事实被认为适用的业务区间 <code>[from,to)</code>；<code>recorded_at</code> 是 CMI 保存信息的系统时点；二者不得交换。</li>
+<li>查询 <code>as_of_valid=T1, known_at=T2</code> 时，以 <strong>T2 前系统已登记的修订</strong> 在 T1 是否有效来评价，而不是拿现在最新事实伪造当时认知。</li>
+<li><code>recorded_at</code> 是数据库记录时间而不是严格的跨事务 commit 全序；<code>outbox_event_id</code> 也不是全局严格单调的提交顺序。V1 提供实体级时间点查询与不可变修订，<strong>不承诺依靠这些字段实现精确全局历史快照</strong>。如客户要求严格历史快照复现，应增设一致的快照机制和数据库恢复/LSN 保留策略，经事务审查后升级。</li>
+<li>如果过去修订被法律要求擦除，不可以为了“历史可复现”重新暴露它；只返回历史不可用及可审计原因。</li>
+</ul>
+<h2 id="s-03">3. 租户和资源授权（不可省略）</h2>
+<h3 id="s-03-1">3.1 三道防线</h3>
+<ol>
+<li><strong>API 认证边界</strong>：校验凭据有效期、issuer、audience、tenant 授权映射、委派链。外部 JSON 中的 <code>tenant_id/principal/source_trust/active/approved_policy_reference</code> 一律不能作为可信来源。</li>
+<li><strong>PDP 资源判断</strong>：动作、purpose、subject、scope、classification、policy_version、时间与 source 权限。检索前构建允许范围，并在返还前再次校验；故障 fail closed。</li>
+<li><strong>PostgreSQL tenant RLS</strong>：DB 事务里受信服务执行 <code>SET LOCAL cmi.tenant_id</code>，联合 tenant 主键/FK 防越界；启用 <code>FORCE ROW LEVEL SECURITY</code>。普通池账号非 owner、非 <code>BYPASSRLS</code>，不能让其他用户直连 DB。</li>
+</ol>
+<p><strong>已知限制</strong>：PostgreSQL 自定义配置变量不是防伪 token。假设不可信输入可以执行任意 SQL，攻击者可能改写该 GUC。RLS 是可信 API 边界后的二次隔离，不是单独的可信身份管理。对强隔离客户可部署独立 DB/cluster + 独立 service role。DB 角色创建、表属主、权限授予与连接池策略必须由 DBA/IAM 共同会签。</p>
+<h3 id="s-03-2">3.2 检索必须执行的断言</h3>
+<p><code>tenant verified</code> ∧ <code>purpose allowed</code> ∧ <code>policy active</code> ∧ <code>resource scope allowed</code> ∧ <code>memory.status=active</code> ∧ <code>no visibility block</code> ∧ <code>all required sources accessible</code> ∧ <code>temporal filter</code> ∧ <code>classification permitted</code>。</p>
+<ul>
+<li>无法判断 = Deny；<strong>向量相似度不是授权机制</strong>。</li>
+<li>缓存键需要租户、主体、purpose、策略版本、资源版本，缓存命中还需当前权限复验。</li>
+<li>Bundle 在 HOST 使用前可调用 <code>/contexts/{id}/validate</code>；撤权发生在编译后也不应继续使用旧文本。</li>
+<li>未经批准的 embedding/LLM 供应商不得接收企业敏感文本；前置处理数据驻留和目的许可。</li>
+</ul>
+<h3 id="s-03-3">3.3 威胁与防御矩阵</h3>
+<table>
+<thead>
+<tr>
+  <th>威胁</th>
+  <th>触发点</th>
+  <th>安全控制与测试</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>跨租户泄露</td>
+  <td>RLS/engine bank/混合检索</td>
+  <td>每表 tenant composite key、PDP 二次判定、跨租户负例</td>
+</tr>
+<tr>
+  <td>提示注入升级为指令</td>
+  <td>来源网页/日志/历史对话</td>
+  <td>所有检索片段标记为不可信数据、保留引用、不得提升为 system 指令</td>
+</tr>
+<tr>
+  <td>撤权后旧索引回流</td>
+  <td>ANN/缓存/引擎重放</td>
+  <td>Registry barrier 先写，检索后复核，旧 outbox 不能重活化</td>
+</tr>
+<tr>
+  <td>源删除后派生残留</td>
+  <td>Memory/Bundle/graph/备份</td>
+  <td>来源依赖图，擦除作业多域 ACK + 复验，恢复前重放屏蔽</td>
+</tr>
+<tr>
+  <td>confused deputy</td>
+  <td>代理替用户查询</td>
+  <td>验证 actor、delegator、aud 与 purpose；不接受工具自报身份</td>
+</tr>
+<tr>
+  <td>结果伪造/过度自信</td>
+  <td>LLM extraction/reflect</td>
+  <td><code>candidate</code> only、source refs、approval gates、conflict/quarantine</td>
+</tr>
+</tbody>
+</table>
+<h2 id="s-04">4. 生命周期与并发事务设计</h2>
+<h3 id="s-04-1">4.1 记忆状态机</h3>
+<div class="diagram"><!-- Generated by graphviz version 2.42.4 (0)
+ -->
+<!-- Title: lifecycle Pages: 1 -->
+<svg role="img" aria-label="IDP-CMI architecture diagram" width="875pt" height="240pt"
+ viewBox="0.00 0.00 874.60 240.47" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(10.8 229.67)">
+<title>lifecycle</title>
+<!-- candidate -->
+<g id="node1" class="node">
+<title>candidate</title>
+<path fill="#f1f6fe" stroke="#bdcfe2" d="M53,-68.87C53,-68.87 12,-68.87 12,-68.87 6,-68.87 0,-62.87 0,-56.87 0,-56.87 0,-44.87 0,-44.87 0,-38.87 6,-32.87 12,-32.87 12,-32.87 53,-32.87 53,-32.87 59,-32.87 65,-38.87 65,-44.87 65,-44.87 65,-56.87 65,-56.87 65,-62.87 59,-68.87 53,-68.87"/>
+<text text-anchor="middle" x="32.5" y="-48.37" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#223d5e">candidate</text>
+</g>
+<!-- active -->
+<g id="node2" class="node">
+<title>active</title>
+<path fill="#f1f6fe" stroke="#bdcfe2" d="M200.5,-137.87C200.5,-137.87 170.5,-137.87 170.5,-137.87 164.5,-137.87 158.5,-131.87 158.5,-125.87 158.5,-125.87 158.5,-113.87 158.5,-113.87 158.5,-107.87 164.5,-101.87 170.5,-101.87 170.5,-101.87 200.5,-101.87 200.5,-101.87 206.5,-101.87 212.5,-107.87 212.5,-113.87 212.5,-113.87 212.5,-125.87 212.5,-125.87 212.5,-131.87 206.5,-137.87 200.5,-137.87"/>
+<text text-anchor="middle" x="185.5" y="-117.37" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#223d5e">active</text>
+</g>
+<!-- candidate&#45;&gt;active -->
+<g id="edge1" class="edge">
+<title>candidate&#45;&gt;active</title>
+<path fill="none" stroke="#8296ac" d="M65.15,-65.34C90.77,-77.04 126.7,-93.46 152.43,-105.22"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="151.56,-107.32 158.41,-107.95 153.45,-103.18 151.56,-107.32"/>
+<text text-anchor="middle" x="106.5" y="-97.67" font-family="Times,serif" font-size="9.00">approved</text>
+</g>
+<!-- quarantined -->
+<g id="node3" class="node">
+<title>quarantined</title>
+<path fill="#f1f6fe" stroke="#bdcfe2" d="M211,-71.87C211,-71.87 160,-71.87 160,-71.87 154,-71.87 148,-65.87 148,-59.87 148,-59.87 148,-47.87 148,-47.87 148,-41.87 154,-35.87 160,-35.87 160,-35.87 211,-35.87 211,-35.87 217,-35.87 223,-41.87 223,-47.87 223,-47.87 223,-59.87 223,-59.87 223,-65.87 217,-71.87 211,-71.87"/>
+<text text-anchor="middle" x="185.5" y="-51.37" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#223d5e">quarantined</text>
+</g>
+<!-- candidate&#45;&gt;quarantined -->
+<g id="edge2" class="edge">
+<title>candidate&#45;&gt;quarantined</title>
+<path fill="none" stroke="#8296ac" d="M65.15,-51.5C87.21,-51.94 116.9,-52.53 141.15,-53.01"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="141.29,-55.29 147.84,-53.14 141.38,-50.74 141.29,-55.29"/>
+<text text-anchor="middle" x="106.5" y="-54.67" font-family="Times,serif" font-size="9.00">risk</text>
+</g>
+<!-- revoked -->
+<g id="node7" class="node">
+<title>revoked</title>
+<path fill="#f1f6fe" stroke="#bdcfe2" d="M444,-102.87C444,-102.87 412,-102.87 412,-102.87 406,-102.87 400,-96.87 400,-90.87 400,-90.87 400,-78.87 400,-78.87 400,-72.87 406,-66.87 412,-66.87 412,-66.87 444,-66.87 444,-66.87 450,-66.87 456,-72.87 456,-78.87 456,-78.87 456,-90.87 456,-90.87 456,-96.87 450,-102.87 444,-102.87"/>
+<text text-anchor="middle" x="428" y="-82.37" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#223d5e">revoked</text>
+</g>
+<!-- candidate&#45;&gt;revoked -->
+<g id="edge12" class="edge">
+<title>candidate&#45;&gt;revoked</title>
+<path fill="none" stroke="#8296ac" d="M65.1,-33.1C69.96,-31 75.03,-29.15 80,-27.87 204.42,4.12 250.03,15.59 369,-32.87 384.1,-39.02 397.84,-50.91 408.15,-61.77"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="406.57,-63.41 412.64,-66.66 409.92,-60.33 406.57,-63.41"/>
+</g>
+<!-- disputed -->
+<g id="node4" class="node">
+<title>disputed</title>
+<path fill="#f1f6fe" stroke="#bdcfe2" d="M350,-218.87C350,-218.87 315,-218.87 315,-218.87 309,-218.87 303,-212.87 303,-206.87 303,-206.87 303,-194.87 303,-194.87 303,-188.87 309,-182.87 315,-182.87 315,-182.87 350,-182.87 350,-182.87 356,-182.87 362,-188.87 362,-194.87 362,-194.87 362,-206.87 362,-206.87 362,-212.87 356,-218.87 350,-218.87"/>
+<text text-anchor="middle" x="332.5" y="-198.37" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#223d5e">disputed</text>
+</g>
+<!-- active&#45;&gt;disputed -->
+<g id="edge4" class="edge">
+<title>active&#45;&gt;disputed</title>
+<path fill="none" stroke="#8296ac" d="M199.7,-138.06C209.14,-149.85 222.82,-164.67 238,-173.87 255.76,-184.64 278.01,-191.29 296.36,-195.3"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="296.1,-197.57 302.93,-196.66 297.02,-193.11 296.1,-197.57"/>
+<text text-anchor="middle" x="259.5" y="-193.67" font-family="Times,serif" font-size="9.00">conflict</text>
+</g>
+<!-- superseded -->
+<g id="node5" class="node">
+<title>superseded</title>
+<path fill="#f1f6fe" stroke="#bdcfe2" d="M357,-160.87C357,-160.87 308,-160.87 308,-160.87 302,-160.87 296,-154.87 296,-148.87 296,-148.87 296,-136.87 296,-136.87 296,-130.87 302,-124.87 308,-124.87 308,-124.87 357,-124.87 357,-124.87 363,-124.87 369,-130.87 369,-136.87 369,-136.87 369,-148.87 369,-148.87 369,-154.87 363,-160.87 357,-160.87"/>
+<text text-anchor="middle" x="332.5" y="-140.37" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#223d5e">superseded</text>
+</g>
+<!-- active&#45;&gt;superseded -->
+<g id="edge6" class="edge">
+<title>active&#45;&gt;superseded</title>
+<path fill="none" stroke="#8296ac" d="M212.81,-119.71C231.9,-120.04 258.26,-121.4 281,-125.87 283.76,-126.41 286.57,-127.07 289.39,-127.8"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="289.08,-130.07 295.95,-129.62 290.3,-125.69 289.08,-130.07"/>
+<text text-anchor="middle" x="259.5" y="-128.67" font-family="Times,serif" font-size="9.00">new fact</text>
+</g>
+<!-- expired -->
+<g id="node6" class="node">
+<title>expired</title>
+<path fill="#f1f6fe" stroke="#bdcfe2" d="M347.5,-102.87C347.5,-102.87 317.5,-102.87 317.5,-102.87 311.5,-102.87 305.5,-96.87 305.5,-90.87 305.5,-90.87 305.5,-78.87 305.5,-78.87 305.5,-72.87 311.5,-66.87 317.5,-66.87 317.5,-66.87 347.5,-66.87 347.5,-66.87 353.5,-66.87 359.5,-72.87 359.5,-78.87 359.5,-78.87 359.5,-90.87 359.5,-90.87 359.5,-96.87 353.5,-102.87 347.5,-102.87"/>
+<text text-anchor="middle" x="332.5" y="-82.37" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#223d5e">expired</text>
+</g>
+<!-- active&#45;&gt;expired -->
+<g id="edge7" class="edge">
+<title>active&#45;&gt;expired</title>
+<path fill="none" stroke="#8296ac" d="M212.6,-111.87C220.7,-109.49 229.69,-106.97 238,-104.87 258.07,-99.81 280.77,-94.93 298.78,-91.26"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="299.26,-93.49 305.19,-89.97 298.36,-89.03 299.26,-93.49"/>
+<text text-anchor="middle" x="259.5" y="-107.67" font-family="Times,serif" font-size="9.00">TTL</text>
+</g>
+<!-- active&#45;&gt;revoked -->
+<g id="edge8" class="edge">
+<title>active&#45;&gt;revoked</title>
+<path fill="none" stroke="#8296ac" d="M205.57,-101.67C226.05,-83.5 260.46,-56.76 296,-45.87 327.02,-36.37 337.97,-36.41 369,-45.87 380.45,-49.36 391.69,-55.95 401.17,-62.74"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="399.97,-64.68 406.55,-66.73 402.69,-61.03 399.97,-64.68"/>
+<text text-anchor="middle" x="332.5" y="-48.67" font-family="Times,serif" font-size="9.00">withdrawn</text>
+</g>
+<!-- quarantined&#45;&gt;candidate -->
+<g id="edge3" class="edge">
+<title>quarantined&#45;&gt;candidate</title>
+<path fill="none" stroke="#8296ac" d="M147.76,-39.37C142.86,-37.93 137.86,-36.7 133,-35.87 109.78,-31.93 103.27,-32.21 80,-35.87 77.27,-36.3 74.47,-36.87 71.68,-37.52"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="70.92,-35.37 65.2,-39.21 72.06,-39.77 70.92,-35.37"/>
+<text text-anchor="middle" x="106.5" y="-38.67" font-family="Times,serif" font-size="9.00">remediated</text>
+</g>
+<!-- disputed&#45;&gt;active -->
+<g id="edge5" class="edge">
+<title>disputed&#45;&gt;active</title>
+<path fill="none" stroke="#8296ac" d="M309.61,-182.75C300.98,-176.06 290.81,-168.7 281,-162.87 261.09,-151.04 237.36,-140.26 218.67,-132.45"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="219.41,-130.29 212.53,-129.92 217.67,-134.5 219.41,-130.29"/>
+<text text-anchor="middle" x="259.5" y="-165.67" font-family="Times,serif" font-size="9.00">reviewed</text>
+</g>
+<!-- disputed&#45;&gt;revoked -->
+<g id="edge9" class="edge">
+<title>disputed&#45;&gt;revoked</title>
+<path fill="none" stroke="#8296ac" d="M357.68,-182.77C361.65,-179.34 365.58,-175.64 369,-171.87 386.65,-152.43 402.87,-127.18 413.64,-108.9"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="415.78,-109.74 417.08,-102.98 411.85,-107.46 415.78,-109.74"/>
+</g>
+<!-- superseded&#45;&gt;revoked -->
+<g id="edge10" class="edge">
+<title>superseded&#45;&gt;revoked</title>
+<path fill="none" stroke="#8296ac" d="M362.57,-124.84C372.61,-118.61 383.93,-111.59 394.25,-105.19"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="395.54,-107.07 399.86,-101.71 393.14,-103.2 395.54,-107.07"/>
+</g>
+<!-- expired&#45;&gt;revoked -->
+<g id="edge11" class="edge">
+<title>expired&#45;&gt;revoked</title>
+<path fill="none" stroke="#8296ac" d="M359.54,-84.87C369.93,-84.87 382.01,-84.87 393.07,-84.87"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="393.29,-87.15 399.79,-84.87 393.29,-82.6 393.29,-87.15"/>
+</g>
+<!-- erasure -->
+<g id="node8" class="node">
+<title>erasure</title>
+<path fill="#ffeccd" stroke="#bdcfe2" d="M663,-102.87C663,-102.87 586,-102.87 586,-102.87 580,-102.87 574,-96.87 574,-90.87 574,-90.87 574,-78.87 574,-78.87 574,-72.87 580,-66.87 586,-66.87 586,-66.87 663,-66.87 663,-66.87 669,-66.87 675,-72.87 675,-78.87 675,-78.87 675,-90.87 675,-90.87 675,-96.87 669,-102.87 663,-102.87"/>
+<text text-anchor="middle" x="624.5" y="-82.37" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#223d5e">Purging workflow</text>
+</g>
+<!-- revoked&#45;&gt;erasure -->
+<g id="edge13" class="edge">
+<title>revoked&#45;&gt;erasure</title>
+<path fill="none" stroke="#8296ac" d="M456.04,-84.87C484.64,-84.87 530.57,-84.87 567.11,-84.87"/>
+<polygon fill="#8296ac" stroke="#8296ac" points="567.31,-87.15 573.81,-84.87 567.31,-82.6 567.31,-87.15"/>
+<text text-anchor="middle" x="515" y="-87.67" font-family="Times,serif" font-size="9.00">authorized erasure</text>
+</g>
+<!-- tombstone -->
+<g id="node9" class="node">
+<title>tombstone</title>
+<path fill="#e3f5eb" stroke="#bdcfe2" d="M841,-102.87C841,-102.87 753,-102.87 753,-102.87 747,-102.87 741,-96.87 741,-90.87 741,-90.87 741,-78.87 741,-78.87 741,-72.87 747,-66.87 753,-66.87 753,-66.87 841,-66.87 841,-66.87 847,-66.87 853,-72.87 853,-78.87 853,-78.87 853,-90.87 853,-90.87 853,-96.87 847,-102.87 841,-102.87"/>
+<text text-anchor="middle" x="797" y="-82.37" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#223d5e">Minimal tombstone</text>
+</g>
+<!-- erasure&#45;&gt;tombstone -->
+<g id="edge14" class="edge">
+<title>erasure&#45;&gt;tombstone</title>
+<path fill="none" stroke="#5a9879" d="M675.27,-84.87C693.73,-84.87 714.89,-84.87 734.28,-84.87"/>
+<polygon fill="#5a9879" stroke="#5a9879" points="734.28,-87.15 740.78,-84.87 734.28,-82.6 734.28,-87.15"/>
+<text text-anchor="middle" x="708" y="-87.67" font-family="Times,serif" font-size="9.00">verified</text>
+</g>
+</g>
+</svg></div>
+
+<blockquote>
+<p>图中的 <code>erased</code> 是业务状态终点，<strong>物理上仅允许返回最小 ErasureTombstone，不再返回带正文的 MemoryRecord</strong>。实际 PostgreSQL <code>memory_record.status</code> 不使用 <code>erased</code> 枚举：终态通过删除主体 + tombstone 表表达。</p>
+</blockquote>
+<h3 id="s-04-2">4.2 关键事务原则</h3>
+<ul>
+<li>记忆状态变更必须提交 <code>expected_revision</code>，<code>SELECT ... FOR UPDATE</code> 对同一聚合串行化；未匹配返回 <code>412</code>；重试只可使用当前 revision 并重新校验策略。</li>
+<li>同一次 DB 事务追加 Revision + 修改 Registry 状态 + Visibility Barrier（必要时）+ Outbox + 审计引用 + 幂等记录。先发 event 后提交 canonical 是禁止的。</li>
+<li>来源撤权必须以同步屏蔽开头，并在读取/新候选激活时检查来源状态；大扇出应建立源级统一 barrier，不能在后台逐条处理期间泄露。</li>
+<li>由于 <code>SKIP LOCKED</code> 读取的队列视图不是全量一致视图，只用于 outbox worker，不用于业务历史查询。</li>
+<li>投影重新处理旧事件时以 <code>memory_id/revision/generation</code> 校验，旧 revision 绝不能覆盖当前 state/撤权。</li>
+</ul>
+<p><strong>参考算法和 SQL 事务顺序见 <code>sql/transaction_recipes.md</code></strong>。</p>
+<h3 id="s-04-3">4.3 幂等、提交顺序与投影票据</h3>
+<ul>
+<li>客户端写入使用 <code>Idempotency-Key</code>；键空间为 <code>(tenant,principal,operation,key)</code>；原请求 hash 相同返回保存的结果，hash 不同返回 <code>409 IDEMPOTENCY_CONFLICT</code>。</li>
+<li><code>projection_watermark</code> 在 V1 定义为 <strong>opaque per-write ticket + generation</strong>，不假装通过 sequence/UUIDv7 推导全局已提交顺序。响应可通过 <code>projection_receipt(event_id,generation,projection_name)</code> 判断本次写是否已投影。</li>
+<li><code>min_projection_watermark</code> 要求的是“我的指定写入已被所需投影处理”，如果未处理，服务可短等待，否则返回 <code>409 PROJECTION_LAG</code>；不能假装无搜索结果。</li>
+<li>Vector/Graph/Hindsight/Mem0 不是事务参与者：<strong>无分布式强一致承诺</strong>；只保障 canonical 原子提交、投影幂等以及可见性同步过滤。</li>
+</ul>
+<h2 id="s-05">5. Context Compiler 内部设计</h2>
+<h3 id="s-05-1">5.1 输入/输出及责任</h3>
+<p>输入：可信内部 AuthContext（通过网关/PDP），明确 task intent、<code>model_id/tokenizer_id/tokenizer_version</code>、<code>hard_limit_tokens</code>、<code>reserved_output_tokens</code>、<code>reserved_system_tokens</code>、purpose、时间窗口、要求的投影 ticket。客户端的 budget 建议必须经服务端 policy clamp。</p>
+<p>输出：按重要度排序的 <code>ContextBundle</code>、含 <code>memory_id/revision/source_refs</code> 的 Manifest、模型与编译器版本、有效期限、投影状态、预算与 omitted reason。编译不触发外部业务写操作。</p>
+<h3 id="s-05-2">5.2 Pipeline (12 steps)</h3>
+<ol>
+<li>Authenticate / Authorize context compilation.</li>
+<li>Resolve model + tokenizer profile; clamp maximum prompt/context budget.</li>
+<li>Resolve current policy version and data residence requirements.</li>
+<li>Construct resource/scope prefilter from trusted PDP / subject permissions.</li>
+<li>Search canonical FTS and approved vector/engine projections; use fixed query and candidate caps.</li>
+<li>Map all candidates back to canonical <code>(tenant,memory_id,revision,source_refs)</code>; un-mappable result is not an Active memory.</li>
+<li>Filter by valid time, known-at, status, source revocation, ACL, classification; deny on policy outage.</li>
+<li>Score remaining candidates (relevance, domain-authority fit, temporal fit, optional diversity); not as replacement for hard gates.</li>
+<li>Deduplicate and group contradictory claims; either include conflict labels or exclude disputed data; never silently merge contradictory facts.</li>
+<li>Reserve output/system/provenance budget; select mandatory context first; stable pack optional context without truncating figures/units/negations.</li>
+<li>Re-evaluate current authorization for the selected exact revisions and source refs; on change fail/recompute; sign/store Manifest hash and TTL.</li>
+<li>Return Bundle; HOST must revalidate on later use; EER/SoR must still check current business facts before executing.</li>
+</ol>
+<p><strong>Stable score suggestion (not validated learned model)</strong>: <code>score = relevance * authority_fit * temporal_fit + diversity_bonus - staleness_penalty</code>; all components bounded, weights calibrated on held-out Parcel tasks. <em>Authorization never appears as a soft factor.</em></p>
+<h3 id="s-05-3">5.3 Packing, Tokenizer, security</h3>
+<ul>
+<li><code>available = hard_limit - reserved_output - reserved_system - fixed_overhead</code>; if mandatory source/role disclaimers exceed available → <code>422 INSUFFICIENT_CONTEXT_BUDGET</code> rather than silently omit.</li>
+<li>Count source/reference markup cost, not just claim body. Use exact tokenizer when installed; estimate must report <code>exact_count=false</code> and hold safety margin.</li>
+<li>Summarization is a separate <em>untrusted-derived transformation</em> subject to origin refs and temporal labels, not an implicit text-shortening function. Summaries require tests for numbers, units, negatives and time validity.</li>
+<li>Bundle replay levels：manifest replay (V1), byte replay (conditional lawful retention), semantic replay (best-effort). Hash of Manifest doesn't prove HOST actually sent the exact text to an LLM.</li>
+</ul>
+<p><strong>实现参考</strong> <code>algorithms/context_compiler_reference.py</code> 是确定性 packing 的可运行示例，附 <code>tests/test_compiler_reference.py</code>。它不调用 PDP，<strong>明确不是生产级授权/检索实现</strong>。</p>
+<h2 id="s-06">6. API 详细设计</h2>
+<p>基于 Core Specification 的 OpenAPI 3.1 契约，提供 <code>api/cmi.openapi.yaml</code>（自带 request allowlist + canonical schemas）。接口资源命名保持不变；<code>api/contract_delta.md</code> 描述以下实现层含义。</p>
+<table>
+<thead>
+<tr>
+  <th>端点</th>
+  <th>责任</th>
+  <th>成功</th>
+  <th>特别规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>POST <code>/cmi/v1/sources/ingest</code></td>
+  <td>来源幂等创建/修订</td>
+  <td>201/202</td>
+  <td>受信来源/租户由服务端决定；同自然键不同 digest 409</td>
+</tr>
+<tr>
+  <td>POST <code>/cmi/v1/memories/propose</code></td>
+  <td>生成 candidate</td>
+  <td>201</td>
+  <td>不能由 Agent 自行声明 active / authoritative</td>
+</tr>
+<tr>
+  <td>POST <code>/cmi/v1/memories/search</code></td>
+  <td>授权检索</td>
+  <td>200</td>
+  <td>返回 current refs + sources + temporal mode + projection ticket</td>
+</tr>
+<tr>
+  <td>GET <code>/cmi/v1/memories/{id}</code></td>
+  <td>指定版本可见性校验</td>
+  <td>200</td>
+  <td>禁止返回 revoked/erased，非授权可隐藏资源存在性</td>
+</tr>
+<tr>
+  <td>POST <code>/cmi/v1/memories/{id}/transitions</code></td>
+  <td>CAS state transition</td>
+  <td>200</td>
+  <td>expected_revision 不匹配 412，同键异参数 409</td>
+</tr>
+<tr>
+  <td>POST <code>/cmi/v1/contexts/compile</code></td>
+  <td>Context bundle</td>
+  <td>201</td>
+  <td>硬预算、policy/version、SourceManifest</td>
+</tr>
+<tr>
+  <td>POST <code>/cmi/v1/contexts/{id}/validate</code></td>
+  <td>上下文消费前复验</td>
+  <td>200 valid/invalid</td>
+  <td>policy / source / memory state / TTL changed → invalid</td>
+</tr>
+<tr>
+  <td>POST <code>/cmi/v1/privacy/erasure-requests</code></td>
+  <td>两阶段擦除</td>
+  <td>202</td>
+  <td>接受 ≠ 擦除完成；要求 operation tracking</td>
+</tr>
+<tr>
+  <td>GET <code>/cmi/v1/operations/{id}</code></td>
+  <td>查询作业</td>
+  <td>200</td>
+  <td>verified/exception/retry 状态</td>
+</tr>
+<tr>
+  <td>GET <code>/cmi/v1/health/{live,ready}</code></td>
+  <td>运维健康</td>
+  <td>200/503</td>
+  <td>不访问 HOST/EER/MCP/引擎作为必需条件</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>HTTP 成功码只表达 CMI 接口本身，不代表 EER/Parcel 的业务目标达成。</li>
+<li><code>409 PROJECTION_LAG</code> 按 Core Spec 继续兼容；<code>412 REVISION_PRECONDITION_FAILED</code> 是并发冲突，客户端先 read/current revision 再重新提交，不能后台自动覆盖。</li>
+<li>失败规范：<code>{error:{code,message,request_id,retryable,details}}</code>；所有 403/404 信息防资源枚举；<code>X-Request-Id</code>, traceparent；对数据访问日志只写指针和策略决策 ID。</li>
+<li>MIME / schema 以 <code>api/cmi.openapi.yaml</code> 为准；<strong>文档描述多于 OpenAPI 的实现约束须由后续 PR 拆成测试</strong>。</li>
+</ul>
+<h3 id="s-06-1">6.1 Memory Engine SPI V1</h3>
+<pre><code class="language-text">capabilities() -&gt; versions, ID mapping, deletion granularity, rebuild, index filtering
+extract(source_ref, secure_content_ref, profile) -&gt; candidates[] + source spans
+index(canonical_records, generation, idempotency_key) -&gt; engine_ack
+search(query, permitted_scope, filters, top_k) -&gt; (memory_id,revision,engine_score)[]
+delete(memory_refs_or_scope, operation_id) -&gt; signed/verifiable completion ack
+rebuild(canonical_snapshot_ref, target_generation) -&gt; staged_generation
+health() -&gt; readiness and capabilities
+reflect(...) -&gt; unapproved candidates ONLY (OPTIONAL)
+</code></pre>
+<p><strong>生产资格的硬条件</strong>：每条召回结果能映射规范 ID/source/version；有确定删除或安全重建能力；隔离可测；关闭引擎 S0 仍可运行；数据流与模型许可证核对完成。引擎自行 consolidation/reflect 产生的事实不允许直接写 active。</p>
+<h2 id="s-07">7. FTS / pgvector / Graphiti 的阶段化索引</h2>
+<ul>
+<li><strong>S0</strong>：先用 PostgreSQL <code>to_tsvector('simple')</code> + GIN 实现英文词法检索。简体中文没有天然完整分词，需要额外分词或 n-gram 方案；不得将 simple FTS 当作中文高质量检索的证据。</li>
+<li><strong>S1 可选</strong>：通过明确的 EmbeddingModelProfile 登记 <code>(model_id,dimension,normalization,version,residency)</code>；投影建 generation，禁在模型变更时覆盖旧 embedding。ANN 索引按维度/租户规模和选择性决定。</li>
+<li><strong>pgvector 风险</strong>：HNSW/IVFFlat 的过滤可能影响 recall，尤其多租户/高选择性 ACL；要和同数据的 exact recall@k 比较，并评估 tenant 分区 / exact prefilter / iterative scans。</li>
+<li><strong>Graphiti</strong>：暂缓独立图谱投影。只有时序多跳测试证明其相对现有模型有质量/成本增益，才进入下一 ADR 评审。</li>
+</ul>
+<h2 id="s-08">8. HOST / EER / Parcel 接入</h2>
+<h3 id="s-h-9">HOST（可选）</h3>
+<p>HOST 请求 <code>/contexts/compile</code>，传 <code>task_ref</code>, model profile, budget；从返回的 Bundle/Manifest 中取可用上下文，作为数据引用装入 Agent prompt。HOST 管理自己的会话、用户交互、工具批准及模型推理；CMI 不要求 HOST 会话必须长期绑定一条 CMI 连接。HOST 消费旧 Bundle 时需要重新验证。</p>
+<h3 id="s-h-9-1">EER（可选）</h3>
+<p>EER 在完成已验证业务执行后，向 CMI 提供<strong>经授权、去敏、带来源的 Event/Evidence 引用</strong>，CMI 作为经验候选处理；事件接收不意味着自动 approve。EER Actor/Execution/Verifier/Evidence 由 EER 持有；CMI outage 时不导致执行责任转移或创建绕路业务写接口。实际 Event/Evidence payload schema <strong>仍待 EER 代码联调提供</strong>，本文不虚构其真实字段。</p>
+<h3 id="s-h-9-2">Parcel（第一条业务试点）</h3>
+<p>测试“创建面单失败—检索相似历史异常—核对当前 Parcel/渠道规则—建议处理—交由 EER 或获准原生业务服务执行—获得验证结果—新案例入 candidate”链路。以运行前业务权威快照和完成后的可验证结果评估质量，不以“模型回复通顺”代替完成。</p>
+<h2 id="s-09">9. 工程验收 Gate 与负例</h2>
+<table>
+<thead>
+<tr>
+  <th>Gate</th>
+  <th>必须证明</th>
+  <th>负例 / 方法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>TD-G0</td>
+  <td>无 HOST/EER/MCP/记忆引擎依赖可启动</td>
+  <td>停掉所有外部进程后 S0 API + health 正常</td>
+</tr>
+<tr>
+  <td>TD-G1</td>
+  <td>租户/RLS/ABAC</td>
+  <td>同 ID 跨租户、跨 purpose、伪造 tenant header、连接池复用均拒绝</td>
+</tr>
+<tr>
+  <td>TD-G2</td>
+  <td>规范修订/CAS/idempotency</td>
+  <td>双并发只有一个成功；412 不覆盖；同幂等键异 body 409</td>
+</tr>
+<tr>
+  <td>TD-G3</td>
+  <td>来源撤权同步屏蔽</td>
+  <td>Source revoke 时旧 ANN、旧 Bundle、并发写、缓存均不返明文</td>
+</tr>
+<tr>
+  <td>TD-G4</td>
+  <td>投影一致/可重建</td>
+  <td>worker crash、乱序 outbox、generation 切换、ticket lag 返回可解释</td>
+</tr>
+<tr>
+  <td>TD-G5</td>
+  <td>Context 正确性</td>
+  <td>token 预算、来源、时间、冲突、必需段落均稳定；不可伪造获批事实</td>
+</tr>
+<tr>
+  <td>TD-G6</td>
+  <td>擦除全域闭环</td>
+  <td>registry/object/vector/engine/cache/bundle/备份恢复屏蔽均有完成证据</td>
+</tr>
+<tr>
+  <td>TD-G7</td>
+  <td>Parcel 端到端</td>
+  <td>不以 CMI 推断实时状态，不把建议当执行成功；回溯完整</td>
+</tr>
+</tbody>
+</table>
+<p><strong>建议测试规模</strong>：先从 40 项已有合同级负例开始，再按 ADR 方案扩为 240 个经审核样本；这些是 <em>计划样本数</em>，并非已实际完成。PoC 需要 S0 / S1(Hindsight) / S2(Mem0) 同场对照。安全 Gate 一票否决；质量指标另按评分卡汇总，不以综合分覆盖安全失败。</p>
+<h2 id="s-10">10. PR 顺序、依赖与交付证据</h2>
+<table>
+<thead>
+<tr>
+  <th>PR</th>
+  <th>预计成果</th>
+  <th>合入条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>PR-01</td>
+  <td>项目骨架 + OpenAPI、error &amp; authn middleware</td>
+  <td>无外部引擎启动、请求拒绝默认安全</td>
+</tr>
+<tr>
+  <td>PR-02</td>
+  <td>001/002 DDL + 租户角色/RLS + migration harness</td>
+  <td>真正 PostgreSQL DB 集成测试、RLS 负例</td>
+</tr>
+<tr>
+  <td>PR-03</td>
+  <td>Source/Memory canonical + CAS/revisions + idempotency</td>
+  <td>多并发、来源约束、同键重复负例</td>
+</tr>
+<tr>
+  <td>PR-04</td>
+  <td>revoke barrier + outbox + worker/receipt</td>
+  <td>断电重启、乱序、撤权后 0 返回</td>
+</tr>
+<tr>
+  <td>PR-05</td>
+  <td>FTS + Context Compiler + Bundle/manifest</td>
+  <td>中文检索限制标识、budget &amp; replay 单测</td>
+</tr>
+<tr>
+  <td>PR-06</td>
+  <td>擦除事务与物理净化调度</td>
+  <td>删除覆盖矩阵、恢复重放测试</td>
+</tr>
+<tr>
+  <td>PR-07</td>
+  <td>pgvector profile 与受权召回（可选）</td>
+  <td>exact recall 对照、tenant ACL 过滤</td>
+</tr>
+<tr>
+  <td>PR-08</td>
+  <td>Hindsight / Mem0 SPI PoC（非基线依赖）</td>
+  <td>通过 ADR A1–A6 Gate 后才可进入生产链</td>
+</tr>
+<tr>
+  <td>PR-09</td>
+  <td>HOST、EER、Parcel adapters</td>
+  <td>三系统分别独立启动，Parcel 完整证据闭环</td>
+</tr>
+</tbody>
+</table>
+<p><strong>研发里程碑不是承诺排期</strong>。企业 IdP/PDP、EER 当前 schema、HOST model profile、真实客户数据授权、KMS/驻留、备份策略、数据库性能规模尚需项目方提供。</p>
+<h2 id="s-11">11. 上线前必须作出的开放决策</h2>
+<table>
+<thead>
+<tr>
+  <th>决策</th>
+  <th>建议默认</th>
+  <th>决策者 / 触发条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>PostgreSQL 版本、HA/PITR、RLS 角色</td>
+  <td>PostgreSQL &gt;=16；独立 owner / pool role</td>
+  <td>DBA 安全审核，运行目标环境决定</td>
+</tr>
+<tr>
+  <td>DB 强隔离租户</td>
+  <td>共库 tenant + RLS 作为 S0；受规制客户独立 DB</td>
+  <td>合同数据驻留/威胁等级</td>
+</tr>
+<tr>
+  <td>IAM/PDP</td>
+  <td>复用客户 IdP 和统一 PDP</td>
+  <td>实际凭据、代理委派范围确认</td>
+</tr>
+<tr>
+  <td>Embedding 模型和维度</td>
+  <td>S0 不绑定；评测后锁版本</td>
+  <td>中英文 Recall、延迟、成本实测</td>
+</tr>
+<tr>
+  <td>对象存储、KMS、Redis/Valkey</td>
+  <td>由部署地区和许可证选择</td>
+  <td>采购/运维/法务会签</td>
+</tr>
+<tr>
+  <td>原始数据的保留期限</td>
+  <td>按客户数据治理政策，不预设永久</td>
+  <td>Data Owner + Legal</td>
+</tr>
+<tr>
+  <td>P95、TPS、RPO、RTO</td>
+  <td>暂无数值承诺，先测定基线</td>
+  <td>SLO 与客户生产合同</td>
+</tr>
+<tr>
+  <td>长期反思/Graphiti/跨区多活</td>
+  <td>V1 暂缓</td>
+  <td>PoC 显示显著业务增益后另立 ADR</td>
+</tr>
+</tbody>
+</table>
+<h2 id="s-12">12. 版本、核验状态及后续批准</h2>
+<h3 id="s-12-1">12.1 本次已经实际完成</h3>
+<ul>
+<li>已编制带 tenant composite PK/FK 的 canonical DDL 草案、RLS 策略草案、可选投影 DDL。</li>
+<li>已编制与 Core Spec 同路径的 OpenAPI 契约快照以及新增工程接口差异说明。</li>
+<li>已编制确定性 packing 的 Python 参考实现与 unit tests；其 PDP 与数据库集成未实现。</li>
+<li>已编制事务 recipe、威胁/验收矩阵、工程 PR 计划和离线 HTML 阅读版。</li>
+</ul>
+<h3 id="s-12-2">12.2 明确没有完成的事项</h3>
+<ul>
+<li>未实际执行 PostgreSQL migration 或真实并发/RLS 数据库集成测试。</li>
+<li>未测量真实 P95/QPS、中文检索质量、Hindsight/Mem0/Graphiti 的业务效果。</li>
+<li>未核对 IDP HOST / EER 当前部署的实际 API 源码，也未部署任何 production service。</li>
+<li>未完成法律合规、客户 IAM、备份灾备及安全渗透测试会签。</li>
+</ul>
+<h3 id="s-12-3">12.3 外部规范与一手参考资料</h3>
+<ol>
+<li><a href="https://www.postgresql.org/docs/current/ddl-rowsecurity.html">PostgreSQL 18 Row Security Policies</a> — RLS 默认拒绝、owner/BYPASSRLS 例外、FORCE。</li>
+<li><a href="https://www.postgresql.org/docs/current/sql-select.html">PostgreSQL SELECT — SKIP LOCKED</a> — 仅适于队列消费者，不适用于一般一致检索。</li>
+<li><a href="https://www.postgresql.org/docs/current/transaction-iso.html">PostgreSQL Transaction Isolation</a> — CAS/锁/序列化重试。</li>
+<li><a href="https://github.com/pgvector/pgvector">pgvector 官方 README</a> — ANN、过滤、iterative scanning、租户索引。</li>
+<li><a href="https://modelcontextprotocol.io/specification/2026-07-28">MCP 2026-07-28 Official Specification</a> — stateless 协议与授权。</li>
+<li><a href="https://spec.openapis.org/oas/v3.1.1.html">OpenAPI 3.1.1 Specification</a> — HTTP 契约描述。</li>
+<li><a href="https://github.com/vectorize-io/hindsight">Hindsight Repository</a>、<a href="https://github.com/mem0ai/mem0">Mem0 Repository</a>、<a href="https://github.com/getzep/graphiti">Graphiti Repository</a> — 可插拔候选，本文不声称其通过 IDP PoC。</li>
+</ol>
+<hr />
+<p><strong>推荐工程会签顺序</strong>：架构负责人确认责任域 → DBA 验证 PostgreSQL DDL/RLS/迁移 → 安全负责人确认身份/数据流/撤权/擦除 → 开源许可证与数据驻留审核 → 项目负责人批准 S0/引擎 PoC 开发。未通过安全和数据库 Gate 的设计不可宣称 production ready。</p>
+</article><footer>架构设计草案 · 未进行真实数据库迁移及生产环境测试。© IDP internal working document.</footer></main></div><script>const f=document.getElementById('find'),links=[...document.querySelectorAll('#links a')],st=document.getElementById('findstatus');f.addEventListener('input',()=>{const q=f.value.trim().toLowerCase();let n=0;links.forEach(a=>{const ok=a.textContent.toLowerCase().includes(q);a.style.display=ok?'':'none';if(ok)n++;});st.textContent=q?`匹配 ${n} 个章节`:'';});</script></body></html>

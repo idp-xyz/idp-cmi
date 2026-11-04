@@ -264,6 +264,33 @@
       }
     },
     {
+      "definition": "MemoryRecord",
+      "value": {
+        "acl": {},
+        "content": "The pickup surcharge is 5 euro.",
+        "createdAt": "2026-11-04T08:00:00Z",
+        "disputedBy": "b2c3d4e5-0000-4000-8000-000000000057",
+        "kind": "semantic",
+        "provenance": {
+          "observedAt": "2026-11-04T08:00:00Z",
+          "recordedBy": "run_14",
+          "ref": "run:14",
+          "source": "assistant"
+        },
+        "recordId": "a1b2c3d4-0000-4000-8000-000000000056",
+        "scope": {
+          "kind": "tenant"
+        },
+        "sensitivity": "internal",
+        "status": "disputed",
+        "tags": [],
+        "validity": {
+          "validFrom": "2026-11-04T08:00:00Z"
+        },
+        "version": 2
+      }
+    },
+    {
       "definition": "Source",
       "value": {
         "baseUrl": "https://orders.example",

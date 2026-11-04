@@ -448,11 +448,12 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("GET /v1/memory/records", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		q := r.URL.Query()
 		flagged := q.Get("flagged") == "true" // D12: the quarantine review, administrators only
-		if flagged && !p.Has(admin) {
-			return 0, nil, transport.Fail(http.StatusForbidden, "FORBIDDEN", "role cmi-admin required to list flagged records")
+		review := q.Get("status")             // D21: candidate | disputed review, administrators only
+		if (flagged || review != "") && !p.Has(admin) {
+			return 0, nil, transport.Fail(http.StatusForbidden, "FORBIDDEN", "role cmi-admin required to review flagged, candidate or disputed records")
 		}
 		scope := cmi.Scope{Kind: q.Get("scopeKind"), ID: q.Get("scopeId")}
-		if scope.Kind == "" && !flagged {
+		if scope.Kind == "" && !flagged && review == "" {
 			scope = cmi.Scope{Kind: cmi.ScopeSubject, ID: p.Subject}
 		}
 		if scope.Kind != "" {
@@ -465,9 +466,29 @@ func (a *API) Handler() http.Handler {
 			return 0, nil, err
 		}
 		limit, _ := strconv.Atoi(q.Get("limit"))
+		if review != "" {
+			out, err := a.Store.ReviewMemory(r.Context(), p.Tenant, scope, v, limit, review)
+			return 200, map[string]any{"records": out}, err
+		}
 		out, err := a.Store.ListMemory(r.Context(), p.Tenant, scope, v, limit, flagged)
 		return 200, map[string]any{"records": out}, err
 	}, writer, reader))
+	mux.Handle("POST /v1/memory/records/{id}/transitions", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		var in struct {
+			To          string `json:"to"`
+			Reason      string `json:"reason"`
+			ApprovalRef string `json:"approvalRef"`
+		}
+		if err := decode(r, &in); err != nil {
+			return 0, nil, err
+		}
+		expected, err := ifMatch(r)
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.Transition(r.Context(), p.Tenant, r.PathValue("id"), in.To, in.Reason, in.ApprovalRef, p.Subject, expected)
+		return 200, out, err
+	}, admin))
 	mux.Handle("POST /v1/memory/revoke", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		var in struct {
 			RecordID string `json:"recordId"`

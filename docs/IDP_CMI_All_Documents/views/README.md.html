@@ -1,0 +1,58 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>README.md · IDP CMI 资料中心</title><link rel="stylesheet" href="../assets/reader.css"></head><body><header class="header"><small>IDP CMI / HISTORICAL DOCUMENTS</small><h1>README.md</h1><p>内部资料 · 本地阅读版</p></header><div class="toolbar"><a href="../index.html">← 返回统一入口</a><a href="../originals/README.md">查看原始文件</a><button type="button" onclick="window.print()">打印 / PDF</button></div><div class="layout"><aside class="toc" aria-label="文档目录"><strong>CONTENTS / 目录</strong><a class="" href="#part-002">1. Implemented</a><a class="" href="#part-003">2. Local developer setup (requires Docker on your machine)</a><a class="" href="#part-004">3. Tests</a><a class="" href="#part-005">4. Database deployment</a><a class="" href="#part-006">5. Explicit non-goals of this PR and production blockers</a><a class="" href="#part-007">6. Next recommended engineering gate</a></aside><main class="paper" id="content"><div class="notice">此页面为原始资料的阅读副本，历史表述和状态予以保留。请结合统一入口中的状态说明和相关审批记录阅读。</div><h1 id="part-001">IDP-CMI Core · Implementation PR-01~PR-03 V0.1</h1><p><strong>Status: runnable engineering prototype; NOT production approved.</strong>
+日期：2026-10-15。上游：Core Specification V1.0 → ADR-001 → Technical Design V1.0。</p>
+<h2 id="part-002">1. Implemented</h2><div class="scroll" role="region" tabindex="0" aria-label="表格，可横向滚动"><table>
+<thead>
+<tr>
+<th>PR</th>
+<th>Real code</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>PR-01</td>
+<td>FastAPI application, typed request allowlists, structured errors, X-Request-ID, signed RS256 JWT verification, no-store, live/ready health</td>
+<td>No HOST/EER/Hindsight/Mem0 dependency. Production policy defaults to DENY.</td>
+</tr>
+<tr>
+<td>PR-02</td>
+<td>PostgreSQL 15-table canonical schema, FORCE RLS, tenant transaction isolation, role/grant bootstrap, Core Scope correction</td>
+<td>Requires real PostgreSQL &gt;=16 and DBA-reviewed deployment.</td>
+</tr>
+<tr>
+<td>PR-03</td>
+<td>Source ingestion, candidate proposal, approved lifecycle CAS, transaction outbox, scoped idempotency, active-only authorized reads, source revision invalidation</td>
+<td>Implemented against PostgreSQL; database integration test <strong>not executed in authoring container</strong>.</td>
+</tr>
+</tbody></table></div>
+<p>Implemented HTTP endpoints: <code>GET /cmi/v1/health/live</code>, <code>GET /cmi/v1/health/ready</code>, <code>POST /cmi/v1/sources/ingest</code>, <code>POST /cmi/v1/memories/propose</code>, <code>GET /cmi/v1/memories/{id}</code>, <code>POST /cmi/v1/memories/{id}/transitions</code>, <code>POST /cmi/v1/memories/search</code>.</p>
+<p>The original 12-route API blueprint is in <code>contracts/design_openapi.yaml</code>; <strong>only</strong> <code>api/implemented.openapi.json</code> reflects this code. Do not generate production SDK from the blueprint and assume all endpoints are deployed.</p>
+<h2 id="part-003">2. Local developer setup (requires Docker on your machine)</h2><pre><code>python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e &#39;.[test]&#39;
+./scripts/bootstrap_local_postgres.sh
+export CMI_DATABASE_URL=&#39;postgresql+psycopg://cmi_app:local_app_dev_only@127.0.0.1:55432/cmi&#39;
+export CMI_JWT_PUBLIC_KEY_FILE=&quot;$PWD/.local-secrets/dev_public.pem&quot;
+export CMI_JWT_ISSUER=&#39;urn:local:idp-cmi&#39;
+export CMI_JWT_AUDIENCE=&#39;idp-cmi&#39;
+export CMI_POLICY_MODE=&#39;signed_claims_poc&#39;  # NEVER USE THIS IN PRODUCTION
+python scripts/issue_local_dev_token.py --tenant 550e8400-e29b-41d4-a716-446655440000
+python -m uvicorn idp_cmi.main:app --host 127.0.0.1 --port 8181</code></pre><p>The dev token issuer prints the token; copy it manually to your request&#39;s <code>Authorization: Bearer &lt;token&gt;</code> header. You can use <code>/docs</code> to explore the implemented API. Example:</p>
+<pre><code>curl http://127.0.0.1:8181/cmi/v1/health/live</code></pre><p><strong>Local demo only:</strong> source content must be referenced as <code>s3://cmi-ingested/...</code>; this code does NOT verify an actual object in MinIO/S3 or its supplied hash. Do not input real customer data or use this as a trusted evidence ingestion pipeline.</p>
+<h2 id="part-004">3. Tests</h2><pre><code>pytest -q
+# Real database integration (only after local bootstrap):
+export CMI_TEST_DATABASE_URL=&quot;$CMI_DATABASE_URL&quot;
+pytest -q tests/test_postgres_integration.py</code></pre><p>No DB configured → PostgreSQL integration test <strong>skipped</strong>, not passed. GitHub Actions sample starts Postgres 17 and executes migrations with a disposable CI account. Security isolation tests require independent peer review and more adversarial cases before production.</p>
+<h2 id="part-005">4. Database deployment</h2><p>Migration execution order: <code>000_privileged_bootstrap.sql</code> (DBA) → <code>001_canonical.sql</code> → <code>002_rls.sql</code> → <code>003_scope_alignment.sql</code> → <code>004_role_grants.sql</code>. The local bootstrap script uses the dockerized superuser for migrations only; the application connects as unprivileged <code>cmi_app</code> with <code>NOBYPASSRLS</code>, and <code>FORCE RLS</code> on data tables. Production must use separate schema owner, migration principal, secret-managed DB login, migration version table, pinned DB patch version, backups and rollback procedures.</p>
+<p>Set <code>cmi.tenant_id</code> via transaction-local <code>set_config(..., true)</code> <strong>after</strong> JWT verification. Never expose DB connections or arbitrary SQL to untrusted agents. GUC-based RLS is defense in depth, not a substitute for a trusted policy decision point (PDP).</p>
+<h2 id="part-006">5. Explicit non-goals of this PR and production blockers</h2><ul>
+<li><strong>No enterprise PDP yet.</strong> <code>CMI_POLICY_MODE=deny</code> (default) rejects protected data. <code>signed_claims_poc</code> grants from signed JWT scope/action/purpose lists for local PoC only. Real resource-policy/classification, source ownership, approval authority and change-of-policy revocation must integrate a real PDP.</li>
+<li><strong>No cryptographically verified approval workflow.</strong> <code>approval_ref</code> is currently a non-empty reference, not independent proof of approval. Production approval must be verified against a trusted approval service.</li>
+<li><strong>No verified Source ingestion.</strong> URI allowlist only; object existence/content digest and authority classification not verified. Source defaults <code>external_untrusted</code> regardless of supplied type.</li>
+<li><strong>No erasure service, privacy sweep, external audit evidence store or outbox worker.</strong> Visibility barriers exist for a memory marked <code>revoked</code>; physical erasure is later PR.</li>
+<li><strong>No Context Compiler, ContextBundle API, vector retrieval, Graphiti, Hindsight, Mem0, MCP Adapter or EER/HOST integration</strong> in this PR.</li>
+<li><strong>No formal bitemporal read API</strong>. <code>known_at</code>, <code>as_of_valid</code> remain later work; simple SQL read/search only.</li>
+<li><strong>No true Chinese tokenization</strong>. Simple FTS + guarded substring is a functional baseline, not a quality/performance claim.</li>
+<li>API signatures are not yet fully Core V1 compliant. Read <code>docs/contract_deltas.md</code>. Before production, reconcile and publish a versioned stable SDK contract.</li>
+</ul>
+<h2 id="part-007">6. Next recommended engineering gate</h2><p>Run the real PostgreSQL integration test, then execute Security Gate: JWT/PDP authority, source verification, cross-tenant DB/RLS adversarial scenarios, concurrency/idempotency fault injection, outbox recovery and controlled erasure. <strong>Only then</strong> continue PR-04 Context Compiler + PR-05 Memory Engine SPI.</p>
+</main></div><footer class="footer">IDP CMI · 完整资料包 · 原始内容保留</footer></body></html>

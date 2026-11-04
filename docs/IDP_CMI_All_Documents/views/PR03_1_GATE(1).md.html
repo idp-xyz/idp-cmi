@@ -1,0 +1,86 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PR03_1_GATE(1).md · IDP CMI 资料中心</title><link rel="stylesheet" href="../assets/reader.css"></head><body><header class="header"><small>IDP CMI / HISTORICAL DOCUMENTS</small><h1>PR03_1_GATE(1).md</h1><p>内部资料 · 本地阅读版</p></header><div class="toolbar"><a href="../index.html">← 返回统一入口</a><a href="../originals/PR03_1_GATE(1).md">查看原始文件</a><button type="button" onclick="window.print()">打印 / PDF</button></div><div class="layout"><aside class="toc" aria-label="文档目录"><strong>CONTENTS / 目录</strong><a class="" href="#part-002">Execute on Ubuntu / developer CI</a><a class="" href="#part-003">Evidence required</a><a class="" href="#part-004">Code-review findings</a><a class="" href="#part-005">Next work package</a></aside><main class="paper" id="content"><div class="notice">此页面为原始资料的阅读副本，历史表述和状态予以保留。请结合统一入口中的状态说明和相关审批记录阅读。</div><h1 id="part-001">IDP-CMI PR-03.1 — PostgreSQL Safety Gate</h1><p><strong>State: NOT EXECUTED against PostgreSQL in this environment; NOT production approved.</strong></p>
+<h2 id="part-002">Execute on Ubuntu / developer CI</h2><p>Inside this package:</p>
+<pre><code>python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e &#39;.[test]&#39;
+CMI_GATE_CONFIRM_DISPOSABLE=YES ./scripts/run_db_gate.sh --bootstrap-local</code></pre><p>The runner starts the already-defined disposable PostgreSQL 17 service with Docker Compose, applies 000–004 migrations, checks DB-RLS tests and the original unit tests. It refuses non-local URLs and an absent explicit disposable-DB confirmation. Only synthetic records should be used.</p>
+<h2 id="part-003">Evidence required</h2><div class="scroll" role="region" tabindex="0" aria-label="表格，可横向滚动"><table>
+<thead>
+<tr>
+<th>Gate</th>
+<th>What must be observed</th>
+<th>Current status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>G01</td>
+<td>PostgreSQL migrations 000–004 complete</td>
+<td>Not run</td>
+</tr>
+<tr>
+<td>G02</td>
+<td><code>cmi_app</code> is NOT superuser / BYPASSRLS / owner</td>
+<td>Not run</td>
+</tr>
+<tr>
+<td>G03</td>
+<td>All 15 tables ENABLE + FORCE RLS</td>
+<td>Not run</td>
+</tr>
+<tr>
+<td>G04</td>
+<td>Cross-tenant reads and writes are blocked</td>
+<td>Not run</td>
+</tr>
+<tr>
+<td>G05</td>
+<td>CAS stale revision returns 412</td>
+<td>Not run</td>
+</tr>
+<tr>
+<td>G06</td>
+<td>Idempotent replay causes no duplicate business effects</td>
+<td>Not run</td>
+</tr>
+<tr>
+<td>G07</td>
+<td>Concurrent first insert of same source is normalized, not HTTP 500</td>
+<td><strong>Missing test and conflict handling</strong></td>
+</tr>
+<tr>
+<td>G08</td>
+<td>Real policy decision point and approval authority</td>
+<td>Not implemented</td>
+</tr>
+<tr>
+<td>G09</td>
+<td>Source object and digest verified</td>
+<td>Not implemented</td>
+</tr>
+<tr>
+<td>G10</td>
+<td>Outbox reprocessing / dead letter / checkpoint</td>
+<td>Not implemented</td>
+</tr>
+<tr>
+<td>G11</td>
+<td>Erasure propagates to raw source, indexes, backups per policy</td>
+<td>Not implemented</td>
+</tr>
+</tbody></table></div>
+<p>G01–G07 are minimum engineering gates before canonical ContextBundle integration. G08–G11 also block production.</p>
+<h2 id="part-004">Code-review findings</h2><ol>
+<li><code>Database.ingest</code> executes SELECT-before-INSERT for a new source. Two concurrent first inserts for the same natural key can race and one can raise an unhandled database <code>IntegrityError</code>. Add deterministic concurrent fault injection and return normalized 409 or bounded safe retry.</li>
+<li><code>idempotency_record.expires_at</code> is currently written but never used to expire or reclaim a key. Specify exact lifecycle and purge behavior before enforcing expiry.</li>
+<li><code>_idem_commit</code> persists HTTP 201 for all operations, even transitions returning HTTP 200. Align durable replay semantics and persisted status.</li>
+<li><code>approval_ref</code> is a syntactic reference, not a cryptographically or service-verified approval. It cannot be used to authorize production actions.</li>
+<li>No enterprise PDP, physically verified source ingestion, physical erasure, or Outbox worker is implemented. Keep fail-closed behavior; do not switch on demo claims for production.</li>
+</ol>
+<h2 id="part-005">Next work package</h2><ol>
+<li>Run and record G01–G06 in a <strong>disposable</strong> PostgreSQL.</li>
+<li>Patch G07 new-source collision handling and add concurrency and fault-injection tests.</li>
+<li>Design approval/PDP and verified Source interfaces; do not mix with initial Context Compiler work.</li>
+<li>Only then implement PR-04 <code>ContextCompiler</code> + <code>ContextBundle</code> with permission revalidation and deterministic token budgeting.</li>
+</ol>
+<p><em>These tests do not constitute a full security audit. A live PostgreSQL run and independent security review are still required.</em></p>
+</main></div><footer class="footer">IDP CMI · 完整资料包 · 原始内容保留</footer></body></html>

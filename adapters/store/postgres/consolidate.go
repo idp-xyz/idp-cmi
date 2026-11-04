@@ -154,7 +154,11 @@ func (s *Store) Consolidate(ctx context.Context, tenant string, g ConsolidationG
 					dropped = append(dropped, st)
 					continue
 				}
-				rec := cmi.MemoryRecord{Scope: g.Scope, Kind: cmi.KindSemantic, Content: st, Structured: derived, Tags: []string{"consolidated"},
+				status := cmi.StatusActive
+				if policy.ConsolidatedAsCandidate {
+					status = cmi.StatusCandidate // D21: an administrator admits distilled statements
+				}
+				rec := cmi.MemoryRecord{Scope: g.Scope, Kind: cmi.KindSemantic, Content: st, Structured: derived, Tags: []string{"consolidated"}, Status: status,
 					Provenance:  cmi.Provenance{Source: source, Ref: "consolidation:" + id, ObservedAt: observed, RecordedBy: RecordedBy},
 					Validity:    cmi.Validity{ValidFrom: now, ValidUntil: now.Add(time.Duration(policy.ConsolidatedTTLDays) * 24 * time.Hour)},
 					Sensitivity: g.Sensitivity, ACL: g.ACL, Entities: entities}

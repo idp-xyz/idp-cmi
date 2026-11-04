@@ -53,7 +53,9 @@ const (
 	KindEpisodic = "episodic"
 	KindSemantic = "semantic"
 
+	StatusCandidate  = "candidate" // written but not yet admitted (D21); never packed
 	StatusActive     = "active"
+	StatusDisputed   = "disputed" // contradicted by an authoritative record (D21); never packed until resolved
 	StatusExpired    = "expired"
 	StatusRevoked    = "revoked"
 	StatusSuperseded = "superseded"
@@ -237,9 +239,10 @@ type MemoryRecord struct {
 	Revocation  *Revocation     `json:"revocation,omitempty"`
 	Sensitivity string          `json:"sensitivity"`
 	ACL         ACL             `json:"acl"`
-	Entities    []Entity        `json:"entities,omitempty"` // business objects the record refers to (D13)
-	Flags       []string        `json:"flags,omitempty"`    // write-time scan findings (D12); set by the CMI, never by the writer
-	Version     int             `json:"version,omitempty"`  // bumped by every state change; If-Match names the expected one (D19)
+	Entities    []Entity        `json:"entities,omitempty"`   // business objects the record refers to (D13)
+	Flags       []string        `json:"flags,omitempty"`      // write-time scan findings (D12); set by the CMI, never by the writer
+	Version     int             `json:"version,omitempty"`    // bumped by every state change; If-Match names the expected one (D19)
+	DisputedBy  string          `json:"disputedBy,omitempty"` // the record that contradicts this one (D21)
 	CreatedAt   time.Time       `json:"createdAt"`
 }
 
@@ -289,8 +292,10 @@ func (m *MemoryRecord) Validate() error {
 	if !ValidSensitivity(m.Sensitivity) {
 		return errors.New("sensitivity must be public, internal, confidential or restricted")
 	}
-	if m.Status != "" && m.Status != StatusActive && m.Status != StatusExpired && m.Status != StatusRevoked {
-		return errors.New("status must be active, expired or revoked")
+	switch m.Status {
+	case "", StatusCandidate, StatusActive, StatusDisputed, StatusExpired, StatusRevoked:
+	default:
+		return errors.New("status must be candidate, active, disputed, expired or revoked")
 	}
 	if err := ValidateEntities(m.Entities); err != nil {
 		return err
