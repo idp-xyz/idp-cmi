@@ -13,6 +13,8 @@
 //	IDP_CMI_LISTEN               default 127.0.0.1:8550
 //	IDP_CMI_CONFIG               optional YAML: embedding endpoint (ADR-0001 D11), consolidation model (D15)
 //	IDP_CMI_SWEEP                expiry sweep interval (default 1m; 0 disables)
+//	IDP_CMI_INGEST               ingestion worker interval (default 10s; 0 disables connectors' processing, D16)
+//	IDP_CMI_INSTANCE             lease owner name of this replica (default hostname)
 //	IDP_DEV_MODE                 "true": HS256 development tokens
 //	IDP_CMI_ISSUER / IDP_CMI_AUDIENCE   accepted tokens (default idp-cmi-dev / idp-cmi)
 //	IDP_CMI_JWKS_URL             production keys; IDP_DEV_SECRET[_FILE] (>= 32 bytes) in dev mode instead
@@ -40,8 +42,11 @@ import (
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/api"
 	"idp-cmi/internal/config"
+	"idp-cmi/internal/consolidate"
 	cmictx "idp-cmi/internal/context"
 	"idp-cmi/internal/embedding"
+	"idp-cmi/internal/evaluation"
+	"idp-cmi/internal/ingest"
 	"idp-cmi/internal/observability"
 	"idp-cmi/internal/transport"
 )
@@ -215,7 +220,64 @@ func serve(log *slog.Logger) error {
 			}
 		}()
 	}
-	a := &api.API{Store: store, Auth: verifier, Resolver: &cmictx.Resolver{Store: store, Embedder: embedder, Log: log}, Log: log, Metrics: metrics, Version: version}
+	resolver := &cmictx.Resolver{Store: store, Embedder: embedder, Log: log}
+	a := &api.API{Store: store, Auth: verifier, Resolver: resolver, Log: log, Metrics: metrics, Version: version, Evaluator: &evaluation.Suite{Store: store, Resolver: resolver}}
+	if c := cfg.Consolidation; c != nil { // ADR-0001 D15
+		tlsCfg, err := transport.ClientTLS(c.CAFile, "", "")
+		if err != nil {
+			return fmt.Errorf("consolidation: %w", err)
+		}
+		a.Consolidator = &consolidate.Consolidator{Store: store, Source: c.Source, Log: log, Model: &consolidate.OpenAIChat{BaseURL: c.BaseURL, ModelName: c.Model, APIKey: c.APIKey, Timeout: c.Timeout,
+			HTTP: &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsCfg}}}}
+		if c.Interval > 0 {
+			go func() {
+				t := time.NewTicker(c.Interval)
+				defer t.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.C:
+						if s, err := a.Consolidator.RunAll(ctx); err != nil && ctx.Err() == nil {
+							log.Warn("consolidation failed", "error", err)
+						} else if s != nil && s.Groups > 0 {
+							log.Info("consolidated memory", "groups", s.Groups, "created", s.Created, "rejected", s.Rejected, "failed", s.Failed)
+						}
+					}
+				}
+			}()
+		}
+	}
+	ingestEvery, err := time.ParseDuration(env("IDP_CMI_INGEST", "10s"))
+	if err != nil {
+		return fmt.Errorf("IDP_CMI_INGEST: %w", err)
+	}
+	instance := env("IDP_CMI_INSTANCE", "")
+	if instance == "" {
+		instance, _ = os.Hostname()
+	}
+	a.Ingester = &ingest.Ingester{Store: store, Owner: instance, Lease: time.Minute, Log: log, HTTP: &http.Client{Timeout: 60 * time.Second, Transport: &http.Transport{Proxy: nil}}}
+	if ingestEvery > 0 { // ADR-0001 D16
+		go func() {
+			t := time.NewTicker(ingestEvery)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					if _, err := a.Ingester.SyncDue(ctx); err != nil && ctx.Err() == nil {
+						log.Warn("connector sync failed", "error", err)
+					}
+					if n, err := a.Ingester.Once(ctx, 20); err != nil && ctx.Err() == nil {
+						log.Warn("ingestion failed", "error", err)
+					} else if n > 0 {
+						log.Info("ingested documents", "jobs", n)
+					}
+				}
+			}
+		}()
+	}
 	srv := &http.Server{Addr: env("IDP_CMI_LISTEN", "127.0.0.1:8550"), Handler: observability.HTTPMiddleware(tp, "idp-cmi/api", a.Handler()),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second}
 	if cert := env("IDP_CMI_TLS_CERT_FILE", ""); cert != "" {
@@ -231,7 +293,7 @@ func serve(log *slog.Logger) error {
 			errc <- srv.ListenAndServe()
 		}
 	}()
-	log.Info("idp-cmi listening", "addr", srv.Addr, "devMode", dev, "tls", srv.TLSConfig != nil, "sweep", sweep.String(), "embedding", embedder != nil)
+	log.Info("idp-cmi listening", "addr", srv.Addr, "devMode", dev, "tls", srv.TLSConfig != nil, "sweep", sweep.String(), "embedding", embedder != nil, "consolidation", a.Consolidator != nil, "ingest", ingestEvery.String())
 	select {
 	case err := <-errc:
 		return err

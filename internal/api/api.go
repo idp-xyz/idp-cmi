@@ -16,7 +16,10 @@ import (
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/authorization"
 	"idp-cmi/internal/cmi"
+	"idp-cmi/internal/consolidate"
 	cmictx "idp-cmi/internal/context"
+	"idp-cmi/internal/evaluation"
+	"idp-cmi/internal/ingest"
 	"idp-cmi/internal/observability"
 	"idp-cmi/internal/transport"
 )
@@ -34,9 +37,13 @@ type API struct {
 	Store    *postgres.Store
 	Auth     Verifier
 	Resolver *cmictx.Resolver
-	Log      *slog.Logger
-	Metrics  *observability.Metrics
-	Version  string
+	// M3 (ADR-0001 D15–D17); nil disables the corresponding administrative endpoints (503).
+	Consolidator *consolidate.Consolidator
+	Ingester     *ingest.Ingester
+	Evaluator    *evaluation.Suite
+	Log          *slog.Logger
+	Metrics      *observability.Metrics
+	Version      string
 
 	resolves *observability.CounterVec
 }
@@ -229,6 +236,92 @@ func (a *API) Handler() http.Handler {
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		out, err := a.Store.ListAudit(r.Context(), p.Tenant, limit)
 		return 200, map[string]any{"events": out}, err
+	}, admin))
+
+	// ---- consolidation (D15), connectors (D16), evaluation (D17): administrators ----
+	mux.Handle("POST /api/v1/memory/consolidate", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		if a.Consolidator == nil {
+			return 0, nil, transport.Fail(http.StatusServiceUnavailable, "NOT_CONFIGURED", "no consolidation model configured on this CMI")
+		}
+		var in struct {
+			Scope *cmi.Scope `json:"scope"`
+		}
+		if r.ContentLength != 0 {
+			if err := decode(r, &in); err != nil {
+				return 0, nil, err
+			}
+		}
+		if in.Scope != nil {
+			if err := in.Scope.Validate(); err != nil {
+				return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", err.Error())
+			}
+		}
+		out, err := a.Consolidator.RunTenant(r.Context(), p.Tenant, in.Scope)
+		return 200, out, err
+	}, admin))
+	mux.Handle("GET /api/v1/memory/consolidations", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		out, err := a.Store.ListConsolidations(r.Context(), p.Tenant, limit)
+		return 200, map[string]any{"consolidations": out}, err
+	}, admin))
+	mux.Handle("POST /api/v1/connectors", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		var in postgres.Connector
+		if err := decode(r, &in); err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.CreateConnector(r.Context(), p.Tenant, in, p.Subject)
+		return http.StatusCreated, out, err
+	}, admin))
+	mux.Handle("GET /api/v1/connectors", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		out, err := a.Store.ListConnectors(r.Context(), p.Tenant)
+		return 200, map[string]any{"connectors": out}, err
+	}, admin))
+	mux.Handle("GET /api/v1/connectors/{ref}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		out, err := a.Store.GetConnector(r.Context(), p.Tenant, r.PathValue("ref"))
+		return 200, out, err
+	}, admin))
+	mux.Handle("POST /api/v1/connectors/{ref}/sync", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		if a.Ingester == nil {
+			return 0, nil, transport.Fail(http.StatusServiceUnavailable, "NOT_CONFIGURED", "no ingestion worker on this CMI")
+		}
+		c, err := a.Store.GetConnector(r.Context(), p.Tenant, r.PathValue("ref"))
+		if err != nil {
+			return 0, nil, err
+		}
+		n, err := a.Ingester.Sync(r.Context(), p.Tenant, c, p.Subject)
+		if err != nil {
+			var se *postgres.Error
+			if errors.As(err, &se) {
+				return 0, nil, err
+			}
+			return 0, nil, transport.Fail(http.StatusBadGateway, "SYNC_FAILED", err.Error())
+		}
+		return 200, map[string]any{"queued": n}, nil
+	}, admin))
+	mux.Handle("GET /api/v1/connectors/{ref}/jobs", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		c, err := a.Store.GetConnector(r.Context(), p.Tenant, r.PathValue("ref"))
+		if err != nil {
+			return 0, nil, err
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		out, err := a.Store.ListJobs(r.Context(), p.Tenant, c.ID, limit)
+		return 200, map[string]any{"jobs": out}, err
+	}, admin))
+	mux.Handle("POST /api/v1/evaluations", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		if a.Evaluator == nil {
+			return 0, nil, transport.Fail(http.StatusServiceUnavailable, "NOT_CONFIGURED", "no evaluator on this CMI")
+		}
+		out, err := a.Evaluator.Run(r.Context(), p.Tenant, p.Subject)
+		return http.StatusCreated, out, err
+	}, admin))
+	mux.Handle("GET /api/v1/evaluations", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		out, err := a.Store.ListEvaluations(r.Context(), p.Tenant, limit)
+		return 200, map[string]any{"evaluations": out}, err
+	}, admin))
+	mux.Handle("GET /api/v1/evaluations/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		out, err := a.Store.GetEvaluation(r.Context(), p.Tenant, r.PathValue("id"))
+		return 200, out, err
 	}, admin))
 
 	// ---- memory (writers) ----

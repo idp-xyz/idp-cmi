@@ -2,7 +2,12 @@
 PG_IMAGE ?= public.ecr.aws/docker/library/postgres:17-alpine
 PG_NAME  ?= idp-cmi-test-pg
 
-.PHONY: build test vet test-integration e2e pg-up pg-down
+.PHONY: build test vet test-integration e2e test-live pg-up pg-down
+
+# Live model gate (ADR-0001 D15): the consolidation model against a real OpenAI-compatible endpoint, e.g.
+#   IDP_LIVE_OPENAI_URL=http://127.0.0.1:8080/v1 IDP_LIVE_MODEL=qwen3.8-flash-next-iq3_xxs make test-live
+test-live:
+	go test -count=1 -v -timeout 10m ./tests/live/
 
 e2e:
 	bash deploy/e2e.sh

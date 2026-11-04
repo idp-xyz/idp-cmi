@@ -63,6 +63,17 @@ func rank(sensitivity string) int {
 // CreateMemory appends a record. The writer's ceiling bounds the record's sensitivity; the policy's
 // default TTL applies when no validUntil was given.
 func (s *Store) CreateMemory(ctx context.Context, tenant string, in cmi.MemoryRecord, by string, ceiling string) (*cmi.MemoryRecord, error) {
+	var out *cmi.MemoryRecord
+	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) (err error) {
+		out, err = s.insertMemory(ctx, tx, tenant, in, by, ceiling)
+		return err
+	})
+	return out, err
+}
+
+// insertMemory is CreateMemory inside a caller's transaction (consolidation writes its statements
+// and marks its inputs atomically, D15). The content is scanned (D12) and embedded (D11) here.
+func (s *Store) insertMemory(ctx context.Context, tx pgx.Tx, tenant string, in cmi.MemoryRecord, by string, ceiling string) (*cmi.MemoryRecord, error) {
 	in.Normalize()
 	if in.Validity.ValidFrom.IsZero() {
 		in.Validity.ValidFrom = s.now()
@@ -70,61 +81,55 @@ func (s *Store) CreateMemory(ctx context.Context, tenant string, in cmi.MemoryRe
 	if in.Provenance.RecordedBy == "" {
 		in.Provenance.RecordedBy = by
 	}
+	in.Flags = guard.Scan(in.Content) // D12: the writer's own flags are ignored
 	if err := in.Validate(); err != nil {
 		return nil, fail("INVALID", "%s", err)
 	}
 	if !cmi.Within(in.Sensitivity, ceiling) {
 		return nil, fail("FORBIDDEN", "the writer may not record %s content (ceiling %s)", in.Sensitivity, ceiling)
 	}
-	in.Flags = guard.Scan(in.Content) // D12: the writer's own flags are ignored
+	src, err := getSource(ctx, tx, in.Provenance.Source)
+	if err != nil {
+		return nil, fail("CONFLICT", "source %s is not registered", in.Provenance.Source)
+	}
+	policy, err := policyOf(ctx, tx, tenant)
+	if err != nil {
+		return nil, err
+	}
+	var validUntil any
+	if !in.Validity.ValidUntil.IsZero() {
+		validUntil = in.Validity.ValidUntil
+	} else if policy.DefaultMemoryTTLDays > 0 {
+		validUntil = in.Validity.ValidFrom.Add(time.Duration(policy.DefaultMemoryTTLDays) * 24 * time.Hour)
+	}
+	var structured any
+	if len(in.Structured) > 0 {
+		structured = []byte(in.Structured)
+	}
 	vecs, model := s.embed(ctx, []string{in.Content})
-	var out *cmi.MemoryRecord
-	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		src, err := getSource(ctx, tx, in.Provenance.Source)
-		if err != nil {
-			return fail("CONFLICT", "source %s is not registered", in.Provenance.Source)
-		}
-		policy, err := policyOf(ctx, tx, tenant)
-		if err != nil {
-			return err
-		}
-		var validUntil any
-		if !in.Validity.ValidUntil.IsZero() {
-			validUntil = in.Validity.ValidUntil
-		} else if policy.DefaultMemoryTTLDays > 0 {
-			validUntil = in.Validity.ValidFrom.Add(time.Duration(policy.DefaultMemoryTTLDays) * 24 * time.Hour)
-		}
-		var structured any
-		if len(in.Structured) > 0 {
-			structured = []byte(in.Structured)
-		}
-		id := NewUUID()
-		var vec any
-		var vecModel any
-		if vecs != nil {
-			vec, vecModel = vecs[0], model
-		}
-		flags := in.Flags
-		if flags == nil {
-			flags = []string{}
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO memory_records (id, tenant_id, source_id, scope_kind, scope_id, kind, content, structured, tags, prov_ref, prov_observed_at, prov_recorded_by,
-			valid_from, valid_until, sensitivity, acl_subjects, acl_roles, search, created_by, flags, embedding, embedding_model)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, to_tsvector('simple', $7) || to_tsvector('simple', $18), $19, $20, $21, $22)`,
-			id, tenant, src.ID, in.Scope.Kind, in.Scope.ID, in.Kind, in.Content, structured, in.Tags, in.Provenance.Ref, in.Provenance.ObservedAt, in.Provenance.RecordedBy,
-			in.Validity.ValidFrom, validUntil, in.Sensitivity, in.ACL.Subjects, in.ACL.Roles, cmi.Bigrams(in.Content), by, flags, vec, vecModel); err != nil {
-			return err
-		}
-		if err := insertEntities(ctx, tx, tenant, "memory", id, in.Entities); err != nil {
-			return err
-		}
-		if err := Audit(ctx, tx, tenant, by, "memory.create", id, map[string]any{"source": src.Name, "ref": in.Provenance.Ref, "scope": in.Scope, "kind": in.Kind, "sensitivity": in.Sensitivity, "flags": flags, "entities": len(in.Entities)}); err != nil {
-			return err
-		}
-		out, err = scanMemory(tx.QueryRow(ctx, `SELECT `+memoryCols+` FROM memory_records m JOIN sources s ON s.id = m.source_id WHERE m.id = $1`, id))
-		return err
-	})
-	return out, err
+	var vec, vecModel any
+	if vecs != nil {
+		vec, vecModel = vecs[0], model
+	}
+	flags := in.Flags
+	if flags == nil {
+		flags = []string{}
+	}
+	id := NewUUID()
+	if _, err := tx.Exec(ctx, `INSERT INTO memory_records (id, tenant_id, source_id, scope_kind, scope_id, kind, content, structured, tags, prov_ref, prov_observed_at, prov_recorded_by,
+		valid_from, valid_until, sensitivity, acl_subjects, acl_roles, search, created_by, flags, embedding, embedding_model)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, to_tsvector('simple', $7) || to_tsvector('simple', $18), $19, $20, $21, $22)`,
+		id, tenant, src.ID, in.Scope.Kind, in.Scope.ID, in.Kind, in.Content, structured, in.Tags, in.Provenance.Ref, in.Provenance.ObservedAt, in.Provenance.RecordedBy,
+		in.Validity.ValidFrom, validUntil, in.Sensitivity, in.ACL.Subjects, in.ACL.Roles, cmi.Bigrams(in.Content), by, flags, vec, vecModel); err != nil {
+		return nil, err
+	}
+	if err := insertEntities(ctx, tx, tenant, "memory", id, in.Entities); err != nil {
+		return nil, err
+	}
+	if err := Audit(ctx, tx, tenant, by, "memory.create", id, map[string]any{"source": src.Name, "ref": in.Provenance.Ref, "scope": in.Scope, "kind": in.Kind, "sensitivity": in.Sensitivity, "flags": flags, "entities": len(in.Entities)}); err != nil {
+		return nil, err
+	}
+	return scanMemory(tx.QueryRow(ctx, `SELECT `+memoryCols+` FROM memory_records m JOIN sources s ON s.id = m.source_id WHERE m.id = $1`, id))
 }
 
 // GetMemory returns a record the principal may see (any status: the owner of the view sees its

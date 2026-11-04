@@ -16,6 +16,7 @@ data:
   IDP_CMI_LISTEN: "0.0.0.0:8550"
   IDP_CMI_CONFIG: "/etc/idp/config/cmi.yaml"
   IDP_CMI_SWEEP: "1m"
+  IDP_CMI_INGEST: "10s"
   IDP_CMI_ISSUER: "https://idp.example.com/realms/idp"
   IDP_CMI_AUDIENCE: "idp-cmi"
   IDP_CMI_JWKS_URL: "https://idp.example.com/realms/idp/protocol/openid-connect/certs"

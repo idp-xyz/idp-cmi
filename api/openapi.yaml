@@ -56,6 +56,38 @@ paths:
       summary: Recent administrative actions
       parameters: [{name: limit, in: query, schema: {type: integer}}]
       responses: {'200': {description: audit events}}
+  /api/v1/memory/consolidate:
+    post:
+      summary: Distill the tenant's unconsolidated episodic memory into semantic statements now (ADR-0001 D15); optional scope narrows it; 503 without a consolidation model
+      requestBody: {required: false, content: {application/json: {schema: {type: object, properties: {scope: {type: object, properties: {kind: {type: string}, id: {type: string}}}}}}}}
+      responses: {'200': {description: 'summary: groups, completed, rejected, failed, created'}, '409': {$ref: '#/components/responses/Problem'}, '503': {$ref: '#/components/responses/Problem'}}
+  /api/v1/memory/consolidations:
+    get: {summary: Recorded consolidations (inputs, outputs, model, status, dropped statements), responses: {'200': {description: consolidations}}}
+  /api/v1/connectors:
+    post:
+      summary: Register a connector on a document-store source (ADR-0001 D16)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Connector'}}}}
+      responses: {'201': {description: created}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+    get: {summary: List connectors, responses: {'200': {description: connectors}}}
+  /api/v1/connectors/{ref}:
+    parameters: [{$ref: '#/components/parameters/ref'}]
+    get: {summary: Get a connector by id or name, responses: {'200': {description: connector}, '404': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/connectors/{ref}/sync:
+    parameters: [{$ref: '#/components/parameters/ref'}]
+    post:
+      summary: Enumerate the connector's documents now and queue one ingestion job per document; the worker fetches, converts and indexes them (unchanged content is skipped)
+      responses: {'200': {description: how many jobs were queued}, '502': {$ref: '#/components/responses/Problem'}}
+  /api/v1/connectors/{ref}/jobs:
+    parameters: [{$ref: '#/components/parameters/ref'}]
+    get: {summary: The connector's ingestion jobs (newest first), parameters: [{name: limit, in: query, schema: {type: integer}}], responses: {'200': {description: jobs}}}
+  /api/v1/evaluations:
+    post:
+      summary: Run the governance suite on this tenant's real data path and store the evidence (ADR-0001 D17) - pollution, source priority, revocation propagation, freshness, sensitivity and ACL
+      responses: {'201': {description: 'evaluation: status PASSED | FAILED and checks'}}
+    get: {summary: Past evaluations (newest first), responses: {'200': {description: evaluations}}}
+  /api/v1/evaluations/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get: {summary: One evaluation with its evidence, responses: {'200': {description: evaluation}, '404': {$ref: '#/components/responses/Problem'}}}
   /v1/memory/records:
     post:
       summary: Append a memory record (ADR-0001 D3); provenance and a registered source are required, the writer's ceiling bounds the sensitivity
@@ -133,9 +165,22 @@ components:
       type: object
       required: [source, uri, title, sensitivity]
       properties: {documentId: {type: string}, source: {type: string}, uri: {type: string}, title: {type: string}, version: {type: integer}, contentSha256: {type: string}, byteSize: {type: integer}, chunkCount: {type: integer}, status: {type: string, enum: [active, superseded, revoked, expired]}, validUntil: {type: string, format: date-time}, sensitivity: {type: string, enum: [public, internal, confidential, restricted]}, acl: {type: object}, revocation: {type: object}, createdBy: {type: string}, createdAt: {type: string, format: date-time}, entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}}, flags: {type: array, items: {type: string}, readOnly: true}}
+    Connector:
+      type: object
+      required: [source, name, kind, config]
+      properties:
+        connectorId: {type: string}
+        source: {type: string, description: a document-store source}
+        name: {type: string}
+        kind: {type: string, enum: [http-manifest, filesystem]}
+        config: {type: object, properties: {url: {type: string, description: 'http-manifest: a JSON list of {uri, url, title, sensitivity?, acl?, entities?}'}, baseUrl: {type: string, description: 'http-manifest: only urls under it are fetched'}, path: {type: string, description: 'filesystem: an absolute directory on the CMI host (development)'}, sensitivity: {type: string}, acl: {type: object}, headers: {type: array, items: {type: string}}}}
+        scheduleSeconds: {type: integer, description: 0 = manual sync only; otherwise at least 60}
+        lastSyncAt: {type: string, format: date-time}
+        createdBy: {type: string}
+        createdAt: {type: string, format: date-time}
     Policy:
       type: object
-      properties: {readerCeiling: {type: string}, writerCeiling: {type: string}, defaultMemoryTtlDays: {type: integer}, packageTtlSeconds: {type: integer}, includeFlagged: {type: boolean, description: 'let flagged content into packages, items then carry flags (ADR-0001 D12); default false'}, updatedBy: {type: string}, updatedAt: {type: string, format: date-time}, default: {type: boolean}}
+      properties: {readerCeiling: {type: string}, writerCeiling: {type: string}, defaultMemoryTtlDays: {type: integer}, packageTtlSeconds: {type: integer}, includeFlagged: {type: boolean, description: 'let flagged content into packages, items then carry flags (ADR-0001 D12); default false'}, consolidateMinRecords: {type: integer, description: 'episodic records a group needs before it is distilled (D15, default 5)'}, consolidatedTtlDays: {type: integer, description: 'validity of distilled statements (D15, default 90)'}, updatedBy: {type: string}, updatedAt: {type: string, format: date-time}, default: {type: boolean}}
     ResolveRequest:
       type: object
       required: [query]

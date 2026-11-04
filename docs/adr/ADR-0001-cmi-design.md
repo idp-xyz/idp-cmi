@@ -72,3 +72,17 @@ Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到�
 - 注入检测是确定性模式，不是分类器；它拦的是已知句式。
 - HOST 联调用 static 凭据（HOST 以自己的 cmi-reader 身份解析），委派模式对真实 Keycloak 未验证。
 
+## 7. M3 实施结果（2026-11-04，WSL 实测）
+
+- 记忆整合（D15）：`internal/consolidate`（OpenAI 兼容聊天模型，只要 JSON；`ParseStatements` 容忍代码围栏与前言，≤ 5 条、每条 ≤ 300 字符）；分组 =（scope、sensitivity、ACL）里 active、未整合、未被标记的 episodic 记忆，≥ 策略 `consolidateMinRecords`（缺省 5），每组至多 50 条；产出以配置的 agent 来源写为 semantic 记忆（`provenance.ref = consolidation:<id>`、`structured.derivedFrom`、tag `consolidated`、有效期 `consolidatedTtlDays` 缺省 90 天、sensitivity 与 ACL 继承该组、实体为输入的并集），与"标记输入已消费 + 记 `consolidations`"在同一事务；产出先过 D12 扫描，命中的不落库并记入 detail。管理员 `POST /api/v1/memory/consolidate`（可限 scope）与 `GET /api/v1/memory/consolidations`；配置 `consolidation.interval` 时后台按租户轮询。
+- 连接器与处理 Worker（D16）：`connectors`（`http-manifest`：清单 URL 与 `baseUrl`，只抓取其下的 URL；`filesystem`：CMI 主机上的目录，开发用）；`POST /api/v1/connectors/{ref}/sync` 枚举并按 uri 排队 `ingest_jobs`（已排队的不重复）；Worker 以租约领取（`FOR UPDATE SKIP LOCKED`）、抓取（≤ 4 MiB；text/plain、markdown、HTML 去标签与脚本、JSON）、内容摘要未变则 `skipped`，否则经 `CreateDocument`（D12 扫描、D11 嵌入、版本取代）；失败重试至 3 次后 `failed`；`scheduleSeconds` 到期自动 sync。
+- 评估（D17）：`POST /api/v1/evaluations` 在本租户真实数据路径上写探针（唯一 nonce、tag `cmi-eval`、10 分钟有效期，结束后全部撤销）并证明五项：注入探针被标记且不进包；同一查询下 authoritative 先于 informational；撤销后旧包 `stale` 且新包不含；已过期探针不进包；restricted 探针只有管理员可见、角色绑定的探针只有持该角色者可见（管理员无该角色也看不到）。结果与证据存 `evaluations`。
+- `tests/live`：本机 Qwen（OpenAI 兼容）对 5 条 episodic 便签产出 4 条事实陈述；加入一条注入便签后产出的 5 条陈述均无注入模式（写入时扫描仍会兜底）。
+
+**验证**：单元（consolidate 解析、ingest 媒体类型与 HTML 转文本）、集成（新增 consolidation：来源缺失 404、非管理员 403、5 条便签 + 1 条被标记便签 → 1 组 1 条产出、被注入的产出被扫描丢弃并记录、产出可解析且 informational、输入被消费后再跑无组；connectors：baseUrl 之外的条目被丢弃、HTML 去标签入库并带实体、角色绑定文档只有持角色者可见、404 重试三次后 failed、内容未变的重同步 skipped、filesystem 连接器只收文本类文件、跨租户为空；evaluation：PASSED 且 5 项证据、探针不残留、跨租户为空）、部署清单一致性、compose e2e（迁移 0003）、live 门禁全部通过。
+
+**局限（不标 PASS）**
+- 整合与抓取的 Worker 在每个副本都跑；整合按租户串行，抓取按租约并行，但没有跨副本的整合互斥（同一组被两个副本同时整合时，后者在 `consolidation_id IS NULL` 的更新上写不到行，仍可能产出重复陈述）。
+- 连接器只支持两种种类；没有增量清单（每次 sync 列全量，靠内容摘要跳过）。
+- 评估套件覆盖审计 P0 列出的五类属性；它证明的是"此刻此租户的策略与数据路径"，不是对所有输入的穷尽。
+
