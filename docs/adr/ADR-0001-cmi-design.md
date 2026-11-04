@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 已接受（2026-11-04，决策人选择按建议顺序开始缺失的子系统，CMI 先于 Workspace） |
+| 状态 | 已接受（2026-11-04，决策人选择按建议顺序开始缺失的子系统，CMI 先于 Workspace；同日决策人要求先把 CMI 的后续阶段做完，见第 5 节） |
 | 范围 | `idp-cmi`：Source（来源）、MemoryRecord（记忆）、KnowledgeDocument 与索引（知识）、ContextPackage（上下文包）、Context API、记忆生命周期（时效、撤销）、ACL 与敏感级别、来源追溯 |
 | 依据 | 《IDP TELOS System Architecture v1.0》（CMI：ContextResolver、ContextPackage、记忆生命周期、知识检索、语义索引、企业 ACL、来源追溯与治理；状态与权威：上下文与记忆资产，不替代事实库、执行状态或 Agent Session）；《Final Audit v1.1》§4.1（CMI：ContextPackage、Memory Record、Knowledge Index、来源、版本与过期；不能把历史记忆当作当前业务事实）与 §5 P0（业务来源优先级、记忆失效、证据及敏感信息治理：ContextPackage Schema、污染测试、撤销传播、时效评估）；《Repository & Engineering Architecture v1.0》的 `idp-cmi` 目录树（建议稿）；idp-host 的 ADR-0001（身份、RLS、审计、指标、TLS、契约的做法在这里沿用） |
 
@@ -39,3 +39,21 @@
 ## 4. 工程结构
 
 Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到期扫描 Worker、`migrate`、`ensure-login`、`seed-tenant`、`dev-token`）。目录：`internal/{context,memory,knowledge,api,authorization,observability,transport,canonical}`、`adapters/{identity,store/postgres}`、`api/{openapi.yaml,contracts/}`、`migrations/`、`tests/integration`、`deploy/`。与建议稿的差异：`context/{resolver,assembly,packaging,validation}` 合为 `internal/context`；`memory/{semantic,episodic,lifecycle}` 合为 `internal/memory`；`retrieval` 在 `internal/knowledge`；`provenance`、`permissions` 是对象上的字段与 SQL 策略而不是包；`connectors`、`processing-workers`、`entity-index`、`evaluation` 进入后续阶段。
+
+## 5. M2–M4：后续阶段（2026-11-04 决策）
+
+决策人 2026-11-04 选择在 Workspace 之前把第 3 节列为"后续阶段"的条目做完，分三个里程碑：M2（检索与治理补全、交付件）、M3（记忆生命周期：整合、连接器与处理 Worker、评估）、M4（与 EER 的联调）。约束不变：不引入向量库产品，不让记忆取代事实，所有来自 agent 的内容仍是 informational 且按不可信输入处理（《Repository & Engineering Architecture》08：对 Memory 按不可信输入处理，避免记忆污染）。
+
+| # | 决策 | 理由 |
+|---|---|---|
+| D11 | **嵌入检索作为第二个检索器（混合检索）**（M2）。配置文件 `embedding`（OpenAI 兼容 `POST /v1/embeddings` 的 baseUrl、model、维度 ≤ 4096、可选 apiKey）；配置了嵌入时，记忆与 chunk 在写入时同步取嵌入存入 `embedding real[]`（取不到不阻塞写入，行留空，由回填 Worker 补），查询时同样取嵌入；相似度在 SQL 里以 `real[]` 的余弦函数计算（租户 + 可见性谓词之内的暴力比较；ANN 索引如 pgvector 留作部署选项，本仓库不依赖扩展）。候选 = 全文命中 ∪ 向量 top-N；文本相关度 = max(归一化 ts_rank, 余弦)；排序仍是信任 > 新鲜度加权相关度；条目增 `match`（lexical / semantic / both）。未配置嵌入时行为与 M1 相同。测试用确定性的假嵌入器（词袋哈希向量）；真实嵌入端点的门禁留给有端点的环境 | 全文检索对同义改写召回差；但向量只是"另一条召回路"，来源、时效、权限、撤销的边界不变。不依赖扩展是因为本仓库必须在任何 PostgreSQL 上可测可运行 |
+| D12 | **记忆污染防线在写入时**（M2）。写入记忆与索引文档时用确定性注入规则（与 HOST D27 同一组模式，代码复制）扫描内容；命中的记录带 `flags`（如 `injection:instruction_override`），文档按 chunk 标记、文档汇总 `flags`。被标记的记忆与 chunk **默认不进入上下文包**（租户策略 `quarantineFlagged`，缺省 true；关掉时进入但条目带 flags，HOST 侧仍有 D27 护栏）；管理员以 `GET /v1/memory/records?flagged=true` 审阅。整合（D15）产出的记忆同样过扫描，命中则不落库并记审计 | 审计 P0"污染测试"：agent 写入的记忆是最可能被投毒的入口，拦在写入时比在每次组装时便宜且可审计 |
+| D13 | **实体索引是显式声明的引用**（M2）。记忆与文档可带 `entities: [{type, id}]`（type 为名字，id 为引用，≤ 32 个），存入 `entity_refs`；`resolve` 增 `entities` 过滤（任一匹配即取），条目带 `entities`；`GET /v1/entities/{type}/{id}` 列出调用者可见的、引用该实体的记忆与文档。不做自动实体抽取 | 自动抽取不确定且难测；显式引用让 HOST / EER 以订单号、客户号把上下文钉在业务对象上，正是"事实的引用而不是事实本身"（D1） |
+| D14 | **交付件**（M2）：Kubernetes 清单（与 HOST 同样的加固、`tests/deploy` 一致性测试）、compose 拓扑与 `deploy/e2e.sh`（PostgreSQL + 迁移 + CMI 容器 + `tests/e2e`；带 `HOST=1` 时再起 idp-host 镜像与假模型，HOST 发布件 `context.cmi = true`，证明 D10 / HOST D32 在真实进程之间成立） | HOST ADR 第 14 节的局限之一就是"与真实 idp-cmi 进程的联调未做" |
+| D15 | **记忆整合**（M3）：Worker（间隔 `IDP_CMI_CONSOLIDATE`，0 关闭）或管理员 `POST /api/v1/memory/consolidate` 把同一（scope、sensitivity、ACL）组里、上次整合之后新增且 ≥ 策略 `consolidateMinRecords`（缺省 5）条的 active episodic 记忆交给配置文件 `consolidation` 一节的 OpenAI 兼容聊天模型，要求只输出 JSON 陈述列表；每条陈述成为一条 semantic 记忆：来源 = 配置里登记的 agent 来源（必然 informational）、`provenance.ref = consolidation:<id>`、`structured.derivedFrom` = 输入记录 id、sensitivity = 输入的最高级、ACL = 该组的、有效期 = 策略 `consolidatedTtlDays`（缺省 90）。输入记忆不删除不改。整合记录表 `consolidations` 存输入、输出与模型；输出先过 D12 扫描。测试用假模型；本机 Qwen 的真实门禁为 `make test-live` | 架构图："CMI 提炼经验"。整合是最像"把历史当事实"的地方，所以产出永远 informational、带可追溯的 derivedFrom、有有效期 |
+| D16 | **连接器与处理 Worker**（M3）：`connectors`（属于一个 document-store 来源；kind：`http-manifest` = 一个列出文档 {uri, url, title, sensitivity, acl, entities} 的 JSON 清单 URL；`filesystem` = CMI 主机上的目录，开发用）；`POST /api/v1/connectors`、`POST /api/v1/connectors/{id}/sync`（管理员）生成 `ingest_jobs`，Worker 以租约领取（与 HOST Worker 同款）：抓取 → 限制（≤ 4 MiB；text/plain、text/markdown、text/html 去标签、application/json）→ 内容摘要未变则跳过 → `CreateDocument`（走 D12 扫描与 D11 嵌入）；失败重试 ≤ 3；`GET /api/v1/connectors/{id}/jobs`。抓取只允许 url 以连接器登记的 baseUrl 为前缀 | 知识不该靠人手 POST 文本；Worker 的租约与重试和 HOST 一样可观测 |
+| D17 | **评估**（M3）：`POST /api/v1/evaluations`（管理员）对本租户跑固定套件并保存证据：污染（带注入文本的探针记忆必须被标记且不进包）、来源优先级（同一查询下 authoritative 探针先于 informational 探针）、撤销传播（解析 → 撤销 → 读回 `stale` 且新解析不再含它）、时效（已过期探针不进包）、敏感与 ACL（restricted 探针对 reader 不可见）。探针是真实记录（tag `cmi-eval`、唯一随机词、短 TTL），套件结束时撤销；结果 PASSED / FAILED 与每项证据存 `evaluations`，`GET /api/v1/evaluations/{id}` 读回 | 审计 P0 要求的证据正是"污染测试、撤销传播、时效评估"；跑在真实数据路径上而不是单元测试里，才算证据 |
+| D18 | **与 EER 的联调**（M4，EER 侧）：EER Intelligence worker 以工作负载身份（cmi-reader + cmi-writer）在决策前 `resolve`（purpose = decision，scope = thread:<executionId>，实体 = 执行引用的业务对象），把包条目作为决策输入并在证据里记 `contextPackageId`；决策后追加一条 episodic 记忆（来源 `eer`，agent 种类）。Checkpoint 与执行状态不写入 CMI（《Repository & Engineering Architecture》：不可把执行 Checkpoint 写入 CMI 记忆） | 第 3 节留下的空位；写什么、不写什么由仓库文档已定 |
+
+**契约**：D11–D13 进入 `idp.telos.cmi` 1.1.0（MemoryRecord 增 `entities`、`flags`；KnowledgeDocument 增 `entities`、`flags`；ContextItem 增 `entities`、`match`；新定义 Entity），只做新增。D15–D17 的对象（Connector、IngestJob、Consolidation、Evaluation）是 CMI 自己的管理对象，由 `api/openapi.yaml` 描述，不进契约。
+
