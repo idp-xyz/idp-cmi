@@ -2,6 +2,7 @@ package consolidate
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"idp-cmi/adapters/store/postgres"
@@ -23,11 +24,25 @@ type Summary struct {
 	Rejected  int `json:"rejected"`
 	Failed    int `json:"failed"`
 	Created   int `json:"created"`
+	// Busy: another replica is consolidating this tenant right now; nothing was done here.
+	Busy bool `json:"busy,omitempty"`
 }
+
+// ErrBusy is returned by RunTenant when another replica holds the tenant's consolidation lock.
+var ErrBusy = errors.New("consolidation of this tenant is already running")
 
 // RunTenant consolidates one tenant; scope narrows it to one scope. The configured source must be
 // a registered agent source of the tenant, otherwise nothing is written and an error says so.
 func (c *Consolidator) RunTenant(ctx context.Context, tenant string, scope *cmi.Scope) (*Summary, error) {
+	// one replica at a time per tenant: two would distill the same episodic records twice
+	release, ok, err := c.Store.TryWorkLock(ctx, "consolidate", tenant)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return &Summary{Busy: true}, ErrBusy
+	}
+	defer release()
 	src, err := c.Store.GetSource(ctx, tenant, c.Source)
 	if err != nil {
 		return nil, err

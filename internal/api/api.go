@@ -382,6 +382,9 @@ func (a *API) Handler() http.Handler {
 			}
 		}
 		out, err := a.Consolidator.RunTenant(r.Context(), p.Tenant, in.Scope)
+		if errors.Is(err, consolidate.ErrBusy) {
+			return 0, nil, transport.Fail(http.StatusConflict, "CONSOLIDATION_RUNNING", err.Error())
+		}
 		return 200, out, err
 	}, admin))
 	mux.Handle("GET /api/v1/memory/consolidations", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {

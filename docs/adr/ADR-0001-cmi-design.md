@@ -155,3 +155,7 @@ Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到�
 - 审批只验证了假审批系统；与真实工单或审批平台的对接需按其接口写适配。
 - `externalModelCeiling` 只管 CMI 自己调用的嵌入与整合模型；包交付给 HOST 或 EER 之后送往哪个模型，由它们的策略决定。
 - `omitted` 的计数是全文路径上的近似：仅向量命中的候选、存疑或被标记条目不计入。
+
+## 12. 补充：整合的跨副本互斥（2026-11-04）
+
+§9 的局限"整合仍无跨副本互斥"已解决：`Consolidator.RunTenant` 先取该租户的 PostgreSQL 会话级咨询锁（`Store.TryWorkLock`，键为 `idp-cmi:consolidate:<tenant>` 的哈希，持锁连接专用、崩溃即释放）。取不到时本副本不做任何事：定时任务跳过该租户，管理员手动触发得到 409 `CONSOLIDATION_RUNNING`。集成测试 consolidation 场景：另一会话持锁时调用返回 409 且模型未被调用；同一锁不能取两次；其他租户不受影响；释放后正常整合。
