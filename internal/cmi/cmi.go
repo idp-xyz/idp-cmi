@@ -46,12 +46,15 @@ const (
 
 // Memory scopes, kinds and statuses.
 const (
-	ScopeTenant  = "tenant"
-	ScopeSubject = "subject"
-	ScopeThread  = "thread"
-	ScopeAgent   = "agent"
-	KindEpisodic = "episodic"
-	KindSemantic = "semantic"
+	ScopeTenant       = "tenant"
+	ScopeSubject      = "subject"
+	ScopeThread       = "thread"
+	ScopeAgent        = "agent"
+	ScopeOrganization = "organization" // units of the tenant's directory (D22)
+	ScopeTeam         = "team"
+	ScopeProject      = "project"
+	KindEpisodic      = "episodic"
+	KindSemantic      = "semantic"
 
 	StatusCandidate  = "candidate" // written but not yet admitted (D21); never packed
 	StatusActive     = "active"
@@ -209,12 +212,57 @@ func (s Scope) Validate() error {
 		if s.ID != "" {
 			return errors.New("a tenant scope has no id")
 		}
-	case ScopeSubject, ScopeThread, ScopeAgent:
+	case ScopeSubject, ScopeThread, ScopeAgent, ScopeOrganization, ScopeTeam, ScopeProject:
 		if !idRE.MatchString(s.ID) {
 			return errors.New("scope id is required")
 		}
 	default:
-		return errors.New("scope.kind must be tenant, subject, thread or agent")
+		return errors.New("scope.kind must be tenant, subject, thread, agent, organization, team or project")
+	}
+	return nil
+}
+
+// IsUnit reports whether the scope is one of the directory's unit kinds (D22).
+func (s Scope) IsUnit() bool {
+	return s.Kind == ScopeOrganization || s.Kind == ScopeTeam || s.Kind == ScopeProject
+}
+
+// Unit is an entry of the tenant's directory (D22): who is a member of an organization, team or
+// project. Membership decides who may read and write the unit's memory.
+type Unit struct {
+	Kind        string    `json:"kind"`
+	ID          string    `json:"id"`
+	DisplayName string    `json:"displayName"`
+	Parent      *Scope    `json:"parent,omitempty"`
+	Members     []string  `json:"members"`
+	Roles       []string  `json:"roles"`
+	UpdatedBy   string    `json:"updatedBy,omitempty"`
+	UpdatedAt   time.Time `json:"updatedAt,omitzero"`
+}
+
+// Validate checks a unit as registered.
+func (u *Unit) Validate() error {
+	if !(Scope{Kind: u.Kind, ID: u.ID}).IsUnit() || !idRE.MatchString(u.ID) {
+		return errors.New("kind must be organization, team or project, with an id")
+	}
+	if strings.TrimSpace(u.DisplayName) == "" || len(u.DisplayName) > 200 {
+		return errors.New("displayName is required (at most 200 characters)")
+	}
+	if u.Parent != nil && (!u.Parent.IsUnit() || u.Parent.Validate() != nil || (u.Parent.Kind == u.Kind && u.Parent.ID == u.ID)) {
+		return errors.New("parent must be another unit")
+	}
+	if len(u.Members) > 10000 || len(u.Roles) > 64 {
+		return errors.New("unit lists are too long")
+	}
+	for _, m := range u.Members {
+		if !idRE.MatchString(m) {
+			return fmt.Errorf("member %q is invalid", m)
+		}
+	}
+	for _, r := range u.Roles {
+		if !roleRE.MatchString(r) {
+			return fmt.Errorf("role %q is invalid", r)
+		}
 	}
 	return nil
 }
@@ -243,6 +291,7 @@ type MemoryRecord struct {
 	Flags       []string        `json:"flags,omitempty"`      // write-time scan findings (D12); set by the CMI, never by the writer
 	Version     int             `json:"version,omitempty"`    // bumped by every state change; If-Match names the expected one (D19)
 	DisputedBy  string          `json:"disputedBy,omitempty"` // the record that contradicts this one (D21)
+	SharedFrom  string          `json:"sharedFrom,omitempty"` // the record this one was explicitly shared from (D22)
 	CreatedAt   time.Time       `json:"createdAt"`
 }
 
@@ -481,6 +530,7 @@ type Item struct {
 	Score       float64   `json:"score"`
 	Tokens      int       `json:"tokens"`
 	Entities    []Entity  `json:"entities,omitempty"` // the item's entity references (D13)
+	Scope       *Scope    `json:"scope,omitempty"`    // the memory's scope (D22); knowledge has none
 	Match       string    `json:"match,omitempty"`    // which retriever found it: lexical, semantic or both (D11)
 	Flags       []string  `json:"flags,omitempty"`    // present only when the tenant policy lets flagged content through (D12)
 }

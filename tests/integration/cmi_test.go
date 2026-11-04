@@ -881,6 +881,75 @@ func TestCMIEndToEnd(t *testing.T) {
 		e.must(200, "PUT", "/api/v1/policy", "alice", map[string]any{"readerCeiling": "internal", "writerCeiling": "confidential", "defaultMemoryTtlDays": 0, "packageTtlSeconds": 3600, "consolidatedAsCandidate": false})
 	})
 
+	t.Run("units-and-sharing", func(t *testing.T) {
+		// D22: a team's memory is visible to its members only; a private record reaches the team by explicit sharing
+		now := e.now
+		e.must(403, "PUT", "/api/v1/units", "bob", map[string]any{"kind": "team", "id": "us-lane", "displayName": "US lane"})
+		e.must(422, "PUT", "/api/v1/units", "alice", map[string]any{"kind": "squad", "id": "x", "displayName": "x"})
+		e.must(409, "PUT", "/api/v1/units", "alice", map[string]any{"kind": "team", "id": "us-lane", "displayName": "US lane", "parent": map[string]any{"kind": "organization", "id": "ops"}})
+		e.must(200, "PUT", "/api/v1/units", "alice", map[string]any{"kind": "organization", "id": "ops", "displayName": "Operations", "members": []string{}, "roles": []string{"finance"}})
+		e.must(200, "PUT", "/api/v1/units", "alice", map[string]any{"kind": "team", "id": "us-lane", "displayName": "US lane", "parent": map[string]any{"kind": "organization", "id": "ops"}, "members": []string{"carol", "dan"}})
+		e.must(200, "PUT", "/api/v1/units", "alice", map[string]any{"kind": "project", "id": "parcel", "displayName": "IDP Parcel", "members": []string{"carol", "dan", "bob"}})
+		if u := e.must(200, "GET", "/v1/units", "dan", nil)["units"].([]any); len(u) != 3 { // dan: finance role -> ops; member of us-lane and parcel
+			t.Fatalf("%v", u)
+		}
+		if u := e.must(200, "GET", "/v1/units", "bob", nil)["units"].([]any); len(u) != 1 {
+			t.Fatalf("%v", u)
+		}
+		// writing into a unit needs membership
+		team := memory("orders", "lane:us:1", "team", "us-lane", "US lane shipments clear customs at the Newark hub.", "internal", now)
+		e.must(403, "POST", "/v1/memory/records", "bob", team)
+		proj := memory("orders", "proj:parcel:1", "project", "parcel", "Parcel project decided to ship labels as PDF.", "internal", now)
+		e.must(201, "POST", "/v1/memory/records", "bob", proj)
+		tr := e.must(201, "POST", "/v1/memory/records", "alice", team) // an administrator writes anywhere
+		// members see the team memory with its scope; a non-member does not, and may not ask for the scope
+		its := items(e.must(200, "POST", "/v1/context/resolve", "dan", map[string]any{"query": "customs Newark hub"}))
+		var seen bool
+		for _, it := range its {
+			if it["id"] == tr["recordId"] {
+				seen = true
+				if sc := it["scope"].(map[string]any); sc["kind"] != "team" || sc["id"] != "us-lane" {
+					t.Fatalf("%v", it)
+				}
+			}
+		}
+		if !seen {
+			t.Fatal("team member did not get the team memory")
+		}
+		if strings.Contains(fmt.Sprint(items(e.must(200, "POST", "/v1/context/resolve", "bob", map[string]any{"query": "customs Newark hub"}))), "Newark") {
+			t.Fatal("non-member got the team memory")
+		}
+		e.must(403, "POST", "/v1/context/resolve", "bob", map[string]any{"query": "customs", "scopes": []map[string]any{{"kind": "team", "id": "us-lane"}}})
+		e.must(200, "POST", "/v1/context/resolve", "bob", map[string]any{"query": "labels PDF", "scopes": []map[string]any{{"kind": "project", "id": "parcel"}}})
+		// the whitepaper's Alice/Bob case: project membership never exposes a colleague's private memory
+		priv := memory("orders", "pref:carol:1", "subject", "carol", "Carol wants reports to open with the conclusion.", "internal", now)
+		pr := e.must(201, "POST", "/v1/memory/records", "bob", priv)
+		if strings.Contains(fmt.Sprint(items(e.must(200, "POST", "/v1/context/resolve", "dan", map[string]any{"query": "reports open conclusion"}))), "conclusion") {
+			t.Fatal("private memory leaked to a project colleague")
+		}
+		// explicit sharing: only the subject (or an administrator) who belongs to the unit
+		e.must(403, "POST", "/v1/memory/records/"+pr["recordId"].(string)+"/share", "dan", map[string]any{"scope": map[string]any{"kind": "team", "id": "us-lane"}})
+		e.must(403, "POST", "/v1/memory/records/"+pr["recordId"].(string)+"/share", "carol", map[string]any{"scope": map[string]any{"kind": "organization", "id": "ops"}}) // carol is not in ops
+		sh := e.must(201, "POST", "/v1/memory/records/"+pr["recordId"].(string)+"/share", "carol", map[string]any{"scope": map[string]any{"kind": "team", "id": "us-lane"}, "reason": "useful for the lane"})
+		if sh["sharedFrom"] != pr["recordId"] || sh["scope"].(map[string]any)["kind"] != "team" || !strings.Contains(fmt.Sprint(sh["tags"]), "shared") {
+			t.Fatalf("%v", sh)
+		}
+		if !strings.Contains(fmt.Sprint(items(e.must(200, "POST", "/v1/context/resolve", "dan", map[string]any{"query": "reports open conclusion"}))), "conclusion") {
+			t.Fatal("shared copy not visible to the team")
+		}
+		if orig := e.must(200, "GET", "/v1/memory/records/"+pr["recordId"].(string), "carol", nil); orig["scope"].(map[string]any)["kind"] != "subject" || orig["version"] != 1.0 {
+			t.Fatalf("original changed: %v", orig)
+		}
+		// removing the unit makes its memory unreachable
+		e.must(204, "DELETE", "/api/v1/units/team/us-lane", "alice", nil)
+		if strings.Contains(fmt.Sprint(items(e.must(200, "POST", "/v1/context/resolve", "dan", map[string]any{"query": "customs Newark hub"}))), "Newark") {
+			t.Fatal("deleted unit's memory still reachable")
+		}
+		if n := len(e.must(200, "GET", "/api/v1/units", "erin", nil)["units"].([]any)); n != 0 {
+			t.Fatalf("units leaked: %d", n)
+		}
+	})
+
 	t.Run("audit-and-policy", func(t *testing.T) {
 		if n := len(e.must(200, "GET", "/api/v1/audit", "alice", nil)["events"].([]any)); n < 6 {
 			t.Fatalf("audit events %d", n)

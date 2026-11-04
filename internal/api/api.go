@@ -383,6 +383,23 @@ func (a *API) Handler() http.Handler {
 		out, err := a.Store.ListJobs(r.Context(), p.Tenant, c.ID, limit)
 		return 200, map[string]any{"jobs": out}, err
 	}, admin))
+	// ---- unit directory (D22): administrators ----
+	mux.Handle("PUT /api/v1/units", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		var in cmi.Unit
+		if err := decode(r, &in); err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.PutUnit(r.Context(), p.Tenant, in, p.Subject)
+		return 200, out, err
+	}, admin))
+	mux.Handle("GET /api/v1/units", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		out, err := a.Store.ListUnits(r.Context(), p.Tenant)
+		return 200, map[string]any{"units": out}, err
+	}, admin))
+	mux.Handle("DELETE /api/v1/units/{kind}/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		return http.StatusNoContent, nil, a.Store.DeleteUnit(r.Context(), p.Tenant, r.PathValue("kind"), r.PathValue("id"), p.Subject)
+	}, admin))
+
 	// ---- erasure (D20): administrators ----
 	mux.Handle("POST /api/v1/erasures", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		var in postgres.ErasureSelector
@@ -432,11 +449,61 @@ func (a *API) Handler() http.Handler {
 		if err != nil {
 			return 0, nil, err
 		}
+		if in.Scope.IsUnit() { // D22: writing into a unit needs membership
+			ok, err := a.Store.IsMember(r.Context(), p.Tenant, v, in.Scope, p.Has(admin))
+			if err != nil {
+				return 0, nil, err
+			}
+			if !ok {
+				return 0, nil, transport.Fail(http.StatusForbidden, "FORBIDDEN", "not a member of "+in.Scope.Kind+":"+in.Scope.ID)
+			}
+		}
 		return a.idempotent(r, p, raw, func() (int, any, error) {
 			out, err := a.Store.CreateMemory(r.Context(), p.Tenant, in, p.Subject, v.Ceiling)
 			return http.StatusCreated, out, err
 		})
 	}, writer))
+	mux.Handle("POST /v1/memory/records/{id}/share", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		var in struct {
+			Scope  cmi.Scope `json:"scope"`
+			Reason string    `json:"reason"`
+		}
+		if err := decode(r, &in); err != nil {
+			return 0, nil, err
+		}
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
+		// the record's owner (its subject) or an administrator shares; the sharer must belong to the unit
+		rec, err := a.Store.GetMemory(r.Context(), p.Tenant, r.PathValue("id"), v)
+		if err != nil {
+			return 0, nil, err
+		}
+		if !p.Has(admin) && !(rec.Scope.Kind == cmi.ScopeSubject && rec.Scope.ID == p.Subject) {
+			return 0, nil, transport.Fail(http.StatusForbidden, "FORBIDDEN", "only the record's subject or an administrator may share it")
+		}
+		ok, err := a.Store.IsMember(r.Context(), p.Tenant, v, in.Scope, p.Has(admin))
+		if err != nil {
+			return 0, nil, err
+		}
+		if !ok {
+			return 0, nil, transport.Fail(http.StatusForbidden, "FORBIDDEN", "not a member of "+in.Scope.Kind+":"+in.Scope.ID)
+		}
+		out, err := a.Store.Share(r.Context(), p.Tenant, rec.ID, in.Scope, in.Reason, p.Subject, v)
+		return http.StatusCreated, out, err
+	}, writer, reader))
+	mux.Handle("GET /v1/units", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.UnitsOf(r.Context(), p.Tenant, v)
+		if out == nil {
+			out = []cmi.Scope{}
+		}
+		return 200, map[string]any{"units": out}, err
+	}, writer, reader))
 	mux.Handle("GET /v1/memory/records/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		v, err := a.visibility(r.Context(), p)
 		if err != nil {

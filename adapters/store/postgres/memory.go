@@ -16,7 +16,7 @@ import (
 
 const memoryCols = `m.id::text, s.name, m.scope_kind, m.scope_id, m.kind, CASE WHEN m.erasure_id IS NULL THEN m.content ELSE '[erased]' END, CASE WHEN m.erasure_id IS NULL THEN m.structured ELSE NULL END, m.tags, CASE WHEN m.erasure_id IS NULL THEN m.prov_ref ELSE '[erased]' END, m.prov_observed_at, m.prov_recorded_by,
 	m.valid_from, m.valid_until, m.status, m.revoked_at, coalesce(m.revoked_by, ''), coalesce(m.revoked_reason, ''), m.sensitivity, m.acl_subjects, m.acl_roles, m.created_at,
-	m.flags, m.version, coalesce(m.disputed_by::text, ''), ` + "(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'memory' AND e.object_id = m.id)"
+	m.flags, m.version, coalesce(m.disputed_by::text, ''), coalesce(m.shared_from::text, ''), ` + "(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'memory' AND e.object_id = m.id)"
 
 func scanMemory(row pgx.Row) (*cmi.MemoryRecord, error) {
 	var m cmi.MemoryRecord
@@ -24,7 +24,7 @@ func scanMemory(row pgx.Row) (*cmi.MemoryRecord, error) {
 	var validUntil, revokedAt *time.Time
 	var revokedBy, revokedReason, entities string
 	if err := row.Scan(&m.ID, &m.Provenance.Source, &m.Scope.Kind, &m.Scope.ID, &m.Kind, &m.Content, &structured, &m.Tags, &m.Provenance.Ref, &m.Provenance.ObservedAt, &m.Provenance.RecordedBy,
-		&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &m.Version, &m.DisputedBy, &entities); err != nil {
+		&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &m.Version, &m.DisputedBy, &m.SharedFrom, &entities); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fail("NOT_FOUND", "memory record not found")
 		}
@@ -297,7 +297,7 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 			var r float64
 			m := &h.Record
 			if err := rows.Scan(&m.ID, &m.Provenance.Source, &m.Scope.Kind, &m.Scope.ID, &m.Kind, &m.Content, &structured, &m.Tags, &m.Provenance.Ref, &m.Provenance.ObservedAt, &m.Provenance.RecordedBy,
-				&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &m.Version, &m.DisputedBy, &entities, &r, &h.Trust); err != nil {
+				&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &m.Version, &m.DisputedBy, &m.SharedFrom, &entities, &r, &h.Trust); err != nil {
 				return err
 			}
 			if validUntil != nil {

@@ -23,6 +23,7 @@ type Request struct {
 	Query              string       `json:"query"`
 	Purpose            string       `json:"purpose,omitempty"`
 	Scope              *cmi.Scope   `json:"scope,omitempty"`   // the thread / agent / subject the caller works in
+	Scopes             []cmi.Scope  `json:"scopes,omitempty"`  // more of them (D22); unit scopes need membership
 	Budget             *cmi.Budget  `json:"budget,omitempty"`  // maxTokens (default 2000, at most 32000), maxItems (default 20, at most 100)
 	Sources            []string     `json:"sources,omitempty"` // knowledge sources to consider (empty = all visible)
 	Kinds              []string     `json:"kinds,omitempty"`   // memory | knowledge (empty = both)
@@ -41,6 +42,14 @@ func (r *Request) Validate() error {
 	}
 	if r.Scope != nil {
 		if err := r.Scope.Validate(); err != nil {
+			return err
+		}
+	}
+	if len(r.Scopes) > 32 {
+		return errors.New("at most 32 scopes")
+	}
+	for _, sc := range r.Scopes {
+		if err := sc.Validate(); err != nil {
 			return err
 		}
 	}
@@ -164,9 +173,30 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 	var cands []candidate
 	if q.TSQuery != "" || len(q.Vector) > 0 {
 		if wantMemory {
+			// D22: tenant, the caller, the caller's units, and what the request names (unit scopes it names
+			// must be the caller's)
 			scopes := []cmi.Scope{{Kind: cmi.ScopeTenant}, {Kind: cmi.ScopeSubject, ID: v.Subject}}
-			if req.Scope != nil && req.Scope.Kind != cmi.ScopeTenant {
-				scopes = append(scopes, *req.Scope)
+			units, err := r.Store.UnitsOf(ctx, tenant, v)
+			if err != nil {
+				return nil, nil, err
+			}
+			member := map[cmi.Scope]bool{}
+			for _, u := range units {
+				member[u] = true
+				scopes = append(scopes, u)
+			}
+			requested := append([]cmi.Scope{}, req.Scopes...)
+			if req.Scope != nil {
+				requested = append(requested, *req.Scope)
+			}
+			for _, sc := range requested {
+				if sc.Kind == cmi.ScopeTenant || member[sc] {
+					continue
+				}
+				if sc.IsUnit() {
+					return nil, nil, &postgres.Error{Code: "FORBIDDEN", Message: "not a member of " + sc.Kind + ":" + sc.ID}
+				}
+				scopes = append(scopes, sc)
 			}
 			hits, err := r.Store.SearchMemory(ctx, tenant, q, scopes, v)
 			if err != nil {
@@ -180,8 +210,9 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 				if !m.Validity.ValidUntil.IsZero() && !m.Validity.ValidUntil.After(now) {
 					continue // expired by the resolver's clock, even before the sweeper marks it
 				}
+				scope := m.Scope
 				item := cmi.Item{Kind: cmi.ItemMemory, ID: m.ID, Source: m.Provenance.Source, Trust: h.Trust, Ref: m.Provenance.Ref, Excerpt: excerpt(m.Content, 1200),
-					ObservedAt: m.Provenance.ObservedAt, ValidUntil: m.Validity.ValidUntil, Sensitivity: m.Sensitivity, Entities: m.Entities, Match: h.Match}
+					ObservedAt: m.Provenance.ObservedAt, ValidUntil: m.Validity.ValidUntil, Sensitivity: m.Sensitivity, Entities: m.Entities, Scope: &scope, Match: h.Match}
 				if policy.IncludeFlagged {
 					item.Flags = m.Flags
 				}
