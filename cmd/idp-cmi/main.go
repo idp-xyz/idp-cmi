@@ -48,6 +48,7 @@ import (
 	"idp-cmi/internal/evaluation"
 	"idp-cmi/internal/ingest"
 	"idp-cmi/internal/observability"
+	"idp-cmi/internal/pdp"
 	"idp-cmi/internal/transport"
 )
 
@@ -221,7 +222,17 @@ func serve(log *slog.Logger) error {
 		}()
 	}
 	resolver := &cmictx.Resolver{Store: store, Embedder: embedder, Log: log}
-	a := &api.API{Store: store, Auth: verifier, Resolver: resolver, Log: log, Metrics: metrics, Version: version, Evaluator: &evaluation.Suite{Store: store, Resolver: resolver}}
+	var pdpClient *pdp.Client
+	pdpOnError := "deny"
+	if au := cfg.Authorization; au != nil && au.PDP != nil { // ADR-0001 D23
+		tlsCfg, err := transport.ClientTLS(au.PDP.CAFile, "", "")
+		if err != nil {
+			return fmt.Errorf("authorization.pdp: %w", err)
+		}
+		pdpClient = &pdp.Client{URL: au.PDP.URL, Timeout: au.PDP.Timeout, HTTP: &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsCfg}}}
+		pdpOnError = au.PDP.OnError
+	}
+	a := &api.API{Store: store, Auth: verifier, Resolver: resolver, Log: log, Metrics: metrics, Version: version, Evaluator: &evaluation.Suite{Store: store, Resolver: resolver}, PDP: pdpClient, PDPOnError: pdpOnError}
 	if c := cfg.Consolidation; c != nil { // ADR-0001 D15
 		tlsCfg, err := transport.ClientTLS(c.CAFile, "", "")
 		if err != nil {
@@ -298,7 +309,7 @@ func serve(log *slog.Logger) error {
 			errc <- srv.ListenAndServe()
 		}
 	}()
-	log.Info("idp-cmi listening", "addr", srv.Addr, "devMode", dev, "tls", srv.TLSConfig != nil, "sweep", sweep.String(), "embedding", embedder != nil, "consolidation", a.Consolidator != nil, "ingest", ingestEvery.String())
+	log.Info("idp-cmi listening", "addr", srv.Addr, "devMode", dev, "tls", srv.TLSConfig != nil, "sweep", sweep.String(), "embedding", embedder != nil, "consolidation", a.Consolidator != nil, "ingest", ingestEvery.String(), "pdp", pdpClient != nil)
 	select {
 	case err := <-errc:
 		return err

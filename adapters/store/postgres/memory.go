@@ -46,9 +46,10 @@ func scanMemory(row pgx.Row) (*cmi.MemoryRecord, error) {
 
 // Visibility is the principal's view: who they are, their roles and their sensitivity ceiling.
 type Visibility struct {
-	Subject string
-	Roles   []string
-	Ceiling string
+	Subject        string
+	Roles          []string
+	Ceiling        string
+	ExcludeSources []string // a PDP obligation (D23): content of these sources is never returned
 }
 
 // visibleSQL is the predicate every read of memory and knowledge applies (D7): tenant rows only (RLS),
@@ -284,7 +285,7 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 		limit = 200
 	}
 	const from = ` FROM memory_records m JOIN sources s ON s.id = m.source_id, LATERAL (SELECT m.status, m.valid_until, m.sensitivity, m.acl_subjects, m.acl_roles) x`
-	filters := ` AND (m.scope_kind, m.scope_id) IN (SELECT unnest($5::text[]), unnest($6::text[]))` + visibleSQL + ` AND ($7 OR cardinality(m.flags) = 0)` + entityFilterSQL("memory", "m.id", "$8")
+	filters := ` AND (m.scope_kind, m.scope_id) IN (SELECT unnest($5::text[]), unnest($6::text[]))` + visibleSQL + ` AND ($7 OR cardinality(m.flags) = 0)` + entityFilterSQL("memory", "m.id", "$8") + excludeSQL("$10")
 	byID := map[string]*memoryHit{}
 	var order []string
 	scan := func(rows pgx.Rows, semantic bool) error {
@@ -324,7 +325,7 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		if q.TSQuery != "" {
 			rows, err := tx.Query(ctx, `SELECT `+memoryCols+`, ts_rank(m.search, q)::float8 AS r, s.trust`+from+`, to_tsquery('simple', $4) q
-				WHERE m.search @@ q`+filters+` ORDER BY r DESC LIMIT $9`, v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, kinds, ids, q.IncludeFlagged, entities, limit)
+				WHERE m.search @@ q`+filters+` ORDER BY r DESC LIMIT $9`, v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, kinds, ids, q.IncludeFlagged, entities, limit, excluded(v))
 			if err != nil {
 				return err
 			}
@@ -334,7 +335,7 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 		}
 		if len(q.Vector) > 0 && q.Model != "" {
 			rows, err := tx.Query(ctx, `SELECT `+memoryCols+`, cosine_similarity(m.embedding, $4::real[])::float8 AS r, s.trust`+from+`
-				WHERE m.embedding IS NOT NULL AND m.embedding_model = $10`+filters+` ORDER BY r DESC NULLS LAST LIMIT $9`, v.Subject, v.Roles, rank(v.Ceiling), q.Vector, kinds, ids, q.IncludeFlagged, entities, limit, q.Model)
+				WHERE m.embedding IS NOT NULL AND m.embedding_model = $11`+filters+` ORDER BY r DESC NULLS LAST LIMIT $9`, v.Subject, v.Roles, rank(v.Ceiling), q.Vector, kinds, ids, q.IncludeFlagged, entities, limit, excluded(v), q.Model)
 			if err != nil {
 				return err
 			}

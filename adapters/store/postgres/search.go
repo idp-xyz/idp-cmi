@@ -46,6 +46,18 @@ func (h *Hit) merge(other Hit) {
 	}
 }
 
+// excludeSQL drops rows of the sources a PDP obligation excludes (D23); $param is a text[].
+func excludeSQL(param string) string {
+	return ` AND NOT (s.name = ANY(` + param + `::text[]))`
+}
+
+func excluded(v Visibility) []string {
+	if v.ExcludeSources == nil {
+		return []string{}
+	}
+	return v.ExcludeSources
+}
+
 // entityFilterSQL keeps rows that reference any of the requested entities (no entities = no filter).
 // $kind is the object kind, $col the object id column, $n the text[] parameter.
 func entityFilterSQL(kind, col, param string) string {

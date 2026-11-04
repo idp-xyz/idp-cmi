@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/jackc/pgx/v5"
 	"io"
 	"log/slog"
 	"net/http"
@@ -26,6 +27,7 @@ import (
 	"idp-cmi/internal/evaluation"
 	"idp-cmi/internal/ingest"
 	"idp-cmi/internal/observability"
+	"idp-cmi/internal/pdp"
 	"idp-cmi/internal/transport"
 )
 
@@ -46,9 +48,12 @@ type API struct {
 	Consolidator *consolidate.Consolidator
 	Ingester     *ingest.Ingester
 	Evaluator    *evaluation.Suite
-	Log          *slog.Logger
-	Metrics      *observability.Metrics
-	Version      string
+	// PDP is the external policy decision point (D23); nil = the CMI\'s own roles, ACLs and ceilings decide alone.
+	PDP        *pdp.Client
+	PDPOnError string // deny (default) | skip
+	Log        *slog.Logger
+	Metrics    *observability.Metrics
+	Version    string
 
 	resolves *observability.CounterVec
 }
@@ -203,6 +208,41 @@ func decode(r *http.Request, v any) error {
 	return nil
 }
 
+// authorize asks the PDP (D23) when there is one. Denied = 403 PDP_DENIED (audited); unreachable =
+// 503 PDP_UNAVAILABLE unless the configuration says skip. The obligations returned narrow a read.
+func (a *API) authorize(r *http.Request, p authorization.Principal, action string, res pdp.Resource, purpose string) (pdp.Obligations, error) {
+	if a.PDP == nil {
+		return pdp.Obligations{}, nil
+	}
+	d, err := a.PDP.Decide(r.Context(), pdp.Input{Tenant: p.Tenant, Principal: pdp.Principal{Subject: p.Subject, Roles: p.Roles, Client: p.Client, Actor: p.Actor}, Action: action, Resource: res, Purpose: purpose})
+	if err != nil {
+		if a.PDPOnError == "skip" {
+			a.Log.Warn("PDP unavailable; proceeding on the CMI's own authorization", "action", action, "error", err)
+			return pdp.Obligations{}, nil
+		}
+		a.Log.Warn("PDP unavailable; denying", "action", action, "error", err)
+		return pdp.Obligations{}, transport.Fail(http.StatusServiceUnavailable, "PDP_UNAVAILABLE", "the policy decision point is unavailable")
+	}
+	if !d.Allow {
+		_ = a.Store.InTenant(r.Context(), p.Tenant, func(tx pgx.Tx) error {
+			return postgres.Audit(r.Context(), tx, p.Tenant, p.Subject, "pdp.deny", res.ID, map[string]any{"action": action, "resource": res, "purpose": purpose, "reason": d.Reason})
+		})
+		return pdp.Obligations{}, transport.Fail(http.StatusForbidden, "PDP_DENIED", "the policy decision point denied "+action)
+	}
+	return d.Obligations, nil
+}
+
+// narrow applies a PDP's obligations to a view.
+func narrow(v postgres.Visibility, o pdp.Obligations) postgres.Visibility {
+	if o.MaxSensitivity != "" && cmi.Within(o.MaxSensitivity, v.Ceiling) {
+		v.Ceiling = o.MaxSensitivity
+	}
+	if len(o.ExcludeSources) > 0 {
+		v.ExcludeSources = append(append([]string{}, v.ExcludeSources...), o.ExcludeSources...)
+	}
+	return v
+}
+
 // visibility derives the principal's view from its roles and the tenant policy (D7).
 func (a *API) visibility(ctx context.Context, p authorization.Principal) (postgres.Visibility, error) {
 	policy, err := a.Store.GetPolicy(ctx, p.Tenant)
@@ -274,6 +314,9 @@ func (a *API) Handler() http.Handler {
 		if err := decodeRaw(raw, &in); err != nil {
 			return 0, nil, err
 		}
+		if _, err := a.authorize(r, p, "knowledge.write", pdp.Resource{Kind: "knowledge", Source: in.Source, Sensitivity: in.Sensitivity, Entities: in.Entities}, ""); err != nil {
+			return 0, nil, err
+		}
 		return a.idempotent(r, p, raw, func() (int, any, error) {
 			out, err := a.Store.CreateDocument(r.Context(), p.Tenant, in.Document, in.Text, p.Subject)
 			return http.StatusCreated, out, err
@@ -291,6 +334,9 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("DELETE /api/v1/knowledge/documents/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		expected, err := ifMatch(r)
 		if err != nil {
+			return 0, nil, err
+		}
+		if _, err := a.authorize(r, p, "knowledge.revoke", pdp.Resource{Kind: "knowledge", ID: r.PathValue("id")}, ""); err != nil {
 			return 0, nil, err
 		}
 		out, err := a.Store.RevokeDocument(r.Context(), p.Tenant, r.PathValue("id"), p.Subject, r.URL.Query().Get("reason"), expected)
@@ -406,6 +452,9 @@ func (a *API) Handler() http.Handler {
 		if err := decode(r, &in); err != nil {
 			return 0, nil, err
 		}
+		if _, err := a.authorize(r, p, "erasure.request", pdp.Resource{Kind: "erasure", Source: in.Ref}, in.Reason); err != nil {
+			return 0, nil, err
+		}
 		out, err := a.Store.RequestErasure(r.Context(), p.Tenant, in, p.Subject)
 		return http.StatusCreated, out, err
 	}, admin))
@@ -449,6 +498,9 @@ func (a *API) Handler() http.Handler {
 		if err != nil {
 			return 0, nil, err
 		}
+		if _, err := a.authorize(r, p, "memory.write", pdp.Resource{Kind: "memory", Scope: &in.Scope, Sensitivity: in.Sensitivity, Source: in.Provenance.Source, Entities: in.Entities}, ""); err != nil {
+			return 0, nil, err
+		}
 		if in.Scope.IsUnit() { // D22: writing into a unit needs membership
 			ok, err := a.Store.IsMember(r.Context(), p.Tenant, v, in.Scope, p.Has(admin))
 			if err != nil {
@@ -490,6 +542,9 @@ func (a *API) Handler() http.Handler {
 		if !ok {
 			return 0, nil, transport.Fail(http.StatusForbidden, "FORBIDDEN", "not a member of "+in.Scope.Kind+":"+in.Scope.ID)
 		}
+		if _, err := a.authorize(r, p, "memory.share", pdp.Resource{Kind: "memory", ID: rec.ID, Scope: &in.Scope, Sensitivity: rec.Sensitivity, Source: rec.Provenance.Source}, in.Reason); err != nil {
+			return 0, nil, err
+		}
 		out, err := a.Store.Share(r.Context(), p.Tenant, rec.ID, in.Scope, in.Reason, p.Subject, v)
 		return http.StatusCreated, out, err
 	}, writer, reader))
@@ -509,7 +564,18 @@ func (a *API) Handler() http.Handler {
 		if err != nil {
 			return 0, nil, err
 		}
-		out, err := a.Store.GetMemory(r.Context(), p.Tenant, r.PathValue("id"), v)
+		o, err := a.authorize(r, p, "memory.read", pdp.Resource{Kind: "memory", ID: r.PathValue("id")}, "")
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.GetMemory(r.Context(), p.Tenant, r.PathValue("id"), narrow(v, o))
+		if err == nil {
+			for _, src := range o.ExcludeSources {
+				if out.Provenance.Source == src {
+					return 0, nil, &postgres.Error{Code: "NOT_FOUND", Message: "memory record not found"}
+				}
+			}
+		}
 		return 200, out, err
 	}, writer, reader))
 	mux.Handle("GET /v1/memory/records", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
@@ -553,6 +619,9 @@ func (a *API) Handler() http.Handler {
 		if err != nil {
 			return 0, nil, err
 		}
+		if _, err := a.authorize(r, p, "memory.transition", pdp.Resource{Kind: "memory", ID: r.PathValue("id")}, in.To); err != nil {
+			return 0, nil, err
+		}
 		out, err := a.Store.Transition(r.Context(), p.Tenant, r.PathValue("id"), in.To, in.Reason, in.ApprovalRef, p.Subject, expected)
 		return 200, out, err
 	}, admin))
@@ -569,6 +638,9 @@ func (a *API) Handler() http.Handler {
 		if err != nil {
 			return 0, nil, err
 		}
+		if _, err := a.authorize(r, p, "memory.revoke", pdp.Resource{Kind: "memory", ID: in.RecordID}, in.Reason); err != nil {
+			return 0, nil, err
+		}
 		n, err := a.Store.RevokeMemory(r.Context(), p.Tenant, in.RecordID, in.Ref, p.Subject, in.Reason, p.Has(admin), expected)
 		return 200, map[string]any{"revoked": n}, err
 	}, writer))
@@ -579,8 +651,12 @@ func (a *API) Handler() http.Handler {
 		if err != nil {
 			return 0, nil, err
 		}
+		o, err := a.authorize(r, p, "memory.read", pdp.Resource{Kind: "memory", Entities: []cmi.Entity{{Type: r.PathValue("type"), ID: r.PathValue("id")}}}, "")
+		if err != nil {
+			return 0, nil, err
+		}
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-		out, err := a.Store.ListByEntity(r.Context(), p.Tenant, cmi.Entity{Type: r.PathValue("type"), ID: r.PathValue("id")}, v, limit)
+		out, err := a.Store.ListByEntity(r.Context(), p.Tenant, cmi.Entity{Type: r.PathValue("type"), ID: r.PathValue("id")}, narrow(v, o), limit)
 		return 200, out, err
 	}, reader, writer))
 
@@ -594,6 +670,11 @@ func (a *API) Handler() http.Handler {
 		if err != nil {
 			return 0, nil, err
 		}
+		o, err := a.authorize(r, p, "context.resolve", pdp.Resource{Kind: "context", Scope: in.Scope, Scopes: in.Scopes, Entities: in.Entities}, in.Purpose)
+		if err != nil {
+			return 0, nil, err
+		}
+		v = narrow(v, o)
 		pkg, env, err := a.Resolver.Resolve(r.Context(), p.Tenant, v, in)
 		if err != nil {
 			if a.resolves != nil {

@@ -30,6 +30,7 @@ import (
 	"idp-cmi/internal/evaluation"
 	"idp-cmi/internal/ingest"
 	"idp-cmi/internal/observability"
+	"idp-cmi/internal/pdp"
 )
 
 func scratchDB(t *testing.T) (ownerURL, serviceURL string) {
@@ -72,6 +73,7 @@ func scratchDB(t *testing.T) (ownerURL, serviceURL string) {
 
 type env struct {
 	t        *testing.T
+	host     *api.API
 	embedder *embedding.Fake
 	model    *consolidate.Fake
 	ingester *ingest.Ingester
@@ -139,6 +141,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	e.host = a
 	e.api = httptest.NewServer(observability.HTTPMiddleware(tp, "idp-cmi/it", a.Handler()))
 	t.Cleanup(e.api.Close)
 	return e
@@ -948,6 +951,81 @@ func TestCMIEndToEnd(t *testing.T) {
 		if n := len(e.must(200, "GET", "/api/v1/units", "erin", nil)["units"].([]any)); n != 0 {
 			t.Fatalf("units leaked: %d", n)
 		}
+	})
+
+	t.Run("policy-decision-point", func(t *testing.T) {
+		// D23: an external PDP decides on top of the CMI's own authorization; its obligations only narrow
+		var asked []pdp.Input
+		mode := "normal"
+		fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				Input pdp.Input `json:"input"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			asked = append(asked, body.Input)
+			if mode == "down" {
+				http.Error(w, "down", 503)
+				return
+			}
+			in := body.Input
+			res := map[string]any{"allow": true}
+			switch {
+			case in.Action == "context.resolve" && in.Purpose == "export":
+				res = map[string]any{"allow": false, "reason": "exports are not a permitted purpose"}
+			case in.Action == "context.resolve" && in.Principal.Subject == "dan":
+				res["obligations"] = map[string]any{"maxSensitivity": "public", "excludeSources": []string{"assistant"}}
+			case in.Action == "memory.write" && in.Resource.Sensitivity == "confidential":
+				res = map[string]any{"allow": false, "reason": "confidential memory needs a ticket"}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"result": res})
+		}))
+		defer fake.Close()
+		e.host.PDP = &pdp.Client{URL: fake.URL, HTTP: fake.Client()}
+		e.host.PDPOnError = "deny"
+		defer func() { e.host.PDP = nil }()
+		now := e.now
+		// denied purpose -> 403 PDP_DENIED and an audit entry
+		st, out := e.call("POST", "/v1/context/resolve", "carol", map[string]any{"query": "pickup", "purpose": "export"})
+		if st != 403 || out["error"].(map[string]any)["code"] != "PDP_DENIED" {
+			t.Fatalf("%d %v", st, out)
+		}
+		var denied bool
+		for _, ev := range e.must(200, "GET", "/api/v1/audit?limit=5", "alice", nil)["events"].([]any) {
+			if ev.(map[string]any)["action"] == "pdp.deny" {
+				denied = true
+			}
+		}
+		if !denied {
+			t.Fatal("no pdp.deny audit entry")
+		}
+		// the PDP saw who asked and for what
+		last := asked[len(asked)-1]
+		if last.Tenant != e.tenantA || last.Principal.Subject != "carol" || last.Resource.Kind != "context" || last.Purpose != "export" {
+			t.Fatalf("%+v", last)
+		}
+		// obligations narrow dan's resolve: nothing from the assistant source, nothing above public
+		for _, it := range items(e.must(200, "POST", "/v1/context/resolve", "dan", map[string]any{"query": "pickup surcharge invoiced"})) {
+			if it["source"] == "assistant" || it["sensitivity"] != "public" {
+				t.Fatalf("obligation not applied: %v", it)
+			}
+		}
+		// a denied write never reaches the store
+		conf := memory("orders", "order:9001", "subject", "carol", "Board-level note.", "confidential", now)
+		st, out = e.call("POST", "/v1/memory/records", "bob", conf)
+		if st != 403 || out["error"].(map[string]any)["code"] != "PDP_DENIED" {
+			t.Fatalf("%d %v", st, out)
+		}
+		e.must(201, "POST", "/v1/memory/records", "bob", memory("orders", "order:9002", "subject", "carol", "An ordinary note.", "internal", now))
+		// a PDP that is down denies by default, or is skipped when configured so
+		mode = "down"
+		st, out = e.call("POST", "/v1/context/resolve", "carol", map[string]any{"query": "pickup"})
+		if st != 503 || out["error"].(map[string]any)["code"] != "PDP_UNAVAILABLE" {
+			t.Fatalf("%d %v", st, out)
+		}
+		e.host.PDPOnError = "skip"
+		e.must(200, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "pickup"})
+		e.host.PDPOnError = "deny"
+		mode = "normal"
 	})
 
 	t.Run("audit-and-policy", func(t *testing.T) {

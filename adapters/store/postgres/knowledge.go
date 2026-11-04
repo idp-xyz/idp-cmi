@@ -208,7 +208,7 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 		limit = 200
 	}
 	const from = ` FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id JOIN sources s ON s.id = d.source_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x`
-	filters := ` AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))` + visibleSQL + ` AND ($6 OR cardinality(c.flags) = 0)` + entityFilterSQL("knowledge", "d.id", "$7")
+	filters := ` AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))` + visibleSQL + ` AND ($6 OR cardinality(c.flags) = 0)` + entityFilterSQL("knowledge", "d.id", "$7") + excludeSQL("$9")
 	type key struct {
 		id  string
 		seq int
@@ -257,7 +257,7 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		if q.TSQuery != "" {
 			rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, c.flags, ts_rank(c.search, q)::float8 AS r, s.trust`+from+`, to_tsquery('simple', $4) q
-				WHERE c.search @@ q`+filters+` ORDER BY r DESC LIMIT $8`, v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, sources, q.IncludeFlagged, entities, limit)
+				WHERE c.search @@ q`+filters+` ORDER BY r DESC LIMIT $8`, v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, sources, q.IncludeFlagged, entities, limit, excluded(v))
 			if err != nil {
 				return err
 			}
@@ -267,7 +267,7 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 		}
 		if len(q.Vector) > 0 && q.Model != "" {
 			rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, c.flags, cosine_similarity(c.embedding, $4::real[])::float8 AS r, s.trust`+from+`
-				WHERE c.embedding IS NOT NULL AND c.embedding_model = $9`+filters+` ORDER BY r DESC NULLS LAST LIMIT $8`, v.Subject, v.Roles, rank(v.Ceiling), q.Vector, sources, q.IncludeFlagged, entities, limit, q.Model)
+				WHERE c.embedding IS NOT NULL AND c.embedding_model = $10`+filters+` ORDER BY r DESC NULLS LAST LIMIT $8`, v.Subject, v.Roles, rank(v.Ceiling), q.Vector, sources, q.IncludeFlagged, entities, limit, excluded(v), q.Model)
 			if err != nil {
 				return err
 			}

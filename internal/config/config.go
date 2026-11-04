@@ -16,6 +16,20 @@ import (
 type File struct {
 	Embedding     *Embedding     `yaml:"embedding"`
 	Consolidation *Consolidation `yaml:"consolidation"`
+	Authorization *Authorization `yaml:"authorization"`
+}
+
+// Authorization names the external policy decision point (D23).
+type Authorization struct {
+	PDP *PDP `yaml:"pdp"`
+}
+
+// PDP is an OPA-style decision endpoint.
+type PDP struct {
+	URL     string        `yaml:"url"`
+	CAFile  string        `yaml:"caFile"`
+	Timeout time.Duration `yaml:"timeout"`
+	OnError string        `yaml:"onError"` // deny (default) | skip: what an unreachable PDP means
 }
 
 // Embedding is an OpenAI-compatible embeddings endpoint.
@@ -69,6 +83,19 @@ func Load(path string) (*File, error) {
 		}
 		if e.Backfill == 0 {
 			e.Backfill = 30 * time.Second
+		}
+	}
+	if a := f.Authorization; a != nil && a.PDP != nil {
+		p := a.PDP
+		if !strings.HasPrefix(p.URL, "http://") && !strings.HasPrefix(p.URL, "https://") {
+			return nil, errors.New("authorization.pdp: url (http(s)) is required")
+		}
+		switch p.OnError {
+		case "":
+			p.OnError = "deny"
+		case "deny", "skip":
+		default:
+			return nil, errors.New("authorization.pdp: onError must be deny or skip")
 		}
 	}
 	if c := f.Consolidation; c != nil {
