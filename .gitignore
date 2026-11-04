@@ -2,3 +2,4 @@ bin/
 build/
 .local/
 /docs/*.zip
+/docs/**/*.zip
