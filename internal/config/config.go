@@ -21,7 +21,15 @@ type File struct {
 
 // Authorization names the external policy decision point (D23).
 type Authorization struct {
-	PDP *PDP `yaml:"pdp"`
+	PDP       *PDP       `yaml:"pdp"`
+	Approvals *Approvals `yaml:"approvals"`
+}
+
+// Approvals is the approval system that confirms approval references of transitions (D30).
+type Approvals struct {
+	URL     string        `yaml:"url"`
+	CAFile  string        `yaml:"caFile"`
+	Timeout time.Duration `yaml:"timeout"`
 }
 
 // PDP is an OPA-style decision endpoint.
@@ -96,6 +104,11 @@ func Load(path string) (*File, error) {
 		case "deny", "skip":
 		default:
 			return nil, errors.New("authorization.pdp: onError must be deny or skip")
+		}
+	}
+	if a := f.Authorization; a != nil && a.Approvals != nil {
+		if u := a.Approvals.URL; !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			return nil, errors.New("authorization.approvals: url (http(s)) is required")
 		}
 	}
 	if c := f.Consolidation; c != nil {

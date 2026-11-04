@@ -20,6 +20,7 @@ import (
 
 	"idp-cmi/adapters/identity"
 	"idp-cmi/adapters/store/postgres"
+	"idp-cmi/internal/approvals"
 	"idp-cmi/internal/authorization"
 	"idp-cmi/internal/cmi"
 	"idp-cmi/internal/consolidate"
@@ -51,9 +52,11 @@ type API struct {
 	// PDP is the external policy decision point (D23); nil = the CMI\'s own roles, ACLs and ceilings decide alone.
 	PDP        *pdp.Client
 	PDPOnError string // deny (default) | skip
-	Log        *slog.Logger
-	Metrics    *observability.Metrics
-	Version    string
+	// Approvals verifies approval references of transitions (D30); nil = recorded unverified.
+	Approvals *approvals.Client
+	Log       *slog.Logger
+	Metrics   *observability.Metrics
+	Version   string
 
 	resolves *observability.CounterVec
 }
@@ -187,7 +190,7 @@ func (a *API) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.As(err, &pb):
 	case errors.As(err, &se):
-		status := map[string]int{"NOT_FOUND": 404, "CONFLICT": 409, "FORBIDDEN": 403, "INVALID": 422, "GONE": 410}[se.Code]
+		status := map[string]int{"NOT_FOUND": 404, "CONFLICT": 409, "FORBIDDEN": 403, "INVALID": 422, "GONE": 410, "APPROVAL_REQUIRED": 409}[se.Code]
 		if status == 0 {
 			status = 500
 		}
@@ -649,7 +652,19 @@ func (a *API) Handler() http.Handler {
 		if _, err := a.authorize(r, p, "memory.transition", pdp.Resource{Kind: "memory", ID: r.PathValue("id")}, in.To); err != nil {
 			return 0, nil, err
 		}
-		out, err := a.Store.Transition(r.Context(), p.Tenant, r.PathValue("id"), in.To, in.Reason, in.ApprovalRef, p.Subject, expected)
+		approval := postgres.Approval{Ref: in.ApprovalRef}
+		if in.ApprovalRef != "" && a.Approvals != nil { // D30: the approval system confirms the reference for this object
+			ok, err := a.Approvals.Verify(r.Context(), approvals.Request{ApprovalRef: in.ApprovalRef, Tenant: p.Tenant, RecordID: r.PathValue("id"), To: in.To, Principal: p.Subject})
+			switch {
+			case errors.Is(err, approvals.ErrInvalid):
+				return 0, nil, transport.Fail(http.StatusConflict, "APPROVAL_INVALID", err.Error())
+			case err != nil:
+				a.Log.Warn("approval system unavailable", "error", err)
+				return 0, nil, transport.Fail(http.StatusServiceUnavailable, "APPROVAL_UNAVAILABLE", "the approval system is unavailable")
+			}
+			approval.Verified, approval.ApprovedBy, approval.ExpiresAt = true, ok.ApprovedBy, ok.ExpiresAt
+		}
+		out, err := a.Store.Transition(r.Context(), p.Tenant, r.PathValue("id"), in.To, in.Reason, approval, p.Subject, expected)
 		return 200, out, err
 	}, admin))
 	mux.Handle("POST /v1/memory/revoke", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {

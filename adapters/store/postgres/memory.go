@@ -451,9 +451,20 @@ var Transitions = map[string][]string{
 	cmi.StatusDisputed:  {cmi.StatusActive, cmi.StatusRevoked},
 }
 
-// Transition moves a record to another status with a reason (and an optional approval reference),
-// guarded by the expected version when given; it records the decision in the audit.
-func (s *Store) Transition(ctx context.Context, tenant, id, to, reason, approvalRef, by string, ifMatch int) (*cmi.MemoryRecord, error) {
+// Approval is the approval behind a transition (D30): the reference, and whether the approval
+// system confirmed it (by whom, until when). Without an approval system it is recorded unverified.
+type Approval struct {
+	Ref        string     `json:"approvalRef,omitempty"`
+	Verified   bool       `json:"approvalVerified"`
+	ApprovedBy string     `json:"approvedBy,omitempty"`
+	ExpiresAt  *time.Time `json:"approvalExpiresAt,omitempty"`
+}
+
+// Transition moves a record to another status with a reason (and an optional approval),
+// guarded by the expected version when given; it records the decision in the audit. A tenant
+// policy may require an approval to admit a candidate (D30).
+func (s *Store) Transition(ctx context.Context, tenant, id, to, reason string, approval Approval, by string, ifMatch int) (*cmi.MemoryRecord, error) {
+	approvalRef := approval.Ref
 	if strings.TrimSpace(reason) == "" || len(reason) > 500 {
 		return nil, fail("INVALID", "reason is required (at most 500 characters)")
 	}
@@ -480,6 +491,15 @@ func (s *Store) Transition(ctx context.Context, tenant, id, to, reason, approval
 		if !allowed {
 			return fail("CONFLICT", "a %s record cannot become %s", from, to)
 		}
+		if from == cmi.StatusCandidate && to == cmi.StatusActive && approvalRef == "" {
+			policy, err := policyOf(ctx, tx, tenant)
+			if err != nil {
+				return err
+			}
+			if policy.RequireApproval {
+				return fail("APPROVAL_REQUIRED", "admitting a candidate needs an approvalRef in this tenant")
+			}
+		}
 		q := `UPDATE memory_records SET status = $2, version = version + 1`
 		args := []any{id, to}
 		switch to {
@@ -493,7 +513,7 @@ func (s *Store) Transition(ctx context.Context, tenant, id, to, reason, approval
 		if _, err := tx.Exec(ctx, q, args...); err != nil {
 			return err
 		}
-		if err := Audit(ctx, tx, tenant, by, "memory.transition", id, map[string]any{"from": from, "to": to, "reason": reason, "approvalRef": approvalRef, "version": version + 1}); err != nil {
+		if err := Audit(ctx, tx, tenant, by, "memory.transition", id, map[string]any{"from": from, "to": to, "reason": reason, "approvalRef": approvalRef, "approvalVerified": approval.Verified, "approvedBy": approval.ApprovedBy, "approvalExpiresAt": approval.ExpiresAt, "version": version + 1}); err != nil {
 			return err
 		}
 		var err error

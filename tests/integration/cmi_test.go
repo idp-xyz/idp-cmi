@@ -23,6 +23,7 @@ import (
 	"idp-cmi/adapters/identity"
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/api"
+	"idp-cmi/internal/approvals"
 	"idp-cmi/internal/authorization"
 	"idp-cmi/internal/consolidate"
 	cmictx "idp-cmi/internal/context"
@@ -1175,6 +1176,95 @@ func TestCMIEndToEnd(t *testing.T) {
 		if om2 := full["package"].(map[string]any)["omitted"].(map[string]any); om2["budget"] != 0.0 || om2["candidate"] != 1.0 {
 			t.Fatalf("%v", om2)
 		}
+	})
+
+	t.Run("approval-verification", func(t *testing.T) {
+		// D30: an approval reference is confirmed by the approval system for this record and transition
+		now := e.now
+		var asked []approvals.Request
+		down := false
+		fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var in approvals.Request
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			asked = append(asked, in)
+			if down {
+				http.Error(w, "down", 503)
+				return
+			}
+			switch in.ApprovalRef {
+			case "chg:ok":
+				_ = json.NewEncoder(w).Encode(map[string]any{"valid": true, "approvedBy": "erin", "expiresAt": time.Now().Add(time.Hour), "recordId": in.RecordID, "to": in.To})
+			case "chg:expired":
+				_ = json.NewEncoder(w).Encode(map[string]any{"valid": true, "approvedBy": "erin", "expiresAt": time.Now().Add(-time.Minute)})
+			case "chg:other":
+				_ = json.NewEncoder(w).Encode(map[string]any{"valid": true, "approvedBy": "erin", "expiresAt": time.Now().Add(time.Hour), "recordId": "00000000-0000-0000-0000-000000000000"})
+			default:
+				_ = json.NewEncoder(w).Encode(map[string]any{"valid": false, "reason": "unknown change"})
+			}
+		}))
+		defer fake.Close()
+		candidate := func(n int) string {
+			c := memory("assistant", fmt.Sprintf("run:appr:%d", n), "subject", "carol", fmt.Sprintf("Carol may want delivery window %d (unconfirmed).", n), "internal", now)
+			c["status"] = "candidate"
+			return e.must(201, "POST", "/v1/memory/records", "bob", c)["recordId"].(string)
+		}
+		code := func(st int, out map[string]any) string {
+			if er, ok := out["error"].(map[string]any); ok {
+				return fmt.Sprintf("%d %v", st, er["code"])
+			}
+			return fmt.Sprint(st)
+		}
+		// without an approval system a reference is accepted and audited unverified
+		id0 := candidate(0)
+		e.must(200, "POST", "/v1/memory/records/"+id0+"/transitions", "alice", map[string]any{"to": "active", "reason": "ok", "approvalRef": "ticket:1"})
+		// the tenant policy requires a reference to admit a candidate
+		e.must(200, "PUT", "/api/v1/policy", "alice", map[string]any{"readerCeiling": "internal", "writerCeiling": "confidential", "defaultMemoryTtlDays": 0, "packageTtlSeconds": 3600, "requireApproval": true})
+		id1 := candidate(1)
+		if got := code(e.call("POST", "/v1/memory/records/"+id1+"/transitions", "alice", map[string]any{"to": "active", "reason": "no ref"})); got != "409 APPROVAL_REQUIRED" {
+			t.Fatal(got)
+		}
+		e.must(200, "POST", "/v1/memory/records/"+id1+"/transitions", "alice", map[string]any{"to": "revoked", "reason": "rejecting needs no approval"})
+		e.host.Approvals = &approvals.Client{URL: fake.URL, HTTP: fake.Client()}
+		defer func() { e.host.Approvals = nil }()
+		id2 := candidate(2)
+		for ref, want := range map[string]string{"chg:unknown": "409 APPROVAL_INVALID", "chg:expired": "409 APPROVAL_INVALID", "chg:other": "409 APPROVAL_INVALID"} {
+			if got := code(e.call("POST", "/v1/memory/records/"+id2+"/transitions", "alice", map[string]any{"to": "active", "reason": "x", "approvalRef": ref})); got != want {
+				t.Fatalf("%s: %s", ref, got)
+			}
+		}
+		down = true
+		if got := code(e.call("POST", "/v1/memory/records/"+id2+"/transitions", "alice", map[string]any{"to": "active", "reason": "x", "approvalRef": "chg:ok"})); got != "503 APPROVAL_UNAVAILABLE" {
+			t.Fatal(got)
+		}
+		down = false
+		if r := e.must(200, "GET", "/v1/memory/records/"+id2, "alice", nil); r["status"] != "candidate" {
+			t.Fatalf("admitted on a failed approval: %v", r["status"])
+		}
+		if r := e.must(200, "POST", "/v1/memory/records/"+id2+"/transitions", "alice", map[string]any{"to": "active", "reason": "approved change", "approvalRef": "chg:ok"}); r["status"] != "active" {
+			t.Fatalf("%v", r)
+		}
+		last := asked[len(asked)-1]
+		if last.RecordID != id2 || last.To != "active" || last.Principal != "alice" || last.Tenant == "" {
+			t.Fatalf("approval request: %+v", last)
+		}
+		var verified, unverified bool
+		for _, ev := range e.must(200, "GET", "/api/v1/audit?limit=50", "alice", nil)["events"].([]any) {
+			ev := ev.(map[string]any)
+			if ev["action"] != "memory.transition" {
+				continue
+			}
+			d := ev["detail"].(map[string]any)
+			switch {
+			case ev["resourceId"] == id2 && d["approvalVerified"] == true && d["approvedBy"] == "erin" && d["approvalExpiresAt"] != nil:
+				verified = true
+			case ev["resourceId"] == id0 && d["approvalVerified"] == false && d["approvalRef"] == "ticket:1":
+				unverified = true
+			}
+		}
+		if !verified || !unverified {
+			t.Fatalf("audit verified=%v unverified=%v", verified, unverified)
+		}
+		e.must(200, "PUT", "/api/v1/policy", "alice", map[string]any{"readerCeiling": "internal", "writerCeiling": "confidential", "defaultMemoryTtlDays": 0, "packageTtlSeconds": 3600})
 	})
 
 	t.Run("external-model-ceiling", func(t *testing.T) {

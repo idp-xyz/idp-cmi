@@ -41,6 +41,7 @@ import (
 	"idp-cmi/adapters/identity"
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/api"
+	"idp-cmi/internal/approvals"
 	"idp-cmi/internal/config"
 	"idp-cmi/internal/consolidate"
 	cmictx "idp-cmi/internal/context"
@@ -237,7 +238,15 @@ func serve(log *slog.Logger) error {
 		pdpClient = &pdp.Client{URL: au.PDP.URL, Timeout: au.PDP.Timeout, HTTP: &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsCfg}}}
 		pdpOnError = au.PDP.OnError
 	}
-	a := &api.API{Store: store, Auth: verifier, Resolver: resolver, Log: log, Metrics: metrics, Version: version, Evaluator: &evaluation.Suite{Store: store, Resolver: resolver}, PDP: pdpClient, PDPOnError: pdpOnError}
+	var approvalClient *approvals.Client
+	if au := cfg.Authorization; au != nil && au.Approvals != nil { // ADR-0001 D30
+		tlsCfg, err := transport.ClientTLS(au.Approvals.CAFile, "", "")
+		if err != nil {
+			return err
+		}
+		approvalClient = &approvals.Client{URL: au.Approvals.URL, Timeout: au.Approvals.Timeout, HTTP: &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsCfg}}}
+	}
+	a := &api.API{Store: store, Auth: verifier, Resolver: resolver, Log: log, Metrics: metrics, Version: version, Evaluator: &evaluation.Suite{Store: store, Resolver: resolver}, PDP: pdpClient, PDPOnError: pdpOnError, Approvals: approvalClient}
 	if c := cfg.Consolidation; c != nil { // ADR-0001 D15
 		tlsCfg, err := transport.ClientTLS(c.CAFile, "", "")
 		if err != nil {
