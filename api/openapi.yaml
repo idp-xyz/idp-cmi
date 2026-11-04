@@ -1,0 +1,138 @@
+openapi: 3.1.0
+info:
+  title: IDP CMI API
+  version: 1.0.0
+  description: |
+    Context, Memory & Knowledge Infrastructure (docs/adr/ADR-0001-cmi-design.md). Three surfaces on one
+    listener: the administrative API (`/api/v1`, role cmi-admin) for sources, knowledge documents and the
+    tenant policy; the memory API (`/v1/memory`, role cmi-writer) for appending and revoking records; and
+    the context API (`/v1/context`, role cmi-reader) that resolves a sealed, content-addressed
+    ContextPackage and reads packages back with their staleness. Every request carries an OAuth bearer
+    token; objects are isolated per tenant by the database's row-level security.
+    internal/api/openapi_test.go keeps the paths in step with the router.
+servers:
+  - url: http://127.0.0.1:8550
+security:
+  - bearerAuth: []
+paths:
+  /healthz:
+    get: {summary: Liveness, security: [], responses: {'200': {description: alive}}}
+  /readyz:
+    get: {summary: Readiness (database reachable), security: [], responses: {'200': {description: ready}, '503': {description: not ready}}}
+  /version:
+    get: {summary: Service and version, security: [], responses: {'200': {description: version}}}
+  /api/v1/sources:
+    post:
+      summary: Register a source (ADR-0001 D2); agent and user sources are informational
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Source'}}}}
+      responses: {'201': {description: created, content: {application/json: {schema: {$ref: '#/components/schemas/Source'}}}}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+    get:
+      summary: List the tenant's sources (any role)
+      responses: {'200': {description: sources}}
+  /api/v1/sources/{ref}:
+    parameters: [{$ref: '#/components/parameters/ref'}]
+    get: {summary: Get a source by id or name, responses: {'200': {description: source}, '404': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/knowledge/documents:
+    post:
+      summary: Index a knowledge document (ADR-0001 D4); a new version of the same uri supersedes the active one
+      requestBody: {required: true, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/Document'}, {type: object, required: [text], properties: {text: {type: string}}}]}}}}
+      responses: {'201': {description: indexed, content: {application/json: {schema: {$ref: '#/components/schemas/Document'}}}}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+    get: {summary: List documents (newest first), responses: {'200': {description: documents}}}
+  /api/v1/knowledge/documents/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get: {summary: Get a document's metadata, responses: {'200': {description: document}, '404': {$ref: '#/components/responses/Problem'}}}
+    delete:
+      summary: Revoke a document (ADR-0001 D6); it leaves retrieval and packages citing it read as stale
+      parameters: [{name: reason, in: query, schema: {type: string}}]
+      responses: {'200': {description: revoked}, '404': {$ref: '#/components/responses/Problem'}}
+  /api/v1/policy:
+    get: {summary: The tenant's policy (sensitivity ceilings per role, default memory TTL, package TTL), responses: {'200': {description: policy, content: {application/json: {schema: {$ref: '#/components/schemas/Policy'}}}}}}
+    put:
+      summary: Set the tenant's policy
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Policy'}}}}
+      responses: {'200': {description: policy}, '422': {$ref: '#/components/responses/Problem'}}
+  /api/v1/audit:
+    get:
+      summary: Recent administrative actions
+      parameters: [{name: limit, in: query, schema: {type: integer}}]
+      responses: {'200': {description: audit events}}
+  /v1/memory/records:
+    post:
+      summary: Append a memory record (ADR-0001 D3); provenance and a registered source are required, the writer's ceiling bounds the sensitivity
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}
+      responses: {'201': {description: recorded, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}, '403': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+    get:
+      summary: List the usable records of a scope the caller may see (default scope = the caller's subject)
+      parameters: [{name: scopeKind, in: query, schema: {type: string, enum: [tenant, subject, thread, agent]}}, {name: scopeId, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer}}]
+      responses: {'200': {description: records}}
+  /v1/memory/records/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get: {summary: Get a record the caller may see (any status), responses: {'200': {description: record}, '404': {$ref: '#/components/responses/Problem'}}}
+  /v1/memory/revoke:
+    post:
+      summary: Revoke records by id or by provenance reference (ADR-0001 D6); a writer revokes what it recorded, an administrator anything
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {recordId: {type: string}, ref: {type: string}, reason: {type: string}}}}}}
+      responses: {'200': {description: how many records were revoked}, '404': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+  /v1/context/resolve:
+    post:
+      summary: Assemble, seal and store a ContextPackage for the caller (ADR-0001 D5)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ResolveRequest'}}}}
+      responses: {'200': {description: the package (contract idp.telos.cmi ContextPackage) with its id and digest}, '422': {$ref: '#/components/responses/Problem'}}
+  /v1/context/packages/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      summary: Read a package back (its requester or an administrator); stale lists the cited items that have since expired, been revoked or superseded
+      responses: {'200': {description: package, digest, stale, staleItems, expiresAt}, '404': {$ref: '#/components/responses/Problem'}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    ref: {name: ref, in: path, required: true, schema: {type: string}, description: id or name}
+    id: {name: id, in: path, required: true, schema: {type: string}}
+  responses:
+    Problem:
+      description: error
+      content: {application/json: {schema: {type: object, properties: {error: {type: object, properties: {code: {type: string}, message: {type: string}}}}}}}
+  schemas:
+    Source:
+      type: object
+      required: [name, displayName, kind, trust]
+      properties: {sourceId: {type: string}, name: {type: string}, displayName: {type: string}, kind: {type: string, enum: [domain-system, document-store, agent, user]}, trust: {type: string, enum: [authoritative, informational]}, baseUrl: {type: string}, createdBy: {type: string}, createdAt: {type: string, format: date-time}}
+    MemoryRecord:
+      description: contract idp.telos.cmi MemoryRecord
+      type: object
+      required: [scope, kind, content, provenance, sensitivity]
+      properties:
+        recordId: {type: string}
+        scope: {type: object, required: [kind], properties: {kind: {type: string, enum: [tenant, subject, thread, agent]}, id: {type: string}}}
+        kind: {type: string, enum: [episodic, semantic]}
+        content: {type: string}
+        structured: {type: object}
+        tags: {type: array, items: {type: string}}
+        provenance: {type: object, required: [source, ref, observedAt], properties: {source: {type: string}, ref: {type: string}, observedAt: {type: string, format: date-time}, recordedBy: {type: string}}}
+        validity: {type: object, properties: {validFrom: {type: string, format: date-time}, validUntil: {type: string, format: date-time}}}
+        status: {type: string, enum: [active, expired, revoked]}
+        revocation: {type: object, properties: {at: {type: string, format: date-time}, by: {type: string}, reason: {type: string}}}
+        sensitivity: {type: string, enum: [public, internal, confidential, restricted]}
+        acl: {type: object, properties: {subjects: {type: array, items: {type: string}}, roles: {type: array, items: {type: string}}}}
+        createdAt: {type: string, format: date-time}
+    Document:
+      description: contract idp.telos.cmi KnowledgeDocument (metadata; the text is indexed, not returned)
+      type: object
+      required: [source, uri, title, sensitivity]
+      properties: {documentId: {type: string}, source: {type: string}, uri: {type: string}, title: {type: string}, version: {type: integer}, contentSha256: {type: string}, byteSize: {type: integer}, chunkCount: {type: integer}, status: {type: string, enum: [active, superseded, revoked, expired]}, validUntil: {type: string, format: date-time}, sensitivity: {type: string, enum: [public, internal, confidential, restricted]}, acl: {type: object}, revocation: {type: object}, createdBy: {type: string}, createdAt: {type: string, format: date-time}}
+    Policy:
+      type: object
+      properties: {readerCeiling: {type: string}, writerCeiling: {type: string}, defaultMemoryTtlDays: {type: integer}, packageTtlSeconds: {type: integer}, updatedBy: {type: string}, updatedAt: {type: string, format: date-time}, default: {type: boolean}}
+    ResolveRequest:
+      type: object
+      required: [query]
+      properties:
+        query: {type: string}
+        purpose: {type: string}
+        scope: {type: object, properties: {kind: {type: string, enum: [tenant, subject, thread, agent]}, id: {type: string}}}
+        budget: {type: object, properties: {maxTokens: {type: integer, description: default 2000, at most 32000}, maxItems: {type: integer, description: default 20, at most 100}}}
+        sources: {type: array, items: {type: string}}
+        kinds: {type: array, items: {type: string, enum: [memory, knowledge]}}
+        maxAgeDays: {type: integer}
+        sensitivityCeiling: {type: string, enum: [public, internal, confidential, restricted], description: may only lower the caller's ceiling}

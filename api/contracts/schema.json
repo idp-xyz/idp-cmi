@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:idp:telos:cmi:1.0.0",
+  "title": "idp.telos.cmi 1.0.0",
+  "description": "idp-cmi（Context, Memory & Knowledge Infrastructure）对外发布的契约：ContextPackage（解析上下文得到的不可变、内容寻址的包，ADR-0001 D5）、ContextItem、MemoryRecord（记忆记录，D3）、Source（来源，D2）、KnowledgeDocument（知识文档的元数据，D4）、Envelope（包加摘要）。生产者是 idp-cmi，权威副本在 idp-cmi/api/contracts/，由 go test ./internal/cmi -run TestContract 保证与实现一致；idp-contracts 中的副本只能与之逐字节相同。JSON Schema 只描述形状与可本地判定的规则；摘要是否匹配由 cmi.Open 判定，可见性与时效由 CMI 的查询判定。",
+  "oneOf": [
+    {"$ref": "#/$defs/ContextPackage"},
+    {"$ref": "#/$defs/MemoryRecord"},
+    {"$ref": "#/$defs/Source"},
+    {"$ref": "#/$defs/KnowledgeDocument"},
+    {"$ref": "#/$defs/Envelope"}
+  ],
+  "$defs": {
+    "ContextPackage": {
+      "title": "ContextPackage",
+      "description": "一次 resolve 的结果：请求者、用途、查询、作用域、按信任级别、新鲜度与相关度排序并按预算装入的条目、预算用量、组装与过期时间。规范化 JSON 的 sha256 是它的摘要；HOST / EER 引用 packageId，读回时可得知哪些条目已失效。schemaVersion 固定为 idp.cmi.package/v1。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "packageId", "tenantId", "requestedBy", "purpose", "query", "items", "budget", "assembledAt", "expiresAt"],
+      "properties": {
+        "schemaVersion": {"const": "idp.cmi.package/v1"},
+        "packageId": {"type": "string", "minLength": 1},
+        "tenantId": {"type": "string", "minLength": 1},
+        "requestedBy": {"type": "string", "minLength": 1},
+        "purpose": {"type": "string", "maxLength": 200},
+        "query": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "scope": {"$ref": "#/$defs/Scope"},
+        "items": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/ContextItem"}},
+        "budget": {"$ref": "#/$defs/Budget"},
+        "assembledAt": {"type": "string", "format": "date-time"},
+        "expiresAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "ContextItem": {
+      "title": "ContextItem",
+      "description": "包里的一项：种类（memory / knowledge）、被引用对象的 id、来源与其信任级别、来源引用、标题、摘录、观察时间、失效时间、敏感级别、得分与 token 估算。历史记忆不是当前事实：消费者按 kind、trust 与 observedAt 对待它。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "source", "trust", "ref", "excerpt", "observedAt", "sensitivity", "score", "tokens"],
+      "properties": {
+        "kind": {"enum": ["memory", "knowledge"]},
+        "id": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"},
+        "trust": {"enum": ["authoritative", "informational"]},
+        "ref": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "maxLength": 500},
+        "excerpt": {"type": "string", "minLength": 1},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "validUntil": {"type": "string", "format": "date-time"},
+        "sensitivity": {"enum": ["public", "internal", "confidential", "restricted"]},
+        "score": {"type": "number", "minimum": 0},
+        "tokens": {"type": "integer", "minimum": 0}
+      }
+    },
+    "Scope": {
+      "title": "Scope",
+      "description": "记忆的作用域：tenant（无 id）、subject、thread 或 agent（带 id）。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"enum": ["tenant", "subject", "thread", "agent"]},
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$"}
+      }
+    },
+    "Budget": {
+      "title": "Budget",
+      "description": "包的预算与用量：token 上限（4 字符 ≈ 1 token）、条目上限、实际用量。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxTokens", "usedTokens", "maxItems"],
+      "properties": {
+        "maxTokens": {"type": "integer", "minimum": 0, "maximum": 32000},
+        "usedTokens": {"type": "integer", "minimum": 0},
+        "maxItems": {"type": "integer", "minimum": 0, "maximum": 100}
+      }
+    },
+    "Provenance": {
+      "title": "Provenance",
+      "description": "内容的来历：来源名、来源自己的引用、观察时间、记录者（主体或运行）。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "ref", "observedAt", "recordedBy"],
+      "properties": {
+        "source": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"},
+        "ref": {"type": "string", "pattern": "^[\\x21-\\x7e]{1,512}$"},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "recordedBy": {"type": "string", "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$"}
+      }
+    },
+    "ACL": {
+      "title": "ACL",
+      "description": "租户内的可见范围：主体列表与角色列表；两者都为空表示租户内（敏感级别之下的）所有人可见，否则任一命中即可见。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "subjects": {"type": "array", "maxItems": 256, "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$"}},
+        "roles": {"type": "array", "maxItems": 64, "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"}}
+      }
+    },
+    "Validity": {
+      "title": "Validity",
+      "description": "生效时间与失效时间（缺省 = 直到撤销）。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validFrom"],
+      "properties": {
+        "validFrom": {"type": "string", "format": "date-time"},
+        "validUntil": {"type": "string", "format": "date-time"}
+      }
+    },
+    "Revocation": {
+      "title": "Revocation",
+      "description": "撤销记录：时间、撤销者、原因。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "by"],
+      "properties": {
+        "at": {"type": "string", "format": "date-time"},
+        "by": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "maxLength": 1000}
+      }
+    },
+    "MemoryRecord": {
+      "title": "MemoryRecord",
+      "description": "一条记忆（D3）：作用域、种类（episodic / semantic）、内容、可选结构化字段、标签、来历、有效期、状态（active / expired / revoked）、撤销信息、敏感级别、ACL。追加写入；修改 = 撤销旧的 + 写新的。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recordId", "scope", "kind", "content", "tags", "provenance", "validity", "status", "sensitivity", "acl", "createdAt"],
+      "properties": {
+        "recordId": {"type": "string", "minLength": 1},
+        "scope": {"$ref": "#/$defs/Scope"},
+        "kind": {"enum": ["episodic", "semantic"]},
+        "content": {"type": "string", "minLength": 1, "maxLength": 65536},
+        "structured": {"type": "object"},
+        "tags": {"type": "array", "maxItems": 32, "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$"}},
+        "provenance": {"$ref": "#/$defs/Provenance"},
+        "validity": {"$ref": "#/$defs/Validity"},
+        "status": {"enum": ["active", "expired", "revoked"]},
+        "revocation": {"$ref": "#/$defs/Revocation"},
+        "sensitivity": {"enum": ["public", "internal", "confidential", "restricted"]},
+        "acl": {"$ref": "#/$defs/ACL"},
+        "createdAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "Source": {
+      "title": "Source",
+      "description": "登记的来源（D2）：名字、显示名、种类（domain-system / document-store / agent / user）、信任级别（authoritative / informational；agent 与 user 永远是 informational）、可选基址。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "name", "displayName", "kind", "trust", "createdBy", "createdAt"],
+      "properties": {
+        "sourceId": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"},
+        "displayName": {"type": "string", "minLength": 1, "maxLength": 200},
+        "kind": {"enum": ["domain-system", "document-store", "agent", "user"]},
+        "trust": {"enum": ["authoritative", "informational"]},
+        "baseUrl": {"type": "string", "pattern": "^https?://.{1,500}$"},
+        "createdBy": {"type": "string", "minLength": 1},
+        "createdAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "KnowledgeDocument": {
+      "title": "KnowledgeDocument",
+      "description": "知识文档的元数据（D4）：来源、URI、标题、版本（同一 URI 的新版本取代旧版本）、内容摘要、大小、chunk 数、状态（active / superseded / revoked / expired）、失效时间、敏感级别、ACL、撤销信息。文本本身只进索引，不在契约里。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["documentId", "source", "uri", "title", "version", "contentSha256", "byteSize", "chunkCount", "status", "sensitivity", "acl", "createdBy", "createdAt"],
+      "properties": {
+        "documentId": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"},
+        "uri": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "title": {"type": "string", "minLength": 1, "maxLength": 500},
+        "version": {"type": "integer", "minimum": 1},
+        "contentSha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "byteSize": {"type": "integer", "minimum": 1},
+        "chunkCount": {"type": "integer", "minimum": 1},
+        "status": {"enum": ["active", "superseded", "revoked", "expired"]},
+        "validUntil": {"type": "string", "format": "date-time"},
+        "sensitivity": {"enum": ["public", "internal", "confidential", "restricted"]},
+        "acl": {"$ref": "#/$defs/ACL"},
+        "revocation": {"$ref": "#/$defs/Revocation"},
+        "createdBy": {"type": "string", "minLength": 1},
+        "createdAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "Envelope": {
+      "title": "Envelope",
+      "description": "存储与读回的形态：ContextPackage 加其摘要（规范化 JSON 的 sha256:<hex>）。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "document"],
+      "properties": {
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "document": {"$ref": "#/$defs/ContextPackage"}
+      }
+    }
+  }
+}
