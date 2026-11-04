@@ -86,3 +86,23 @@ Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到�
 - 连接器只支持两种种类；没有增量清单（每次 sync 列全量，靠内容摘要跳过）。
 - 评估套件覆盖审计 P0 列出的五类属性；它证明的是"此刻此租户的策略与数据路径"，不是对所有输入的穷尽。
 
+## 8. M5：白皮书评审后的治理补全（2026-11-04 决策）
+
+《IDP CMI 企业上下文与记忆基础设施白皮书》V1.0（2026-11-04）依据 10 月中的 Python 原型资料写成，与本实现有差异（V1.1 已对齐，见 `docs/IDP_CMI_Enterprise_Context_Memory_Whitepaper_V1.1.html`）；但它指出的下列缺口是实现确实没有的。决策人 2026-11-04 选择把它们作为 M5 范围。顺序按风险：先是让写入与撤销"可重放、可擦除"的 D19–D21，再是授权与作用域的 D22–D24，最后是检索一致性与评估的 D25–D27。
+
+| # | 决策 | 理由 |
+|---|---|---|
+| D19 | **写入幂等与预期版本**：`POST /v1/memory/records` 与 `POST /api/v1/knowledge/documents` 接受 `Idempotency-Key` 头（每租户、每写者唯一）：同键同请求重放返回首次结果（200 而非 201，带 `Idempotent-Replayed: true`），同键不同请求 409 `IDEMPOTENCY_MISMATCH`；键保留 24 小时。撤销与状态转换接受 `If-Match: <recordVersion>`，记录增 `version`（每次状态变化 +1），版本不符 409 `VERSION_CONFLICT`。契约 1.2.0：MemoryRecord / KnowledgeDocument 增可选 `version` | 白皮书 10.2.1、15.1"已知缺口"：Worker 重试会产生重复记忆；状态转换没有并发保护 |
+| D20 | **擦除是独立的受控过程**：`POST /api/v1/erasures`（管理员）按记录 id、来源引用、主体或实体发起擦除；同一事务内先对规范读路径设屏障（`erasure_id` 置于记录，所有读路径排除，包读回标 stale 并列出），再由 Worker 异步净化：明文内容、structured、向量、全文索引、实体引用、审计明文被替换为最小化墓碑（保留 id、来源名、时间、擦除原因摘要）；每个域分别记录 pending / done / failed；`GET /api/v1/erasures/{id}` 报告各域状态，只有全部域 done 才标 `verified`。备份不在本仓库承诺范围内，状态里明示 | 白皮书 7.5、9.3：失效、归档、擦除不能混为一谈；"接受删除请求"不等于"所有副本已删" |
+| D21 | **候选与存疑状态**：MemoryRecord 的 `status` 增 `candidate` 与 `disputed`；写者可以 `status: candidate` 提交（整合与连接器的产出按租户策略 `consolidatedAsCandidate` 决定是否先为候选）；候选不进包；管理员或策略许可的审批者以 `POST /v1/memory/records/{id}/transitions`（带 `If-Match`、`reason`、可选 `approvalRef`）转为 active 或 revoked；active 记录与同 scope 内权威来源的新记录冲突时（同 `entities` 且 structured 中声明 `contradicts`）标 `disputed`，不进包直到解决。转换记审计 | 白皮书 7.1、7.4.1：未经验证的聊天与模型输出只能是候选；冲突不能静默覆盖 |
+| D22 | **作用域扩展与多范围检索**：Scope 的 `kind` 增 `organization`、`team`、`project`；租户策略登记组织单元目录（`units: [{kind, id, parent?, members: [subjects], roles: [..]}]`，由管理员维护或由 IdP 声明映射），记录对某单元可见当且仅当调用者是其成员（或持其角色）；`resolve` 的 `scope` 变为可多值（`scopes: [...]`），缺省 = tenant + subject + 调用者所属全部单元 + 请求给出的 thread/agent；条目带 `scope`。个人记忆（subject 范围）发布到单元需 `POST /v1/memory/records/{id}/share`（显式、记来源、可撤回） | 白皮书 6.1–6.4：多范围、组织层级、个人到组织的显式共享 |
+| D23 | **外部策略决策点（PDP）**：配置 `authorization.pdp`（HTTP，OPA / 自建均可）：每次读取与写入前以 {tenant, principal, roles, actor, action, resource{kind, scope, sensitivity, source, entities}, purpose} 询问；允许则继续并在 SQL 可见性之上再加 PDP 返回的 `obligations`（如 `maxSensitivity`、`excludeSources`）；拒绝则 403 并记审计；PDP 不可用时按策略 `pdpOnError`（`deny` 缺省）处理，绝不以缓存结论放行。委派（RFC 8693 `act`）作为 `actor` 传给 PDP | 白皮书 6.3、9.1：资源级、用途级授权由策略服务决定；CMI 的角色 + ACL 是纵深防御的内层 |
+| D24 | **消费时复验**：`POST /v1/context/packages/{id}/verify` 返回 `{stale, staleItems, revisions}` 并可按 `since` 只报变化；HOST（D32）在运行的每一步开始前调用一次，发现 stale 时按发布件 `context.onStale`（`continue` 缺省 / `refresh` 重新 resolve / `fail`）处理；EER 在决策交付前调用。包读回与 verify 都不延长包的有效期 | 白皮书 8.2 回放边界、9.3.1：检索后、模型调用前的撤权窗口要有约定的交付边界 |
+| D25 | **双时态查询**：记录已有 `validity`（业务有效期）与 `createdAt`（登记时间）；`resolve` 与 `GET /v1/memory/records` 增 `asOf: {valid?: time, recorded?: time}`：只取在 `valid` 时点有效、且在 `recorded` 时点已登记（且当时未撤销）的记录；撤销与过期保留时间戳，使"当时已知什么"可答。不承诺跨事务严格全序 | 白皮书 5.3：区分业务时间与登记时间；历史案例要标明当时适用的规则 |
+| D26 | **投影一致性**：嵌入与全文索引改为 outbox 投影：写入事务只写规范行与 `projection_events`（记录 id、版本、代际）；投影 Worker 幂等消费（旧事件不覆盖新版本，撤销/擦除事件删除向量与索引）；`GET /api/v1/projections` 报告积压与代际；`resolve` 在积压超过策略阈值时在包里标 `projectionLag`。回填 Worker 并入投影 Worker | 白皮书 10.2：不要双写后假定一致；旧事件不能复活已撤销内容 |
+| D27 | **评估集与基线对照**：`tests/eval` 增带标注的中文 / 英文评估集（脱敏、仓库内），度量 Recall@k、精确引用命中率、错误合并率、过期引用次数，并对照"无 CMI""只全文""全文 + 向量"三条基线；结果写入 `docs/eval/`，每次发布更新；D17 的套件继续作为租户级运行时证据 | 白皮书 14：公开基准不能代替企业数据上的对照；效果须可复验 |
+
+**不做的**：MCP 适配器（HOST / EER 通过契约 API 调用即可，第三方消费者再议）；外部记忆引擎（Mem0 / Hindsight / Graphiti）接入（白皮书 10.4 的约束已满足"不依赖"，接入在有真实需求后评估）；候选自动提取（agent 写什么由 HOST 的发布件决定）。
+
+**契约**：D19、D21、D22、D24、D25 进入 `idp.telos.cmi` 1.2.0（MemoryRecord 增 `version`、status 增 `candidate` / `disputed`、Scope kind 增三值、ContextItem 增 `scope`、ContextPackage 增 `projectionLag`、新定义 Verification），只做新增。
+
