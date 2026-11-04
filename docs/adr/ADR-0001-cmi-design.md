@@ -106,3 +106,24 @@ Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到�
 
 **契约**：D19、D21、D22、D24、D25 进入 `idp.telos.cmi` 1.2.0（MemoryRecord 增 `version`、status 增 `candidate` / `disputed`、Scope kind 增三值、ContextItem 增 `scope`、ContextPackage 增 `projectionLag`、新定义 Verification），只做新增。
 
+## 9. M5 实施结果（2026-11-04，WSL 实测）
+
+- D19：`Idempotency-Key`（每租户、每写者；同键同请求 200 重放并带 `Idempotent-Replayed: true`，同键不同请求 409；键 24 小时后由扫描器清理）；记忆 `version`、文档 `revision` 随每次状态变化加一，撤销与转换接受 `If-Match`（不符 409）。
+- D20：`POST /api/v1/erasures` 在同一事务内设读屏障（目标置 `erasure_id` 并撤销；所有读路径以 SQL 把正文、structured、来源引用、标题替换为 `[erased]`），Worker 按域净化（content、vectors、index、entities、packages、audit），包文档改写为墓碑并标 `redacted`（原摘要保留为"当时密封了什么"的记录），每域记录 done / failed，全部 done 才 `verified`；集成测试最后以服务角色扫全部表确认明文为零。
+- D21：`candidate` / `disputed` 状态，`POST /v1/memory/records/{id}/transitions`（管理员、reason 必填、可带 approvalRef、If-Match），`structured.contradicts` 只允许权威来源的记录指认并把被指认的 active 记录标 disputed；策略 `consolidatedAsCandidate` 让整合产出先为候选；管理员以 `?status=candidate|disputed` 审阅。
+- D22：`units` 目录（organization / team / project，成员与角色，可带 parent），单元范围的读写都要求成员资格（管理员例外）；解析缺省加入调用者所属全部单元，请求 `scopes` 命名非成员单元时 403；`POST /v1/memory/records/{id}/share` 由记录的 subject 或管理员把记录复制进单元（`sharedFrom`、tag `shared`，原记录不变）；删除单元后其记忆不可达。白皮书 14.3.2 的 Alice / Bob 场景以集成测试落实。
+- D23：配置 `authorization.pdp`（OPA 数据 API 线格式）：解析、记忆读写撤销转换共享、知识写撤、擦除请求前询问；拒绝 403 `PDP_DENIED` 并记审计；义务 `maxSensitivity` / `excludeSources` 只收窄可见性（含来源排除进入两条检索 SQL）；PDP 不可达按 `onError`（deny 缺省 → 503 `PDP_UNAVAILABLE`；skip → 以 CMI 自身授权继续并告警）。
+- D24：`POST /v1/context/packages/{id}/verify` 返回每一引用项此刻的状态、版本与可用性（契约 Verification / ItemStatus），不延长包的有效期。HOST 侧（idp-host 契约 1.7.0 `context.onStale`）在第二步起每步复验：continue 记 `idp.host/context.stale`、refresh 以静态凭据重新解析并替换上下文、fail 以 `CONTEXT_STALE` 结束；EER 侧（idp-eer ADR-037 §6）在交付前复验并把 `contextStale` 记进留下的记忆。
+- D25：`asOf: {valid, recorded}` 进入 `resolve` 与 `GET /v1/memory/records`（`validAt` / `recordedAt`）：记忆按 `valid_from ≤ valid < valid_until`、`created_at ≤ recorded`、`revoked_at > recorded` 判定，文档另排除在 `recorded` 之前已有更新版本者；缺失的 recorded 轴取数据库的 now（登记时钟是数据库的）；包记录 `asOf`。
+- D26：写入事务同时写 `projection_events`（kind、object、version、action）；投影 Worker 幂等消费（`FOR UPDATE SKIP LOCKED`，只在行仍为事件版本且 active 时写向量，旧事件与已撤销行不写），嵌入端点失败时事件留队并计 attempts；`GET /api/v1/projections` 报告积压与最旧事件年龄；包带 `projectionLag`。全文索引仍在写入事务内同步建立（它不是投影）。
+- D27：`tests/eval/dataset.json`（20 条中英文查询，人工标注相关项与禁止项：撤销、过期、被标记）；`make test-eval` 对比只全文与全文 + 向量（确定性假嵌入器），度量 Recall@5、Precision@5、nDCG@5、禁止项与重复项，结果写入 `docs/eval/`，CI 校验结果未变。评审中发现向量路径的噪声近邻会在固定预算下挤掉高相关的 informational 条目（hybrid 一度低于 lexical），据此加入 `SemanticFloor = 0.35`（仅向量命中的候选低于此不予考虑）；当前 lexical Recall@5 0.8889、hybrid 0.9444，两者禁止项均为 0。
+- 契约 1.2.0（D19、D21、D22、D24）与 1.3.0（D25、D26）均只做新增；1.3.0 待登记。
+
+**验证**：单元、契约（1.3.0）、集成（新增 idempotency-and-versions、erasure、candidates-and-disputes、units-and-sharing、policy-decision-point、verify-at-delivery、as-of、projections 八个场景）、评估集、部署清单、compose e2e；idp-host 集成（cmi-verify-at-steps：fail / continue / refresh）；idp-eer 单元与契约（PR #22，CI 含真实 idp-cmi）全部通过。
+
+**局限（不标 PASS）**
+- 擦除不覆盖数据库备份与已交付给调用方的明文（状态里明示）；审计净化只处理 memory.create / knowledge.create 的 detail。
+- 整合与投影 Worker 在每个副本都跑；投影靠 `SKIP LOCKED` 并行安全，整合仍无跨副本互斥。
+- PDP 只验证了假 PDP；对真实 OPA 的策略包未写。
+- 评估集是合成的、小规模的；真实嵌入模型的数字需在有端点的环境重跑。
+

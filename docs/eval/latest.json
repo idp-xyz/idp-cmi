@@ -1,0 +1,36 @@
+{
+  "dataset": "2026-11-04.2",
+  "k": 5,
+  "configurations": [
+    {
+      "configuration": "lexical",
+      "queries": 20,
+      "recallAt5": 0.8889,
+      "precisionAt5": 0.2222,
+      "ndcgAt5": 0.84,
+      "queriesFullyMet": 16,
+      "forbiddenReturned": 0,
+      "duplicateItems": 0,
+      "emptyPackages": 0,
+      "misses": [
+        "q03: hb-returns",
+        "q16: hb-pickup"
+      ]
+    },
+    {
+      "configuration": "hybrid",
+      "queries": 20,
+      "recallAt5": 0.9444,
+      "precisionAt5": 0.2333,
+      "ndcgAt5": 0.8595,
+      "queriesFullyMet": 17,
+      "forbiddenReturned": 0,
+      "duplicateItems": 0,
+      "emptyPackages": 0,
+      "misses": [
+        "q03: hb-returns"
+      ]
+    }
+  ],
+  "generatedBy": "go test ./tests/eval -update (make test-eval UPDATE=1)"
+}

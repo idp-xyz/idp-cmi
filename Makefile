@@ -2,7 +2,14 @@
 PG_IMAGE ?= public.ecr.aws/docker/library/postgres:17-alpine
 PG_NAME  ?= idp-cmi-test-pg
 
-.PHONY: build test vet test-integration e2e test-live pg-up pg-down
+.PHONY: build test vet test-integration test-eval e2e test-live pg-up pg-down
+
+# Retrieval evaluation on the labelled set (ADR-0001 D27); UPDATE=1 regenerates docs/eval
+test-eval: pg-up
+	@PORT=$$(docker port $(PG_NAME) 5432/tcp | head -1 | sed 's/.*://'); \
+	IDP_TEST_PG_OWNER_URL="postgres://postgres:test@127.0.0.1:$$PORT/postgres?sslmode=disable" \
+	go test -count=1 -v -timeout 10m ./tests/eval/ $(if $(UPDATE),-args -update,) ; status=$$?; \
+	$(MAKE) --no-print-directory pg-down; exit $$status
 
 # Live model gate (ADR-0001 D15): the consolidation model against a real OpenAI-compatible endpoint, e.g.
 #   IDP_LIVE_OPENAI_URL=http://127.0.0.1:8080/v1 IDP_LIVE_MODEL=qwen3.8-flash-next-iq3_xxs make test-live

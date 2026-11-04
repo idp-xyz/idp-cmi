@@ -76,6 +76,11 @@ func (r *Request) Validate() error {
 	return cmi.ValidateEntities(r.Entities)
 }
 
+// SemanticFloor is the cosine a candidate found by the vector retriever alone must reach to be
+// considered (D11, tuned on the labelled set of D27): below it, nearest neighbours are noise that
+// would crowd out lexical hits within the budget.
+const SemanticFloor = 0.35
+
 // Resolver assembles packages. With an Embedder the query is also matched semantically (D11).
 type Resolver struct {
 	Store    *postgres.Store
@@ -252,6 +257,15 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 			}
 		}
 	}
+	// semantic-only candidates below the floor are noise
+	kept := cands[:0]
+	for _, c := range cands {
+		if c.lexical == 0 && c.semantic < SemanticFloor {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	cands = kept
 	// relevance: lexical ranks normalized to the best lexical hit, semantic cosine as is, the larger
 	// wins; then trust, then freshness-weighted relevance; ties by recency
 	var maxLex float64

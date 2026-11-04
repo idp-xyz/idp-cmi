@@ -28,6 +28,8 @@ jobs:
         run: make test
       - name: Integration tests (PostgreSQL in Docker)
         run: make test-integration
+      - name: Retrieval evaluation against the committed results (PostgreSQL in Docker)
+        run: make test-eval
       - name: Image build (static binary, docker build --network none)
         run: bash deploy/build.sh idp-cmi:ci
       - name: Compose end-to-end (CMI image + PostgreSQL)

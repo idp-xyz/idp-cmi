@@ -125,6 +125,9 @@ func (f *Fake) Embed(_ context.Context, texts []string) ([][]float32, error) {
 	for i, t := range texts {
 		v := make([]float32, dims)
 		for _, tok := range tokenRE.FindAllString(strings.ToLower(t), -1) {
+			if stopWords[tok] {
+				continue // real embedders do not weight function words; neither does the double
+			}
 			if s, ok := f.Synonyms[tok]; ok {
 				tok = s
 			}
@@ -168,4 +171,12 @@ func Cosine(a, b []float32) float64 {
 		return 0
 	}
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
+}
+
+var stopWords = map[string]bool{}
+
+func init() {
+	for _, w := range strings.Fields("a an the and or of to in on at for from by with is are was were be been it its this that these those i you we they he she my your our their his her as do does did have has had not no yes before after every each per only also") {
+		stopWords[w] = true
+	}
 }
