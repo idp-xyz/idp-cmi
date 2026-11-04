@@ -28,7 +28,7 @@
 | D7 | **身份、租户、审计、指标、追踪、TLS 与 HOST 同款**（OAuth bearer JWT、FORCE RLS、只追加审计、Prometheus、OTLP）。角色：`cmi-admin`（来源、文档、策略）、`cmi-writer`（写记忆、撤销自己来源的记忆）、`cmi-reader`（解析上下文）。ACL 判定在 SQL 里：行对调用者可见当且仅当租户相同、且（记录的 subjects 为空或含调用者、或记录的 roles 与调用者角色相交）、且 sensitivity ≤ 调用者的上限（角色映射：reader → internal，writer → confidential，admin → restricted，可在租户策略里下调） | 同一套运维与安全口径；跨租户不可见由数据库保证 |
 | D8 | **依赖尽量少、代码复制不共享**：pgx、golang-jwt、OpenTelemetry、yaml.v3；identity、transport、canonical、observability、store 骨架从 idp-host 复制（HOST ADR D13） | 仓库文档禁止跨仓库引用未发布的依赖 |
 | D9 | **契约 `idp.telos.cmi` 1.0.0**：ContextPackage、ContextItem、MemoryRecord、Source、KnowledgeDocument（由 `api/contracts` 产出并有实现侧一致性测试）；REST 由 `api/openapi.yaml` 描述并由测试钉住与路由一致 | idp-contracts 的四条规则 |
-| D10 | **与 HOST 的联调（CMI 侧）**：HOST 作为 `cmi-reader` 调 `resolve`，把 ContextPackage 的条目作为 developer 消息交给模型，并在 Run 上记录 `contextPackageId`；HOST 侧的改动（发布件的 `context` 配置、契约 1.6.0）在 CMI M1 通过后做 | HOST ADR 第 3 节留下的"与 CMI 的 Context API 联调"空位 |
+| D10 | **与 HOST 的联调（CMI 侧）**：HOST 作为 `cmi-reader` 调 `resolve`，把 ContextPackage 的条目作为 developer 消息交给模型，并在 Run 上记录 `contextPackageId`；HOST 侧的改动（发布件的 `context` 配置、契约 1.6.0）在 CMI M1 通过后做——已做：idp-host ADR-0001 第 14 节 D32，`idp.telos.host` 1.6.0（2026-11-04） | HOST ADR 第 3 节留下的"与 CMI 的 Context API 联调"空位 |
 
 ## 3. 第一阶段范围（M1）
 
