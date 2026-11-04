@@ -81,6 +81,15 @@ paths:
   /api/v1/connectors/{ref}/jobs:
     parameters: [{$ref: '#/components/parameters/ref'}]
     get: {summary: The connector's ingestion jobs (newest first), parameters: [{name: limit, in: query, schema: {type: integer}}], responses: {'200': {description: jobs}}}
+  /api/v1/erasures:
+    post:
+      summary: Request an erasure (ADR-0001 D20) by record ids, document ids, provenance ref, subject scope or entity; the read barrier takes effect in this call, the purge of each domain (content, vectors, index, entities, packages, audit) follows asynchronously
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [reason], properties: {recordIds: {type: array, items: {type: string}}, documentIds: {type: array, items: {type: string}}, ref: {type: string}, subject: {type: string}, entity: {$ref: '#/components/schemas/Entity'}, reason: {type: string}}}}}}
+      responses: {'201': {description: 'erasure: targets caught by the barrier, per-domain status (pending until the Worker runs)'}, '404': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+    get: {summary: Erasures (newest first), responses: {'200': {description: erasures}}}
+  /api/v1/erasures/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get: {summary: 'One erasure: status pending | running | verified | failed and each domain''s rows, time and error; verified only when every domain is done', responses: {'200': {description: erasure}, '404': {$ref: '#/components/responses/Problem'}}}
   /api/v1/evaluations:
     post:
       summary: Run the governance suite on this tenant's real data path and store the evidence (ADR-0001 D17) - pollution, source priority, revocation propagation, freshness, sensitivity and ACL
@@ -123,7 +132,7 @@ paths:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
       summary: Read a package back (its requester or an administrator); stale lists the cited items that have since expired, been revoked or superseded
-      responses: {'200': {description: package, digest, stale, staleItems, expiresAt}, '404': {$ref: '#/components/responses/Problem'}}
+      responses: {'200': {description: 'package, digest, stale, staleItems, expiresAt, redacted (true when erased items'' plaintext was removed from the stored document; the digest is of the sealed original)'}, '404': {$ref: '#/components/responses/Problem'}}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}

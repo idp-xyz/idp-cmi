@@ -383,6 +383,24 @@ func (a *API) Handler() http.Handler {
 		out, err := a.Store.ListJobs(r.Context(), p.Tenant, c.ID, limit)
 		return 200, map[string]any{"jobs": out}, err
 	}, admin))
+	// ---- erasure (D20): administrators ----
+	mux.Handle("POST /api/v1/erasures", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		var in postgres.ErasureSelector
+		if err := decode(r, &in); err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.RequestErasure(r.Context(), p.Tenant, in, p.Subject)
+		return http.StatusCreated, out, err
+	}, admin))
+	mux.Handle("GET /api/v1/erasures", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		out, err := a.Store.ListErasures(r.Context(), p.Tenant, limit)
+		return 200, map[string]any{"erasures": out}, err
+	}, admin))
+	mux.Handle("GET /api/v1/erasures/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		out, err := a.Store.GetErasure(r.Context(), p.Tenant, r.PathValue("id"))
+		return 200, out, err
+	}, admin))
 	mux.Handle("POST /api/v1/evaluations", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		if a.Evaluator == nil {
 			return 0, nil, transport.Fail(http.StatusServiceUnavailable, "NOT_CONFIGURED", "no evaluator on this CMI")
@@ -513,7 +531,7 @@ func (a *API) Handler() http.Handler {
 		if err != nil {
 			return 0, nil, err
 		}
-		return 200, map[string]any{"packageId": r.PathValue("id"), "digest": out.Envelope.Digest, "package": out.Envelope.Document, "stale": out.Stale, "staleItems": out.StaleIDs, "expiresAt": out.ExpiredAt}, nil
+		return 200, map[string]any{"packageId": r.PathValue("id"), "digest": out.Envelope.Digest, "package": out.Envelope.Document, "stale": out.Stale, "staleItems": out.StaleIDs, "expiresAt": out.ExpiredAt, "redacted": out.Redacted}, nil
 	}, reader, writer))
 
 	var h http.Handler = a.authenticate(mux)

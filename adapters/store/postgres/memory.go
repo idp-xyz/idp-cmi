@@ -12,7 +12,7 @@ import (
 	"idp-cmi/internal/cmi"
 )
 
-const memoryCols = `m.id::text, s.name, m.scope_kind, m.scope_id, m.kind, m.content, m.structured, m.tags, m.prov_ref, m.prov_observed_at, m.prov_recorded_by,
+const memoryCols = `m.id::text, s.name, m.scope_kind, m.scope_id, m.kind, CASE WHEN m.erasure_id IS NULL THEN m.content ELSE '[erased]' END, CASE WHEN m.erasure_id IS NULL THEN m.structured ELSE NULL END, m.tags, CASE WHEN m.erasure_id IS NULL THEN m.prov_ref ELSE '[erased]' END, m.prov_observed_at, m.prov_recorded_by,
 	m.valid_from, m.valid_until, m.status, m.revoked_at, coalesce(m.revoked_by, ''), coalesce(m.revoked_reason, ''), m.sensitivity, m.acl_subjects, m.acl_roles, m.created_at,
 	m.flags, m.version, ` + "(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'memory' AND e.object_id = m.id)"
 

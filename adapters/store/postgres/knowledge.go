@@ -11,7 +11,7 @@ import (
 	"idp-cmi/internal/cmi"
 )
 
-const docCols = `d.id::text, s.name, d.uri, d.title, d.version, d.content_sha256, d.byte_size, d.chunk_count, d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles,
+const docCols = `d.id::text, s.name, d.uri, CASE WHEN d.erasure_id IS NULL THEN d.title ELSE '[erased]' END, d.version, d.content_sha256, d.byte_size, d.chunk_count, d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles,
 	d.revoked_at, coalesce(d.revoked_by, ''), coalesce(d.revoked_reason, ''), d.created_by, d.created_at, d.flags, d.revision, ` +
 	"(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'knowledge' AND e.object_id = d.id)"
 

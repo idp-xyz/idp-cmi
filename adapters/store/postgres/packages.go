@@ -23,6 +23,7 @@ type StoredPackage struct {
 	Stale     bool         `json:"stale"`
 	StaleIDs  []string     `json:"staleItems"`
 	ExpiredAt time.Time    `json:"expiresAt"`
+	Redacted  bool         `json:"redacted"` // D20: erased items' plaintext was removed; the digest is of the sealed original
 }
 
 // SavePackage stores a sealed package.
@@ -46,8 +47,8 @@ func (s *Store) GetPackage(ctx context.Context, tenant, id, requester string) (*
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		var doc string
 		var refs []byte
-		if err := tx.QueryRow(ctx, `SELECT digest, document, item_refs, expires_at FROM context_packages WHERE id = $1 AND ($2 = '' OR requested_by = $2)`, id, requester).
-			Scan(&out.Envelope.Digest, &doc, &refs, &out.ExpiredAt); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT digest, document, item_refs, expires_at, redacted FROM context_packages WHERE id = $1 AND ($2 = '' OR requested_by = $2)`, id, requester).
+			Scan(&out.Envelope.Digest, &doc, &refs, &out.ExpiredAt, &out.Redacted); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return fail("NOT_FOUND", "package not found")
 			}

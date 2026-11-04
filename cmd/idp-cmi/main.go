@@ -13,7 +13,7 @@
 //	IDP_CMI_LISTEN               default 127.0.0.1:8550
 //	IDP_CMI_CONFIG               optional YAML: embedding endpoint (ADR-0001 D11), consolidation model (D15)
 //	IDP_CMI_SWEEP                expiry sweep interval (default 1m; 0 disables)
-//	IDP_CMI_INGEST               ingestion worker interval (default 10s; 0 disables connectors' processing, D16)
+//	IDP_CMI_INGEST               background worker interval: connectors' processing (D16) and erasure purge (D20); default 10s, 0 disables
 //	IDP_CMI_INSTANCE             lease owner name of this replica (default hostname)
 //	IDP_DEV_MODE                 "true": HS256 development tokens
 //	IDP_CMI_ISSUER / IDP_CMI_AUDIENCE   accepted tokens (default idp-cmi-dev / idp-cmi)
@@ -273,6 +273,11 @@ func serve(log *slog.Logger) error {
 						log.Warn("ingestion failed", "error", err)
 					} else if n > 0 {
 						log.Info("ingested documents", "jobs", n)
+					}
+					if n, err := store.PurgeAll(ctx, 5); err != nil && ctx.Err() == nil { // ADR-0001 D20
+						log.Warn("erasure purge failed", "error", err)
+					} else if n > 0 {
+						log.Info("purged erasures", "erasures", n)
 					}
 				}
 			}

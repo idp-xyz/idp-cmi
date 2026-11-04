@@ -737,6 +737,79 @@ func TestCMIEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("erasure", func(t *testing.T) {
+		// D20: the barrier hides plaintext at once; the purge removes it from every domain
+		now := e.now
+		secret := "Carol's private gate code is 9981-ZULU."
+		rec := memory("orders", "order:7001", "subject", "carol", secret, "internal", now)
+		rec["entities"] = []map[string]any{{"type": "customer", "id": "carol-7001"}}
+		r := e.must(201, "POST", "/v1/memory/records", "bob", rec)
+		doc := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", map[string]any{"source": "handbook", "uri": "handbook://gate-7001", "title": "Gate 7001", "sensitivity": "internal", "acl": map[string]any{},
+			"entities": []map[string]any{{"type": "customer", "id": "carol-7001"}}, "text": "The gate for customer 7001 opens with code 9981-ZULU."})
+		pkg := e.must(200, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "private gate code customer", "entities": []map[string]any{{"type": "customer", "id": "carol-7001"}}})
+		if len(items(pkg)) != 2 {
+			t.Fatalf("%v", items(pkg))
+		}
+		e.must(403, "POST", "/api/v1/erasures", "bob", map[string]any{"entity": map[string]any{"type": "customer", "id": "carol-7001"}, "reason": "x"})
+		e.must(422, "POST", "/api/v1/erasures", "alice", map[string]any{"reason": "nothing selected"})
+		e.must(404, "POST", "/api/v1/erasures", "alice", map[string]any{"ref": "order:none", "reason": "nothing matches"})
+		er := e.must(201, "POST", "/api/v1/erasures", "alice", map[string]any{"entity": map[string]any{"type": "customer", "id": "carol-7001"}, "reason": "customer requested deletion"})
+		if er["status"] != "pending" || len(er["recordIds"].([]any)) != 1 || len(er["documentIds"].([]any)) != 1 {
+			t.Fatalf("%v", er)
+		}
+		// the barrier: no read path returns the plaintext, the package reads back stale
+		if got := e.must(200, "GET", "/v1/memory/records/"+r["recordId"].(string), "alice", nil); got["content"] != "[erased]" || got["status"] != "revoked" || got["structured"] != nil {
+			t.Fatalf("%v", got)
+		}
+		if got := e.must(200, "GET", "/api/v1/knowledge/documents/"+doc["documentId"].(string), "alice", nil); got["title"] != "[erased]" || got["status"] != "revoked" {
+			t.Fatalf("%v", got)
+		}
+		if its := items(e.must(200, "POST", "/v1/context/resolve", "alice", map[string]any{"query": "private gate code customer"})); strings.Contains(fmt.Sprint(its), "9981") {
+			t.Fatalf("erased content still resolves: %v", its)
+		}
+		if got := e.must(200, "GET", "/v1/context/packages/"+pkg["packageId"].(string), "carol", nil); got["stale"] != true || got["redacted"] != false {
+			t.Fatalf("%v", got)
+		}
+		// a second request for the same targets finds nothing left to erase
+		e.must(404, "POST", "/api/v1/erasures", "alice", map[string]any{"recordIds": []string{r["recordId"].(string)}, "reason": "again"})
+		// the purge
+		if n, err := e.store.Purge(context.Background(), e.tenantA, 5); err != nil || n != 1 {
+			t.Fatalf("%d %v", n, err)
+		}
+		got := e.must(200, "GET", "/api/v1/erasures/"+er["erasureId"].(string), "alice", nil)
+		if got["status"] != "verified" {
+			t.Fatalf("%v", got)
+		}
+		for _, d := range []string{"content", "vectors", "index", "entities", "packages", "audit"} {
+			if dm := got["domains"].(map[string]any)[d].(map[string]any); dm["status"] != "done" {
+				t.Fatalf("%s: %v", d, dm)
+			}
+		}
+		if p2 := e.must(200, "GET", "/v1/context/packages/"+pkg["packageId"].(string), "carol", nil); p2["redacted"] != true || strings.Contains(fmt.Sprint(p2["package"]), "9981") {
+			t.Fatalf("%v", p2)
+		}
+		if ev := e.must(200, "GET", "/v1/entities/customer/carol-7001", "alice", nil); len(ev["records"].([]any))+len(ev["documents"].([]any)) != 0 {
+			t.Fatalf("%v", ev)
+		}
+		// nothing in the database still carries the plaintext (the service role's own view)
+		var leaks int
+		if err := e.store.InTenant(context.Background(), e.tenantA, func(tx pgx.Tx) error {
+			return tx.QueryRow(context.Background(), `SELECT (SELECT count(*) FROM memory_records WHERE content LIKE '%9981%' OR structured::text LIKE '%9981%' OR search::text LIKE '%9981%')
+				+ (SELECT count(*) FROM knowledge_chunks WHERE content LIKE '%9981%' OR search::text LIKE '%9981%')
+				+ (SELECT count(*) FROM knowledge_documents WHERE title LIKE '%Gate 7001%')
+				+ (SELECT count(*) FROM context_packages WHERE document LIKE '%9981%')
+				+ (SELECT count(*) FROM audit_events WHERE detail::text LIKE '%9981%')`).Scan(&leaks)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if leaks != 0 {
+			t.Fatalf("%d rows still carry the erased plaintext", leaks)
+		}
+		if n := len(e.must(200, "GET", "/api/v1/erasures", "erin", nil)["erasures"].([]any)); n != 0 {
+			t.Fatalf("erasures leaked: %d", n)
+		}
+	})
+
 	t.Run("audit-and-policy", func(t *testing.T) {
 		if n := len(e.must(200, "GET", "/api/v1/audit", "alice", nil)["events"].([]any)); n < 6 {
 			t.Fatalf("audit events %d", n)
