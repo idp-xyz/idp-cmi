@@ -1,0 +1,32 @@
+{
+  "version": "1.1-review",
+  "whitepaper": "V1.0",
+  "review_date": "2026-11-04",
+  "files": [
+    {
+      "path": "archive/IDP_CMI_Historical_Archive_2026-11-04.zip",
+      "sha256": "445f936583b6739c5dd1cd14aa37c4333bb36227a94cc989c89c3d2afe140db5",
+      "size_bytes": 4571367
+    },
+    {
+      "path": "engineering/CMI_Design_API_V1.1_draft.openapi.yaml",
+      "sha256": "7755749fe11ed2cce0bd440e0ca9af306dac2515ffaae26c36948fb19461ad39",
+      "size_bytes": 40528
+    },
+    {
+      "path": "index.html",
+      "sha256": "294cda34f9c324e2ef46bce1cf52a20bb04642907e6d570154cbe1a71d8d3d02",
+      "size_bytes": 214597
+    },
+    {
+      "path": "maintenance/IDP_CMI_Master_Maintenance_Kit_V1.1.zip",
+      "sha256": "94aac1e71f63779f44bd4645e90719fe0ddc7d3ecc45ed27a769c7095af88b78",
+      "size_bytes": 1956063
+    },
+    {
+      "path": "whitepaper.html",
+      "sha256": "922412cf26f67d1ab5cae6a361ccbdab9159f585d55e7e62b0a2549a395d7899",
+      "size_bytes": 244326
+    }
+  ]
+}

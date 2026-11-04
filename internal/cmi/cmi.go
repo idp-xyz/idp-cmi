@@ -509,6 +509,46 @@ func Bigrams(text string) string {
 	return strings.TrimSpace(sb.String())
 }
 
+// AsOf is a bitemporal view (D25): valid = the business time the content must be valid at,
+// recorded = the registration time by which the CMI must have known it (and not yet revoked it).
+// A zero field means "now" for that axis.
+type AsOf struct {
+	Valid    time.Time `json:"valid,omitzero"`
+	Recorded time.Time `json:"recorded,omitzero"`
+}
+
+// Validate checks an as-of view: at least one axis, neither in the future.
+func (a *AsOf) Validate(now time.Time) error {
+	if a.Valid.IsZero() && a.Recorded.IsZero() {
+		return errors.New("asOf needs valid and/or recorded")
+	}
+	if a.Valid.After(now.Add(time.Minute)) || a.Recorded.After(now.Add(time.Minute)) {
+		return errors.New("asOf cannot be in the future")
+	}
+	return nil
+}
+
+// Normalize fills a missing valid axis with now; a missing recorded axis stays zero and means the
+// database's own now (the registration clock is the database's). Precision is kept: the recorded
+// axis is compared with registration instants.
+func (a *AsOf) Normalize(now time.Time) {
+	if a.Valid.IsZero() {
+		a.Valid = now
+	}
+	a.Valid = a.Valid.UTC()
+	if !a.Recorded.IsZero() {
+		a.Recorded = a.Recorded.UTC()
+	}
+}
+
+// RecordedArg is the recorded axis as a query argument: nil = the database's now.
+func (a *AsOf) RecordedArg() any {
+	if a.Recorded.IsZero() {
+		return nil
+	}
+	return a.Recorded
+}
+
 // Item kinds of a package.
 const (
 	ItemMemory    = "memory"
@@ -558,6 +598,7 @@ type Package struct {
 	Purpose       string    `json:"purpose"`
 	Query         string    `json:"query"`
 	Scope         *Scope    `json:"scope,omitempty"`
+	AsOf          *AsOf     `json:"asOf,omitempty"` // the bitemporal view the package was assembled for (D25)
 	Items         []Item    `json:"items"`
 	Budget        Budget    `json:"budget"`
 	AssembledAt   time.Time `json:"assembledAt"`

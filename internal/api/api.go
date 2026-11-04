@@ -603,6 +603,27 @@ func (a *API) Handler() http.Handler {
 			out, err := a.Store.ReviewMemory(r.Context(), p.Tenant, scope, v, limit, review)
 			return 200, map[string]any{"records": out}, err
 		}
+		if q.Get("validAt") != "" || q.Get("recordedAt") != "" { // D25
+			var asOf cmi.AsOf
+			var err error
+			if s := q.Get("validAt"); s != "" {
+				if asOf.Valid, err = time.Parse(time.RFC3339, s); err != nil {
+					return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", "validAt must be RFC 3339")
+				}
+			}
+			if s := q.Get("recordedAt"); s != "" {
+				if asOf.Recorded, err = time.Parse(time.RFC3339, s); err != nil {
+					return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", "recordedAt must be RFC 3339")
+				}
+			}
+			now := time.Now()
+			if err := asOf.Validate(now); err != nil {
+				return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", err.Error())
+			}
+			asOf.Normalize(now)
+			out, err := a.Store.ListMemoryAsOf(r.Context(), p.Tenant, scope, v, limit, asOf)
+			return 200, map[string]any{"records": out, "asOf": asOf}, err
+		}
 		out, err := a.Store.ListMemory(r.Context(), p.Tenant, scope, v, limit, flagged)
 		return 200, map[string]any{"records": out}, err
 	}, writer, reader))

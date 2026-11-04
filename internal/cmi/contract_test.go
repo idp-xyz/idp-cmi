@@ -28,7 +28,7 @@ var update = flag.Bool("update", false, "regenerate api/contracts/examples.json 
 
 const (
 	contractDir = "../../api/contracts"
-	contractID  = "urn:idp:telos:cmi:1.2.0"
+	contractID  = "urn:idp:telos:cmi:1.3.0"
 )
 
 type noLoader struct{}
@@ -104,7 +104,7 @@ var at = time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
 
 func examplePackage() *cmi.Package {
 	return &cmi.Package{ID: "3f2a9c1e-0000-4000-8000-000000000010", TenantID: "1a2b3c4d-0000-4000-8000-000000000001", RequestedBy: "carol", Purpose: "answer a pickup question",
-		Query: "pickup slot surcharge", Scope: &cmi.Scope{Kind: cmi.ScopeThread, ID: "thr-ops-42"},
+		Query: "pickup slot surcharge", Scope: &cmi.Scope{Kind: cmi.ScopeThread, ID: "thr-ops-42"}, AsOf: &cmi.AsOf{Valid: at.Add(-time.Hour), Recorded: at},
 		Items: []cmi.Item{
 			{Kind: cmi.ItemKnowledge, ID: "5b6c7d8e-0000-4000-8000-000000000020", Source: "handbook", Trust: cmi.TrustAuthoritative, Ref: "handbook://pickup#0", Title: "Pickup handbook",
 				Excerpt: "Pickup slots. Morning slots run from 07:00 to 11:00.", ObservedAt: at.Add(-48 * time.Hour), Sensitivity: cmi.SensitivityInternal, Score: 0.9812, Tokens: 14, Match: cmi.MatchBoth},
@@ -202,7 +202,7 @@ func buildExamples(t *testing.T) []byte {
 			{Kind: cmi.ItemMemory, ID: "c3d4e5f6-0000-4000-8000-000000000058", Status: cmi.StatusActive, Version: 1, Usable: true}},
 		ExpiresAt: at.Add(time.Hour), VerifiedAt: at.Add(30 * time.Minute)})
 	b, err := json.MarshalIndent(examplesFile{
-		Description: "idp.telos.cmi 1.2.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
+		Description: "idp.telos.cmi 1.3.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
 		GeneratedBy: "go test ./internal/cmi -run TestContract -update",
 		Examples:    out,
 	}, "", "  ")
@@ -298,7 +298,7 @@ func TestContractFieldsMatchGo(t *testing.T) {
 	}
 	closed := map[string]any{"ContextPackage": cmi.Package{}, "ContextItem": cmi.Item{}, "Scope": cmi.Scope{}, "Budget": cmi.Budget{}, "Provenance": cmi.Provenance{}, "ACL": cmi.ACL{},
 		"Validity": cmi.Validity{}, "Revocation": cmi.Revocation{}, "MemoryRecord": cmi.MemoryRecord{}, "Source": cmi.Source{}, "KnowledgeDocument": cmi.Document{}, "Envelope": cmi.Envelope{}, "Entity": cmi.Entity{},
-		"Verification": cmi.Verification{}, "ItemStatus": cmi.ItemStatus{}}
+		"Verification": cmi.Verification{}, "ItemStatus": cmi.ItemStatus{}, "AsOf": cmi.AsOf{}}
 	for def, zero := range closed {
 		d, ok := defs[def].(map[string]any)
 		if !ok {
@@ -381,6 +381,8 @@ func TestContractRejectsWhatCMIRejects(t *testing.T) {
 		"budget over cap":     {"budget.maxTokens", 64000},
 		"scope bad kind":      {"scope.kind", "squad"},
 		"item bad match":      {"items.0.match", "fuzzy"},
+		"asOf bad time":       {"asOf.valid", "yesterday"},
+		"asOf unknown field":  {"asOf.at", "2026-11-04T00:00:00Z"},
 		"item bad entity":     {"items.1.entities.0.type", "Order"},
 		"unknown field":       {"extra", true},
 	}

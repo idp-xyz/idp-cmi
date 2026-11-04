@@ -1065,6 +1065,44 @@ func TestCMIEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("as-of", func(t *testing.T) {
+		// D25: what was valid at a business time, as known at a registration time
+		now := e.now
+		old := memory("orders", "rule:fee:v1", "tenant", "", "The Q3 handling fee was 2 euro per parcel.", "internal", now.Add(-72*time.Hour))
+		old["validity"] = map[string]any{"validFrom": now.Add(-72 * time.Hour).UTC().Format(time.RFC3339), "validUntil": now.Add(-24 * time.Hour).UTC().Format(time.RFC3339)}
+		o := e.must(201, "POST", "/v1/memory/records", "bob", old)
+		cur := memory("orders", "rule:fee:v2", "tenant", "", "The Q4 handling fee is 3 euro per parcel.", "internal", now.Add(-24*time.Hour))
+		e.must(201, "POST", "/v1/memory/records", "bob", cur)
+		// today: only the current rule
+		if j := fmt.Sprint(items(e.must(200, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "handling fee per parcel", "kinds": []string{"memory"}}))); strings.Contains(j, "2 euro") || !strings.Contains(j, "3 euro") {
+			t.Fatalf("%s", j)
+		}
+		// as of two days ago: only the old rule was valid
+		pkg := e.must(200, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "handling fee per parcel", "kinds": []string{"memory"},
+			"asOf": map[string]any{"valid": now.Add(-48 * time.Hour).UTC().Format(time.RFC3339)}})
+		if j := fmt.Sprint(items(pkg)); !strings.Contains(j, "2 euro") || strings.Contains(j, "3 euro") {
+			t.Fatalf("%s", j)
+		}
+		if pkg["package"].(map[string]any)["asOf"] == nil {
+			t.Fatal("package does not say which view it represents")
+		}
+		// as known before the old record was revoked: it still counts; after: it does not
+		time.Sleep(50 * time.Millisecond)
+		before := time.Now().UTC()
+		time.Sleep(50 * time.Millisecond)
+		e.must(200, "POST", "/v1/memory/revoke", "alice", map[string]any{"recordId": o["recordId"], "reason": "rule corrected"})
+		known := e.must(200, "GET", "/v1/memory/records?scopeKind=tenant&validAt="+now.Add(-48*time.Hour).UTC().Format(time.RFC3339)+"&recordedAt="+before.Format(time.RFC3339Nano), "carol", nil)
+		if !strings.Contains(fmt.Sprint(known["records"]), "2 euro") {
+			t.Fatalf("%v", known)
+		}
+		later := e.must(200, "GET", "/v1/memory/records?scopeKind=tenant&validAt="+now.Add(-48*time.Hour).UTC().Format(time.RFC3339), "carol", nil)
+		if strings.Contains(fmt.Sprint(later["records"]), "2 euro") {
+			t.Fatalf("revoked record counted as known now: %v", later)
+		}
+		e.must(422, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "fee", "asOf": map[string]any{"valid": now.Add(48 * time.Hour).UTC().Format(time.RFC3339)}})
+		e.must(422, "GET", "/v1/memory/records?validAt=yesterday", "carol", nil)
+	})
+
 	t.Run("audit-and-policy", func(t *testing.T) {
 		if n := len(e.must(200, "GET", "/api/v1/audit", "alice", nil)["events"].([]any)); n < 6 {
 			t.Fatalf("audit events %d", n)

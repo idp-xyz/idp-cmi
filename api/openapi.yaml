@@ -123,7 +123,7 @@ paths:
       responses: {'201': {description: recorded, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}, '403': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
     get:
       summary: List the usable records of a scope the caller may see (default scope = the caller's subject); flagged=true (administrators) lists the quarantine (ADR-0001 D12), status=candidate|disputed (administrators) the review queue (D21), across scopes unless one is given
-      parameters: [{name: scopeKind, in: query, schema: {type: string, enum: [tenant, subject, thread, agent, organization, team, project]}}, {name: scopeId, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer}}, {name: flagged, in: query, schema: {type: boolean}}, {name: status, in: query, schema: {type: string, enum: [candidate, disputed]}}]
+      parameters: [{name: scopeKind, in: query, schema: {type: string, enum: [tenant, subject, thread, agent, organization, team, project]}}, {name: scopeId, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer}}, {name: flagged, in: query, schema: {type: boolean}}, {name: status, in: query, schema: {type: string, enum: [candidate, disputed]}}, {name: validAt, in: query, schema: {type: string, format: date-time}, description: 'bitemporal view (ADR-0001 D25): business time the records must be valid at'}, {name: recordedAt, in: query, schema: {type: string, format: date-time}, description: 'registration time by which the CMI must have known (and not revoked) the records'}]
       responses: {'200': {description: records}}
   /v1/memory/records/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
@@ -238,6 +238,7 @@ components:
         purpose: {type: string}
         scope: {type: object, properties: {kind: {type: string, enum: [tenant, subject, thread, agent, organization, team, project]}, id: {type: string}}}
         scopes: {type: array, maxItems: 32, items: {type: object, properties: {kind: {type: string}, id: {type: string}}}, description: 'more scopes (ADR-0001 D22); the caller''s own units are always included, a unit the caller does not belong to is a 403'}
+        asOf: {type: object, properties: {valid: {type: string, format: date-time}, recorded: {type: string, format: date-time}}, description: 'bitemporal view (ADR-0001 D25): resolve what was valid at valid and known by recorded (a missing axis = now); recorded in the package'}
         budget: {type: object, properties: {maxTokens: {type: integer, description: default 2000, at most 32000}, maxItems: {type: integer, description: default 20, at most 100}}}
         sources: {type: array, items: {type: string}}
         kinds: {type: array, items: {type: string, enum: [memory, knowledge]}}

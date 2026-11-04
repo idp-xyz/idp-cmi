@@ -24,6 +24,7 @@ type Request struct {
 	Purpose            string       `json:"purpose,omitempty"`
 	Scope              *cmi.Scope   `json:"scope,omitempty"`   // the thread / agent / subject the caller works in
 	Scopes             []cmi.Scope  `json:"scopes,omitempty"`  // more of them (D22); unit scopes need membership
+	AsOf               *cmi.AsOf    `json:"asOf,omitempty"`    // a bitemporal view (D25): what was valid and known at those times
 	Budget             *cmi.Budget  `json:"budget,omitempty"`  // maxTokens (default 2000, at most 32000), maxItems (default 20, at most 100)
 	Sources            []string     `json:"sources,omitempty"` // knowledge sources to consider (empty = all visible)
 	Kinds              []string     `json:"kinds,omitempty"`   // memory | knowledge (empty = both)
@@ -137,6 +138,14 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 		return nil, nil, err
 	}
 	now := r.now()
+	at := now // the business time items must be valid at
+	if req.AsOf != nil {
+		if err := req.AsOf.Validate(now); err != nil {
+			return nil, nil, err
+		}
+		req.AsOf.Normalize(now)
+		at = req.AsOf.Valid
+	}
 	if req.SensitivityCeiling != "" && cmi.Within(req.SensitivityCeiling, v.Ceiling) {
 		v.Ceiling = req.SensitivityCeiling
 	}
@@ -162,7 +171,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 	if err != nil {
 		return nil, nil, err
 	}
-	q := postgres.Query{TSQuery: TSQuery(req.Query), Entities: cmi.EntityKeys(req.Entities), IncludeFlagged: policy.IncludeFlagged, Limit: 200}
+	q := postgres.Query{TSQuery: TSQuery(req.Query), Entities: cmi.EntityKeys(req.Entities), IncludeFlagged: policy.IncludeFlagged, Limit: 200, AsOf: req.AsOf}
 	if r.Embedder != nil {
 		if vecs, err := r.Embedder.Embed(ctx, []string{req.Query}); err == nil && len(vecs) == 1 {
 			q.Vector, q.Model = vecs[0], r.Embedder.Model()
@@ -207,7 +216,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 				if req.MaxAgeDays > 0 && now.Sub(m.Provenance.ObservedAt) > time.Duration(req.MaxAgeDays)*24*time.Hour {
 					continue
 				}
-				if !m.Validity.ValidUntil.IsZero() && !m.Validity.ValidUntil.After(now) {
+				if !m.Validity.ValidUntil.IsZero() && !m.Validity.ValidUntil.After(at) {
 					continue // expired by the resolver's clock, even before the sweeper marks it
 				}
 				scope := m.Scope
@@ -216,7 +225,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 				if policy.IncludeFlagged {
 					item.Flags = m.Flags
 				}
-				cands = append(cands, candidate{item: item, trust: trustRank(h.Trust), fresh: freshness(now, m.Provenance.ObservedAt), lexical: h.Lexical, semantic: h.Semantic,
+				cands = append(cands, candidate{item: item, trust: trustRank(h.Trust), fresh: freshness(at, m.Provenance.ObservedAt), lexical: h.Lexical, semantic: h.Semantic,
 					dedupe: "m:" + m.Provenance.Source + "/" + m.Provenance.Ref, created: m.CreatedAt})
 			}
 		}
@@ -230,7 +239,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 				if req.MaxAgeDays > 0 && now.Sub(d.CreatedAt) > time.Duration(req.MaxAgeDays)*24*time.Hour {
 					continue
 				}
-				if !d.ValidUntil.IsZero() && !d.ValidUntil.After(now) {
+				if !d.ValidUntil.IsZero() && !d.ValidUntil.After(at) {
 					continue
 				}
 				item := cmi.Item{Kind: cmi.ItemKnowledge, ID: d.ID, Source: d.Source, Trust: h.Trust, Ref: d.URI + "#" + itoa(h.Seq), Title: d.Title, Excerpt: excerpt(h.Content, 1500),
@@ -238,7 +247,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 				if policy.IncludeFlagged {
 					item.Flags = h.Flags
 				}
-				cands = append(cands, candidate{item: item, trust: trustRank(h.Trust), fresh: freshness(now, d.CreatedAt), lexical: h.Lexical, semantic: h.Semantic,
+				cands = append(cands, candidate{item: item, trust: trustRank(h.Trust), fresh: freshness(at, d.CreatedAt), lexical: h.Lexical, semantic: h.Semantic,
 					dedupe: "k:" + d.Source + "/" + d.URI + "#" + itoa(h.Seq), created: d.CreatedAt})
 			}
 		}
@@ -272,7 +281,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 		return cands[a].created.After(cands[b].created)
 	})
 	seen := map[string]bool{}
-	pkg := &cmi.Package{ID: r.newID(), TenantID: tenant, RequestedBy: v.Subject, Purpose: req.Purpose, Query: req.Query, Scope: req.Scope, Items: []cmi.Item{}, Budget: budget, AssembledAt: now.UTC().Truncate(time.Second)}
+	pkg := &cmi.Package{ID: r.newID(), TenantID: tenant, RequestedBy: v.Subject, Purpose: req.Purpose, Query: req.Query, Scope: req.Scope, AsOf: req.AsOf, Items: []cmi.Item{}, Budget: budget, AssembledAt: now.UTC().Truncate(time.Second)}
 	for _, c := range cands {
 		if seen[c.dedupe] || len(pkg.Items) >= budget.MaxItems {
 			continue

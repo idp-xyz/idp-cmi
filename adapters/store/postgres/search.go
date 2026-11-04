@@ -20,6 +20,7 @@ type Query struct {
 	Entities       []string
 	IncludeFlagged bool
 	Limit          int
+	AsOf           *cmi.AsOf // a bitemporal view instead of "now" (D25)
 }
 
 // Hit is how a retriever matched: lexical rank (ts_rank), semantic rank (cosine) and the summary.

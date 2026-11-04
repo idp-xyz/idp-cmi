@@ -1,10 +1,14 @@
 {
-  "description": "idp.telos.cmi 1.2.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
+  "description": "idp.telos.cmi 1.3.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
   "generatedBy": "go test ./internal/cmi -run TestContract -update",
   "examples": [
     {
       "definition": "ContextPackage",
       "value": {
+        "asOf": {
+          "recorded": "2026-11-04T09:00:00Z",
+          "valid": "2026-11-04T08:00:00Z"
+        },
         "assembledAt": "2026-11-04T09:00:00Z",
         "budget": {
           "maxItems": 20,
@@ -105,8 +109,12 @@
     {
       "definition": "Envelope",
       "value": {
-        "digest": "sha256:702414b921bccc6bb117d15daa0c8c9bd1c1d1421cadbd71961f2165d3cf48f0",
+        "digest": "sha256:6e02ac62de796cbbe2eb067d643e42fcbb967c7867a09bd651e4ffca12e9e09e",
         "document": {
+          "asOf": {
+            "recorded": "2026-11-04T09:00:00Z",
+            "valid": "2026-11-04T08:00:00Z"
+          },
           "assembledAt": "2026-11-04T09:00:00Z",
           "budget": {
             "maxItems": 20,

@@ -208,7 +208,15 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 		limit = 200
 	}
 	const from = ` FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id JOIN sources s ON s.id = d.source_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x`
-	filters := ` AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))` + visibleSQL + ` AND ($6 OR cardinality(c.flags) = 0)` + entityFilterSQL("knowledge", "d.id", "$7") + excludeSQL("$9")
+	filters := func(usable string) string {
+		return ` AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))` + usable + ` AND ($6 OR cardinality(c.flags) = 0)` + entityFilterSQL("knowledge", "d.id", "$7") + excludeSQL("$9")
+	}
+	lexPred, vecPred := filters(visibleSQL), filters(visibleSQL)
+	var asOfArgs []any
+	if q.AsOf != nil {
+		lexPred, vecPred = filters(knowledgeAsOfSQL("$10", "$11")), filters(knowledgeAsOfSQL("$11", "$12"))
+		asOfArgs = []any{q.AsOf.Valid, q.AsOf.RecordedArg()}
+	}
 	type key struct {
 		id  string
 		seq int
@@ -257,7 +265,7 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		if q.TSQuery != "" {
 			rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, c.flags, ts_rank(c.search, q)::float8 AS r, s.trust`+from+`, to_tsquery('simple', $4) q
-				WHERE c.search @@ q`+filters+` ORDER BY r DESC LIMIT $8`, v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, sources, q.IncludeFlagged, entities, limit, excluded(v))
+				WHERE c.search @@ q`+lexPred+` ORDER BY r DESC LIMIT $8`, append([]any{v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, sources, q.IncludeFlagged, entities, limit, excluded(v)}, asOfArgs...)...)
 			if err != nil {
 				return err
 			}
@@ -267,7 +275,7 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 		}
 		if len(q.Vector) > 0 && q.Model != "" {
 			rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, c.flags, cosine_similarity(c.embedding, $4::real[])::float8 AS r, s.trust`+from+`
-				WHERE c.embedding IS NOT NULL AND c.embedding_model = $10`+filters+` ORDER BY r DESC NULLS LAST LIMIT $8`, v.Subject, v.Roles, rank(v.Ceiling), q.Vector, sources, q.IncludeFlagged, entities, limit, excluded(v), q.Model)
+				WHERE c.embedding IS NOT NULL AND c.embedding_model = $10`+vecPred+` ORDER BY r DESC NULLS LAST LIMIT $8`, append([]any{v.Subject, v.Roles, rank(v.Ceiling), q.Vector, sources, q.IncludeFlagged, entities, limit, excluded(v), q.Model}, asOfArgs...)...)
 			if err != nil {
 				return err
 			}

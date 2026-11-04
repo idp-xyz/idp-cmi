@@ -55,9 +55,29 @@ type Visibility struct {
 // visibleSQL is the predicate every read of memory and knowledge applies (D7): tenant rows only (RLS),
 // usable, within the ceiling, and either unrestricted or naming the subject or one of the roles.
 // Placeholders: $subject, $roles, $ceiling rank are passed as the first three arguments.
-const visibleSQL = ` AND x.status = 'active' AND (x.valid_until IS NULL OR x.valid_until > now())
+const visibleSQL = usableSQL + aclSQL
+
+// usableSQL is the "now" half of the predicate; aclSQL the sensitivity and ACL half.
+const usableSQL = ` AND x.status = 'active' AND (x.valid_until IS NULL OR x.valid_until > now())`
+const aclSQL = `
 	AND (CASE x.sensitivity WHEN 'public' THEN 0 WHEN 'internal' THEN 1 WHEN 'confidential' THEN 2 ELSE 3 END) <= $3
 	AND ((cardinality(x.acl_subjects) = 0 AND cardinality(x.acl_roles) = 0) OR $1 = ANY(x.acl_subjects) OR x.acl_roles && $2::text[])`
+
+// memoryAsOfSQL replaces usableSQL for a bitemporal view (D25): what was registered by $r and not
+// yet revoked at $r, and valid at $v. Candidates, disputed and erased records never count.
+func memoryAsOfSQL(v, r string) string {
+	r = `coalesce(` + r + `::timestamptz, now())`
+	return ` AND m.status NOT IN ('candidate', 'disputed') AND m.erasure_id IS NULL AND m.created_at <= ` + r + ` AND (m.revoked_at IS NULL OR m.revoked_at > ` + r + `)
+	AND m.valid_from <= ` + v + ` AND (m.valid_until IS NULL OR m.valid_until > ` + v + `)` + aclSQL
+}
+
+// knowledgeAsOfSQL is the same for documents: a version counts until a newer version of its URI was
+// registered (by $r) or it was revoked (by $r), and while its validity covers $v.
+func knowledgeAsOfSQL(v, r string) string {
+	r = `coalesce(` + r + `::timestamptz, now())`
+	return ` AND d.erasure_id IS NULL AND d.created_at <= ` + r + ` AND (d.revoked_at IS NULL OR d.revoked_at > ` + r + `) AND (d.valid_until IS NULL OR d.valid_until > ` + v + `)
+	AND NOT EXISTS (SELECT 1 FROM knowledge_documents d2 WHERE d2.uri = d.uri AND d2.version > d.version AND d2.created_at <= ` + r + `)` + aclSQL
+}
 
 func rank(sensitivity string) int {
 	return map[string]int{cmi.SensitivityPublic: 0, cmi.SensitivityInternal: 1, cmi.SensitivityConfidential: 2, cmi.SensitivityRestricted: 3}[sensitivity]
@@ -178,6 +198,32 @@ func (s *Store) ListMemory(ctx context.Context, tenant string, scope cmi.Scope, 
 	return s.listMemory(ctx, tenant, scope, v, limit, flagged, "")
 }
 
+// ListMemoryAsOf lists what a scope held at a bitemporal view (D25).
+func (s *Store) ListMemoryAsOf(ctx context.Context, tenant string, scope cmi.Scope, v Visibility, limit int, asOf cmi.AsOf) ([]cmi.MemoryRecord, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	out := []cmi.MemoryRecord{}
+	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT `+memoryCols+` FROM memory_records m JOIN sources s ON s.id = m.source_id, LATERAL (SELECT m.status, m.valid_until, m.sensitivity, m.acl_subjects, m.acl_roles) x
+			WHERE ($4 = '' OR (m.scope_kind = $4 AND m.scope_id = $5))`+memoryAsOfSQL("$7", "$8")+` ORDER BY m.created_at DESC LIMIT $6`,
+			v.Subject, v.Roles, rank(v.Ceiling), scope.Kind, scope.ID, limit, asOf.Valid, asOf.RecordedArg())
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			m, err := scanMemory(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, *m)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // ReviewMemory lists records in a review status (candidate | disputed) for administrators (D21),
 // across scopes unless one is given; ACL and ceiling still apply.
 func (s *Store) ReviewMemory(ctx context.Context, tenant string, scope cmi.Scope, v Visibility, limit int, status string) ([]cmi.MemoryRecord, error) {
@@ -285,7 +331,15 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 		limit = 200
 	}
 	const from = ` FROM memory_records m JOIN sources s ON s.id = m.source_id, LATERAL (SELECT m.status, m.valid_until, m.sensitivity, m.acl_subjects, m.acl_roles) x`
-	filters := ` AND (m.scope_kind, m.scope_id) IN (SELECT unnest($5::text[]), unnest($6::text[]))` + visibleSQL + ` AND ($7 OR cardinality(m.flags) = 0)` + entityFilterSQL("memory", "m.id", "$8") + excludeSQL("$10")
+	filters := func(usable string) string {
+		return ` AND (m.scope_kind, m.scope_id) IN (SELECT unnest($5::text[]), unnest($6::text[]))` + usable + ` AND ($7 OR cardinality(m.flags) = 0)` + entityFilterSQL("memory", "m.id", "$8") + excludeSQL("$10")
+	}
+	lexPred, vecPred := filters(visibleSQL), filters(visibleSQL)
+	var asOfArgs []any
+	if q.AsOf != nil {
+		lexPred, vecPred = filters(memoryAsOfSQL("$11", "$12")), filters(memoryAsOfSQL("$12", "$13"))
+		asOfArgs = []any{q.AsOf.Valid, q.AsOf.RecordedArg()}
+	}
 	byID := map[string]*memoryHit{}
 	var order []string
 	scan := func(rows pgx.Rows, semantic bool) error {
@@ -325,7 +379,7 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		if q.TSQuery != "" {
 			rows, err := tx.Query(ctx, `SELECT `+memoryCols+`, ts_rank(m.search, q)::float8 AS r, s.trust`+from+`, to_tsquery('simple', $4) q
-				WHERE m.search @@ q`+filters+` ORDER BY r DESC LIMIT $9`, v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, kinds, ids, q.IncludeFlagged, entities, limit, excluded(v))
+				WHERE m.search @@ q`+lexPred+` ORDER BY r DESC LIMIT $9`, append([]any{v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, kinds, ids, q.IncludeFlagged, entities, limit, excluded(v)}, asOfArgs...)...)
 			if err != nil {
 				return err
 			}
@@ -335,7 +389,7 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 		}
 		if len(q.Vector) > 0 && q.Model != "" {
 			rows, err := tx.Query(ctx, `SELECT `+memoryCols+`, cosine_similarity(m.embedding, $4::real[])::float8 AS r, s.trust`+from+`
-				WHERE m.embedding IS NOT NULL AND m.embedding_model = $11`+filters+` ORDER BY r DESC NULLS LAST LIMIT $9`, v.Subject, v.Roles, rank(v.Ceiling), q.Vector, kinds, ids, q.IncludeFlagged, entities, limit, excluded(v), q.Model)
+				WHERE m.embedding IS NOT NULL AND m.embedding_model = $11`+vecPred+` ORDER BY r DESC NULLS LAST LIMIT $9`, append([]any{v.Subject, v.Roles, rank(v.Ceiling), q.Vector, kinds, ids, q.IncludeFlagged, entities, limit, excluded(v), q.Model}, asOfArgs...)...)
 			if err != nil {
 				return err
 			}
