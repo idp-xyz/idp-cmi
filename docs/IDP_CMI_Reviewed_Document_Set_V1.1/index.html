@@ -137,33 +137,34 @@
 <td>SourceRecord 来源记录</td>
 <td>标识材料来自哪里以及可否继续使用</td>
 <td>租户、来源类型和标识、版本/摘要、来源权限、登记时间、有效状态</td>
-<td>历史设计；快照存在精简来源登记</td>
+<td>已实现：<code>Source</code>（名字、种类、信任级别、baseUrl；契约 idp.telos.cmi）</td>
 </tr>
 <tr>
 <td>MemoryRecord 记忆记录</td>
 <td>管理可复用的陈述、偏好或经验</td>
 <td>稳定 ID、内容、归属范围、来源引用、状态、敏感级别、版本和时间</td>
-<td>历史设计；快照存在精简记录与状态机</td>
+<td>已实现：<code>MemoryRecord</code>（作用域、来历、有效期、状态 candidate / active / disputed / expired / revoked、version、flags、entities、sharedFrom）</td>
 </tr>
 <tr>
 <td>ContextBundle 上下文包</td>
 <td>为一个任务构造可追溯的记忆集合</td>
 <td>任务、主体、入选记忆及版本、来源、预算、策略/有效性信息</td>
-<td>目标设计；历史快照无编译接口</td>
+<td>已实现为 <code>ContextPackage</code>（密封、内容寻址；asOf、projectionLag；读回与 verify）</td>
 </tr>
 <tr>
 <td>PolicyDecision 策略决定</td>
 <td>判断主体对特定资源能否执行操作</td>
 <td>主体、资源、动作、用途、条件、期限、决策 ID</td>
-<td>目标设计；快照无企业级策略服务</td>
+<td>已实现接入：外部 PDP（OPA 线格式）的输入 / 决定 / 义务（D23）；CMI 自身的角色、ACL、敏感上限为内层</td>
 </tr>
 <tr>
 <td>ErasureRequest 擦除请求</td>
 <td>跟踪删除、阻断、传播与完成证据</td>
 <td>范围、请求、合法保留依据、任务与验证结果</td>
-<td>目标设计；历史快照无完整擦除流程</td>
+<td>已实现：<code>Erasure</code>（选择器、屏障捕获的目标、各域状态、verified；备份与已交付明文明示不覆盖，D20）</td>
 </tr>
 </tbody></table></div>
+<p><strong>2026-11-04 更新</strong>：状态列已改为当前仓库的实现；对象的字段以契约 <code>idp.telos.cmi</code> 1.3.0 与 <code>api/openapi.yaml</code> 为准。</p>
 <p>这是一组概念模型，不是对生产数据库字段和完整 API 的断言。字段名称、是否必填、数据类型、错误码以正式审定的契约和实现版本为准；快照中的精简响应不等于上述完整对象。</p>
 <h3 id="4-2-时间-版本和来源">4.2 时间、版本和来源</h3><ul>
 <li><strong>有效时间</strong>表示内容在业务世界中何时适用；<strong>记录时间</strong>表示系统何时记录该版本。两者不一定相同。时间模型可以支持追溯，但具体一致性语义、并发排序与查询接口须在实现和测试中定义。</li>
@@ -209,8 +210,8 @@
 </tbody></table></div>
 <p>分类 <code>classification</code> 表示数据敏感度；来源可信程度、业务领域内的权威性和模型提取置信度分别判断，不能合并为一个分数。以上字段是目标语义，最终类型、必填规则和兼容策略以完成评审的契约为准。</p>
 </section>
-<section class="chapter" id="chapter-05" data-chapter><div class="chapter-header"><span class="chapter-index">05</span><div><span class="eyebrow">CHAPTER 05</span><h2>个人、团队与组织记忆</h2></div></div><figure class="diagram"><div class="figure-head"><div><span class="eyebrow">FIGURE 03</span><h4>六种记忆归属范围</h4><p>范围说明“归属于哪里”；读取权仍由当前策略决定。</p></div><span class="figure-glyph" aria-hidden="true">↗</span></div><div class="visual-grid cols-three"><div class="visual-card teal"><span class="visual-number">01</span><strong>企业租户</strong><small>TENANT</small><p>企业内共享政策</p></div><div class="visual-card "><span class="visual-number">02</span><strong>组织</strong><small>ORGANIZATION</small><p>部门或事业部知识</p></div><div class="visual-card "><span class="visual-number">03</span><strong>团队</strong><small>TEAM</small><p>协作约定与经验</p></div><div class="visual-card "><span class="visual-number">04</span><strong>项目</strong><small>PROJECT</small><p>项目上下文与约束</p></div><div class="visual-card teal"><span class="visual-number">05</span><strong>个人</strong><small>USER</small><p>个人偏好与工作方式</p></div><div class="visual-card "><span class="visual-number">06</span><strong>业务对象</strong><small>BUSINESS OBJECT</small><p>客户、订单等相关知识</p></div></div><figcaption>历史快照支持这些范围类型的单范围搜索；跨范围聚合是目标设计。</figcaption></figure>
-<p>历史原型的数据类型包含六类范围：<code>tenant</code>（租户）、<code>organization</code>（组织）、<code>team</code>（团队）、<code>project</code>（项目）、<code>user</code>（个人）和 <code>business_object</code>（业务对象）。原型检索按单一指定范围执行；组织树、成员关系、跨范围聚合与完整共享授权仍是设计，不应由范围枚举推断已经实现。</p>
+<section class="chapter" id="chapter-05" data-chapter><div class="chapter-header"><span class="chapter-index">05</span><div><span class="eyebrow">CHAPTER 05</span><h2>个人、团队与组织记忆</h2></div></div><figure class="diagram"><div class="figure-head"><div><span class="eyebrow">FIGURE 03</span><h4>六种记忆归属范围</h4><p>范围说明“归属于哪里”；读取权仍由当前策略决定。</p></div><span class="figure-glyph" aria-hidden="true">↗</span></div><div class="visual-grid cols-three"><div class="visual-card teal"><span class="visual-number">01</span><strong>企业租户</strong><small>TENANT</small><p>企业内共享政策</p></div><div class="visual-card "><span class="visual-number">02</span><strong>组织</strong><small>ORGANIZATION</small><p>部门或事业部知识</p></div><div class="visual-card "><span class="visual-number">03</span><strong>团队</strong><small>TEAM</small><p>协作约定与经验</p></div><div class="visual-card "><span class="visual-number">04</span><strong>项目</strong><small>PROJECT</small><p>项目上下文与约束</p></div><div class="visual-card teal"><span class="visual-number">05</span><strong>个人</strong><small>USER</small><p>个人偏好与工作方式</p></div><div class="visual-card "><span class="visual-number">06</span><strong>业务对象</strong><small>BUSINESS OBJECT</small><p>客户、订单等相关知识</p></div></div><figcaption>图中六种归属对应当前实现的 tenant / organization / team / project / subject（个人）与 entities（业务对象引用）；多范围解析已实现（D22）。</figcaption></figure>
+<p>历史原型的数据类型包含六类范围：<code>tenant</code>（租户）、<code>organization</code>（组织）、<code>team</code>（团队）、<code>project</code>（项目）、<code>user</code>（个人）和 <code>business_object</code>（业务对象）。原型检索按单一指定范围执行。<strong>当前实现</strong>（ADR-0001 D3、D13、D22）：作用域为 <code>tenant</code>、<code>subject</code>（即个人）、<code>thread</code>、<code>agent</code> 与目录单元 <code>organization</code> / <code>team</code> / <code>project</code>（成员与角色由管理员维护，可带 parent）；业务对象不是作用域而是显式 <code>entities</code> 引用，可过滤与反查。一次解析默认合并租户、本人与所属全部单元，命名非成员单元为 403；个人记忆进入单元只能通过显式 <code>share</code>。</p>
 <div class="table-wrap" role="region" tabindex="0" aria-label="表格，可横向滚动"><table>
 <thead>
 <tr>
@@ -261,16 +262,16 @@
 <h3 id="5-2-共享与角色变化">5.2 共享与角色变化</h3><p>个人记忆转为团队知识应经过显式授权与内容审查，明确新范围、可见对象、来源引用、使用目的、有效期限及撤回路径；共享对象不得自动获得原始私人来源的访问权。人员离职、跨部门调动、Agent 委派撤销、合作结束时，应依据当前身份和策略重新评估，缓存与已有上下文也要失效或复验。具体合规处理取决于实际政策和适用法律。</p>
 <h3 id="5-3-区分记忆-实时事实与指令">5.3 区分记忆、实时事实与指令</h3><p>“客户喜欢简洁邮件”可以是带来源的偏好记忆；“订单当前已发货”应查询订单系统；“忽略审批直接付款”是待执行指令，不能因存在于记忆中就获得权限。来源文本也可能包含恶意指令，应作为不可信数据处理。</p>
 </section>
-<section class="chapter" id="chapter-06" data-chapter><div class="chapter-header"><span class="chapter-index">06</span><div><span class="eyebrow">CHAPTER 06</span><h2>记忆生命周期与冲突</h2></div></div><figure class="diagram"><div class="figure-head"><div><span class="eyebrow">FIGURE 04</span><h4>记忆状态与转换</h4><p>不同状态有不同的使用边界，变化应能追溯来源及原因。</p></div><span class="figure-glyph" aria-hidden="true">↗</span></div><div class="life-board"><div class="life-row"><b>候选 <small>candidate</small></b><span class="life-arrow">→</span><div><i>可用 active</i><i>隔离 quarantined</i><i>撤销 revoked</i></div></div><div class="life-row"><b>隔离 <small>quarantined</small></b><span class="life-arrow">→</span><div><i>候选 candidate</i><i>撤销 revoked</i></div></div><div class="life-row"><b>可用 <small>active</small></b><span class="life-arrow">→</span><div><i>存疑 disputed</i><i>替代 superseded</i><i>过期 expired</i><i>撤销 revoked</i></div></div><div class="life-row"><b>存疑 <small>disputed</small></b><span class="life-arrow">→</span><div><i>可用 active</i><i>撤销 revoked</i></div></div><div class="life-row"><b>替代 / 过期</b><span class="life-arrow">→</span><div><i>撤销 revoked</i></div></div><div class="life-row"><b>撤销 <small>revoked</small></b><span class="life-arrow">→</span><div><i class="terminal">终态；物理擦除另行管理</i></div></div></div><figcaption>图示按 2026-10-16 源码快照状态机整理；不代表审批和擦除已完整实现。</figcaption></figure>
-<p>历史原型使用七种状态：<code>candidate</code>、<code>quarantined</code>、<code>active</code>、<code>disputed</code>、<code>superseded</code>、<code>expired</code>、<code>revoked</code>。图中转换对应历史快照的状态机，具体权限、审批的可信验证与完整审计尚未实现。撤销是使用层面的状态变化，<strong>不等于物理擦除</strong>。</p>
+<section class="chapter" id="chapter-06" data-chapter><div class="chapter-header"><span class="chapter-index">06</span><div><span class="eyebrow">CHAPTER 06</span><h2>记忆生命周期与冲突</h2></div></div><figure class="diagram"><div class="figure-head"><div><span class="eyebrow">FIGURE 04</span><h4>记忆状态与转换</h4><p>不同状态有不同的使用边界，变化应能追溯来源及原因。</p></div><span class="figure-glyph" aria-hidden="true">↗</span></div><div class="life-board"><div class="life-row"><b>候选 <small>candidate</small></b><span class="life-arrow">→</span><div><i>可用 active</i><i>隔离 quarantined</i><i>撤销 revoked</i></div></div><div class="life-row"><b>隔离 <small>quarantined</small></b><span class="life-arrow">→</span><div><i>候选 candidate</i><i>撤销 revoked</i></div></div><div class="life-row"><b>可用 <small>active</small></b><span class="life-arrow">→</span><div><i>存疑 disputed</i><i>替代 superseded</i><i>过期 expired</i><i>撤销 revoked</i></div></div><div class="life-row"><b>存疑 <small>disputed</small></b><span class="life-arrow">→</span><div><i>可用 active</i><i>撤销 revoked</i></div></div><div class="life-row"><b>替代 / 过期</b><span class="life-arrow">→</span><div><i>撤销 revoked</i></div></div><div class="life-row"><b>撤销 <small>revoked</small></b><span class="life-arrow">→</span><div><i class="terminal">终态；物理擦除另行管理</i></div></div></div><figcaption>图示按 2026-10-16 源码快照状态机整理；当前实现的状态见下文说明。</figcaption></figure>
+<p>历史原型使用七种状态：<code>candidate</code>、<code>quarantined</code>、<code>active</code>、<code>disputed</code>、<code>superseded</code>、<code>expired</code>、<code>revoked</code>。图中转换对应历史快照的状态机。<strong>当前实现</strong>（ADR-0001 D3、D12、D21）：记忆状态为 <code>candidate</code> / <code>active</code> / <code>disputed</code> / <code>expired</code> / <code>revoked</code>（文档另有 <code>superseded</code>）；没有 <code>quarantined</code> 状态——隔离以写入时注入扫描的 <code>flags</code> 实现，被标记内容默认不进包、管理员审阅。转换由管理员以 <code>If-Match</code>、理由与可选审批引用执行并记审计；审批引用尚未对接独立的审批核验（局限）。撤销是使用层面的状态变化，<strong>不等于物理擦除</strong>；擦除是 D20 的独立流程。</p>
 <h3 id="6-1-从候选到可用">6.1 从候选到可用</h3><ol>
 <li>登记来源和当前权限；取得可识别的来源版本。提取结果先作为候选，保留原文引用、对象、时间及不确定性。</li>
 <li>做格式、隐私分类、范围、来源可信度和重复性检查；涉及敏感数据、重要规则或高影响业务时，采用更严格的人工或可信流程审核。</li>
-<li>只有经适当审核的候选才进入可用状态。原型中的 <code>approval_ref</code> 仅检查非空，不能证明审批真实，也不能视为生产级审批。</li>
+<li>只有经适当审核的候选才进入可用状态。原型中的 <code>approval_ref</code> 仅检查非空；当前实现的 <code>approvalRef</code> 同样只记入审计、不独立核验（ADR-0001 第 9 节局限），生产前仍需对接可信审批系统。</li>
 <li>版本更新使用并发控制；谁提出、何时生效、基于什么来源、为何更新以及旧版本与新版本的关系，需要可追踪。</li>
 </ol>
 <h3 id="6-2-冲突处理">6.2 冲突处理</h3><p>当两个记录在同一主体、对象、属性和有效时间内给出不同值时，不直接把最近的一条当作真相。先比较来源权限、权威性、版本与有效时间；若无法确定，标记存疑并停止把它当作确定事实提供给高影响决策，必要时向来源系统查询或等待负责人裁决。裁决结果引用依据，保留历史链路。两个不同时段均正确的陈述不一定冲突。</p>
-<h3 id="6-3-失效-撤权与删除">6.3 失效、撤权与删除</h3><p>超过有效期可进入过期状态；来源权限被撤销、数据被更正或发生策略变化时，应阻止未经许可的继续使用。删除流程依次覆盖<strong>逻辑阻断、权威记录处理、索引与派生数据清理、缓存失效、备份处置与验证证据</strong>；合法保留和备份轮转可能影响完成时间，不能假设即时物理删除。历史原型尚未实现完整传播。</p>
+<h3 id="6-3-失效-撤权与删除">6.3 失效、撤权与删除</h3><p>超过有效期可进入过期状态；来源权限被撤销、数据被更正或发生策略变化时，应阻止未经许可的继续使用。删除流程依次覆盖<strong>逻辑阻断、权威记录处理、索引与派生数据清理、缓存失效、备份处置与验证证据</strong>；合法保留和备份轮转可能影响完成时间，不能假设即时物理删除。历史原型尚未实现完整传播；<strong>当前实现</strong>（D20）按此顺序落实：同步屏障 → 各域（正文、向量、索引、实体、包、审计）异步净化并分域记录 → 全部完成才 verified；备份与已交付明文明示不在覆盖范围。</p>
 </section>
 <section class="chapter" id="chapter-07" data-chapter><div class="chapter-header"><span class="chapter-index">07</span><div><span class="eyebrow">CHAPTER 07</span><h2>记忆优化机制</h2></div></div><p>记忆优化的目标是提高可用性、准确性和可控性，同时降低无关内容与重复内容。它不等同于无条件增加记忆数量，也不应绕过授权、来源或生命周期。</p>
 <figure class="diagram"><div class="figure-head"><div><span class="eyebrow">FIGURE 05</span><h4>记忆优化闭环</h4><p>以可追溯候选为起点，让记忆随来源和使用不断更新。</p></div><span class="figure-glyph" aria-hidden="true">↗</span></div><div class="visual-grid cols-three"><div class="visual-card "><span class="visual-number">01</span><strong>提取候选</strong><small>EXTRACT</small><p>来源、范围、时间与引用</p></div><div class="visual-card "><span class="visual-number">02</span><strong>去重合并</strong><small>CONSOLIDATE</small><p>保留来源，不扩大权限</p></div><div class="visual-card amber"><span class="visual-number">03</span><strong>识别冲突</strong><small>RESOLVE</small><p>不可判定时交由裁决</p></div><div class="visual-card "><span class="visual-number">04</span><strong>检索选择</strong><small>RETRIEVE</small><p>授权过滤和状态复验</p></div><div class="visual-card "><span class="visual-number">05</span><strong>纠错反馈</strong><small>FEEDBACK</small><p>记录误召回与确认</p></div><div class="visual-card teal"><span class="visual-number">06</span><strong>复审更新</strong><small>REVIEW</small><p>过期、撤权与必要擦除</p></div></div><figcaption>流程表示目标治理机制，具体自动化程度取决于实现和风险级别。</figcaption></figure>
@@ -386,9 +387,9 @@
 </section>
 <section class="chapter" id="chapter-10" data-chapter><div class="chapter-header"><span class="chapter-index">10</span><div><span class="eyebrow">CHAPTER 10</span><h2>安全、隐私与信任边界</h2></div></div><figure class="diagram"><div class="figure-head"><div><span class="eyebrow">FIGURE 07</span><h4>多维授权判断</h4><p>每次访问都要结合主体、资源和当前策略；记忆归属不等于读取权限。</p></div><span class="figure-glyph" aria-hidden="true">↗</span></div><div class="visual-grid cols-five"><div class="visual-card "><span class="visual-number">01</span><strong>租户</strong><small>TENANT</small><p>可信身份上下文</p></div><div class="visual-card "><span class="visual-number">02</span><strong>主体</strong><small>PRINCIPAL</small><p>人、应用与委派</p></div><div class="visual-card "><span class="visual-number">03</span><strong>资源</strong><small>RESOURCE</small><p>记忆与原始来源</p></div><div class="visual-card "><span class="visual-number">04</span><strong>操作</strong><small>ACTION</small><p>读、写、分享、删除</p></div><div class="visual-card teal"><span class="visual-number">05</span><strong>条件</strong><small>CONTEXT</small><p>用途、时间、分类</p></div></div><figcaption>授权链路必须覆盖数据库、索引、缓存、后台任务和外部适配器。</figcaption></figure>
 <h3 id="10-1-身份与授权">10.1 身份与授权</h3><p>目标生产链路应支持可信身份、租户、主体、委派、资源、动作和使用目的的联合决策，按最小权限与默认拒绝实施。策略应覆盖直接 API、后台任务、索引、缓存、导出、管理员操作及外部引擎；跨租户共享需显式设计，不能以猜测 ID 的方式访问。权限在检索前过滤并在结果返回前复验。</p>
-<p>历史原型采用签名 JWT 和默认拒绝配置，另有用于演示的签名声明模式；它没有完整的企业策略决策服务，也未证明来源对象真实完整。演示模式不能替代生产权限系统。</p>
+<p>历史原型采用签名 JWT 和默认拒绝配置，另有用于演示的签名声明模式；它没有完整的企业策略决策服务，也未证明来源对象真实完整。演示模式不能替代生产权限系统。</p><p><strong>当前实现</strong>（ADR-0001 D7、D23）：OAuth bearer JWT（生产 JWKS；开发 HS256）形成可信主体，角色 cmi-admin / cmi-writer / cmi-reader，ACL 与敏感上限在 SQL 内判定；可选外部 PDP 以租户、主体、委派 actor、动作、资源、用途做资源级决定并下发义务，不可达缺省拒绝。来源对象的真实性仍由来源系统负责（D16 连接器只按 baseUrl 与摘要）。</p>
 <h3 id="10-2-数据库隔离">10.2 数据库隔离</h3><p>候选方案以 PostgreSQL 行级安全作为防御层之一：认证后的可信事务上下文决定租户，并在事务内设置必要上下文；应用角色不应是超级用户、表所有者或带 <code>BYPASSRLS</code> 的角色。连接池复用和异常回滚须验证上下文不会泄漏。RLS 不是应用授权、业务对象权限或审计的替代品。<a href="https://www.postgresql.org/docs/17/ddl-rowsecurity.html">PostgreSQL 行级安全文档</a></p>
-<p>历史 SQL 中存在 RLS、角色权限和迁移文件，但历史门禁报告说明未在当时环境对真实 PostgreSQL 执行。数据库隔离是否有效，必须由真实数据库和实际角色测试证明。</p>
+<p>历史 SQL 中存在 RLS、角色权限和迁移文件，但历史门禁报告说明未在当时环境对真实 PostgreSQL 执行。数据库隔离是否有效，必须由真实数据库和实际角色测试证明。<strong>当前实现</strong>：FORCE RLS 覆盖全部租户表，服务角色非超级用户、无 BYPASSRLS、非表所有者并在启动时自检；集成测试在真实 PostgreSQL 上验证跨租户读写被阻止（`make test-integration`，CI）。</p>
 <h3 id="10-2-1-PostgreSQL-事务上下文的信任条件">10.2.1 PostgreSQL 事务上下文的信任条件</h3><p>若采用 PostgreSQL 与 RLS，服务端必须先验证身份并建立可信租户上下文，再在受控事务中设置数据库隔离上下文；连接池释放、复用、异常回滚及角色切换要有真实数据库测试。<code>SET LOCAL</code> 与自定义 GUC 不是防伪身份凭据；如果攻击者能够执行任意 SQL，仅靠可写的会话变量不能证明租户身份。应用和数据库权限、网络边界、策略服务及 RLS 应共同设计。</p>
 <p>PostgreSQL 已披露角色或所有权变更后 RLS 策略缓存可能陈旧的安全问题；如采用相关版本，应核查维护版本并验证实际角色与查询计划复用。此事项不代表任何现有 CMI 实例已受影响或已修复。<a href="https://www.postgresql.org/support/security/CVE-2026-14666/">官方安全公告</a></p>
 <h3 id="10-3-数据保护与提示注入">10.3 数据保护与提示注入</h3><ul>
@@ -397,9 +398,9 @@
 <li>安全日志只记录必要标识与操作结果，敏感内容按政策屏蔽；审计数据自身需要访问控制、保留策略和防篡改机制。</li>
 <li>数据分类、跨区域处理、保留和删除按照实际业务、合同与适用法律设计，不能仅靠系统设置自动保证合规。</li>
 </ul>
-<h3 id="10-4-审批与高风险记忆">10.4 审批与高风险记忆</h3><p>需要审批的内容，应由可信审批系统返回可校验的决定，并绑定请求对象、范围、版本、审批人、时效及用途。系统需要防重放、撤销和权限变化处理。历史快照中的非空 <code>approval_ref</code> 只是格式检查，不提供这些保障。</p>
+<h3 id="10-4-审批与高风险记忆">10.4 审批与高风险记忆</h3><p>需要审批的内容，应由可信审批系统返回可校验的决定，并绑定请求对象、范围、版本、审批人、时效及用途。系统需要防重放、撤销和权限变化处理。历史快照中的非空 <code>approval_ref</code> 只是格式检查；当前实现亦然（记审计、不核验），是明示的局限。</p>
 </section>
-<section class="chapter" id="chapter-11" data-chapter><div class="chapter-header"><span class="chapter-index">11</span><div><span class="eyebrow">CHAPTER 11</span><h2>技术路线与待决事项</h2></div></div><p>以下为候选方案和历史资料中可复用的方向，除明确的产品边界外，均不自动构成已批准的生产技术选型。</p>
+<section class="chapter" id="chapter-11" data-chapter><div class="chapter-header"><span class="chapter-index">11</span><div><span class="eyebrow">CHAPTER 11</span><h2>技术路线与待决事项</h2></div></div><p>以下为候选方案和历史资料中可复用的方向，除明确的产品边界外，均不自动构成已批准的生产技术选型。<strong>2026-11-04 更新</strong>：当前实现的选型见 ADR-0001 D8、D11、D26 与白皮书 V1.1 第 10.1 节——PostgreSQL 17 单后端（FORCE RLS），全文 <code>simple</code> + CJK bigram 同事务同步，向量以数组 + SQL 余弦、由 outbox 投影异步填充，不依赖扩展；OpenSearch、Redis、对象存储、图谱与外部记忆引擎均未引入；MCP 适配器决定不做。表中"当前整合理解"一列描述的是历史原型。</p>
 <div class="table-wrap" role="region" tabindex="0" aria-label="表格，可横向滚动"><table>
 <thead>
 <tr>
@@ -420,12 +421,12 @@
 </tr>
 <tr>
 <td>全文与子串检索</td>
-<td>历史原型使用 PostgreSQL <code>simple</code> 全文与转义后的 ILIKE 组合</td>
+<td>当前实现：PostgreSQL <code>simple</code> 全文 + CJK 字符 bigram 辅助列（D4）；评估集 Recall@5 0.8889</td>
 <td>中文语料质量、权限过滤、性能与容量评估</td>
 </tr>
 <tr>
 <td>语义/向量检索</td>
-<td>pgvector 是可评估选项；当前快照没有真实向量检索能力</td>
+<td>pgvector 是可评估选项；当前实现以 PostgreSQL 数组 + SQL 余弦做向量检索（D11，无 ANN 索引）</td>
 <td>模型、向量维度、索引、评测集、延迟及迁移机制</td>
 </tr>
 <tr>
@@ -579,65 +580,77 @@
 <th>编号</th>
 <th>验收证据</th>
 <th>历史快照状态</th>
+<th>当前仓库（2026-11-04）</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>G01</td>
 <td>在隔离 PostgreSQL 环境运行迁移并记录结果</td>
 <td>未运行</td>
+<td>已运行：迁移 0001–0008 在每次集成测试与 compose e2e 的一次性 PostgreSQL 上执行</td>
 </tr>
 <tr>
 <td>G02</td>
 <td>应用数据库角色不是 superuser、BYPASSRLS 或表所有者</td>
 <td>未运行</td>
+<td>已验证：服务角色非 superuser、无 BYPASSRLS、非表所有者，启动自检；超级用户连接被拒</td>
 </tr>
 <tr>
 <td>G03</td>
 <td>覆盖范围内表的 RLS 与 FORCE RLS 配置符合设计</td>
 <td>未运行；历史脚本列出 15 张表，当前范围须重新核对</td>
+<td>已配置：全部租户表 ENABLE + FORCE RLS，后台角色策略限 sweeper / embedder</td>
 </tr>
 <tr>
 <td>G04</td>
 <td>跨租户读写均被阻止，连接池复用不泄露身份</td>
 <td>未运行</td>
+<td>已验证：集成测试覆盖跨租户读写为空 / 404；连接池以事务级 set_config 绑定租户</td>
 </tr>
 <tr>
 <td>G05</td>
 <td>过期版本并发修改返回预期错误</td>
 <td>真实数据库未运行</td>
+<td>已实现并测试：If-Match 版本不符返回 409（D19）</td>
 </tr>
 <tr>
 <td>G06</td>
 <td>幂等重放不产生重复业务效果，响应语义一致</td>
 <td>真实数据库未运行；状态码缺陷待修复</td>
+<td>已实现并测试：同键同请求 200 重放（Idempotent-Replayed），同键不同请求 409（D19）</td>
 </tr>
 <tr>
 <td>G07</td>
 <td>同一来源的并发首次写入可预期且不产生未处理错误</td>
 <td>缺少并发测试与处理</td>
+<td>已实现：来源名唯一约束 → 409，无未处理错误</td>
 </tr>
 <tr>
 <td>G08</td>
 <td>企业策略决定与可信审批可验证、可撤销</td>
 <td>未实现</td>
+<td>部分：外部 PDP 决定与义务已接（D23）；可信审批核验未做</td>
 </tr>
 <tr>
 <td>G09</td>
 <td>来源对象、摘要、权限和版本由可信链验证</td>
 <td>未实现</td>
+<td>部分：连接器只抓取登记 baseUrl 之下、按内容摘要跳过（D16）；来源对象真实性由来源系统负责</td>
 </tr>
 <tr>
 <td>G10</td>
 <td>Outbox 投递、重放、死信、检查点与对账可验证</td>
 <td>未实现</td>
+<td>已实现：outbox 投影，幂等、版本检查、积压可见（D26）；无独立死信队列（失败事件留队计 attempts）</td>
 </tr>
 <tr>
 <td>G11</td>
 <td>擦除或保留策略覆盖源对象、记忆、索引、缓存和备份，留有证据</td>
 <td>未实现</td>
+<td>已实现：擦除覆盖正文、向量、索引、实体、包、审计并分域验证（D20）；备份不在覆盖范围</td>
 </tr>
 </tbody></table></div>
-<p>完成上述门禁是继续评审的重要前提，并不自动等于通过完整安全审计。执行必须使用隔离测试环境、人工合成数据和实际受限角色，并保存代码版本、依赖版本、配置、测试记录、失败项及复验结果。</p>
+<p>上述门禁中 G01–G07、G10、G11 已由仓库测试与 CI 覆盖，G08、G09 部分完成；完成门禁是继续评审的重要前提，并不自动等于通过完整安全审计。执行必须使用隔离测试环境、人工合成数据和实际受限角色，并保存代码版本、依赖版本、配置、测试记录、失败项及复验结果。</p>
 <h3 id="15-2-检索与记忆质量评估">15.2 检索与记忆质量评估</h3><p>构建包含中文、英文、不同部门与不同权限的标注数据；覆盖同义词、时间变化、冲突、无答案、来源撤权、恶意指令与跨租户攻击。至少报告：</p>
 <div class="table-wrap" role="region" tabindex="0" aria-label="表格，可横向滚动"><table>
 <thead>
@@ -681,7 +694,7 @@
 <p>必须给出数据集规模、基线、计算方法、失败样本、权限策略和置信范围；分母为零时标记不适用，不将其显示为 100%。目标阈值由具体业务和安全负责人确定。</p>
 <h3 id="15-3-运行手册最小内容">15.3 运行手册最小内容</h3><p>记录服务及依赖健康、策略拒绝、来源验证失败、索引滞后、outbox 积压、擦除工单、权限异常及成本；定义报警负责人、分级响应、回滚、备份恢复演练和事件复盘。可用性目标、恢复时间/恢复点目标应根据部署架构和实测商定，不能从原型测试推断。</p>
 <h3 id="15-4-本次文档核验记录">15.4 本次文档核验记录</h3><p>2026-11-04 的整理对照了当前白皮书、统一技术入口、历史核心规格/技术设计和 2026-10-15/16 原型证据。白皮书的 HTML 与 Markdown 做了章节、正文、表格、链接和图示结构核对；统一入口经过正文、目录、链接、图示和字体覆盖检查，并对搜索、导航及打印入口进行了脚本级模拟。</p>
-<p>目标 OpenAPI 草案进行了路径、内部引用、路径参数、六类范围、七种状态及部分正常/异常请求载荷的结构检查；白皮书、统一入口和接口草案做了共同约束的交叉检查。以上结果只覆盖资料和契约的静态内容，<strong>不等于完整 OpenAPI 标准校验、安全审计、浏览器全页面渲染、真实数据库或生产环境测试</strong>。当前仓库、实际部署与当前版本的验收结果仍未核验。</p>
+<p>目标 OpenAPI 草案进行了路径、内部引用、路径参数、六类范围、七种状态及部分正常/异常请求载荷的结构检查；白皮书、统一入口和接口草案做了共同约束的交叉检查。以上结果只覆盖资料和契约的静态内容，<strong>不等于完整 OpenAPI 标准校验、安全审计、浏览器全页面渲染、真实数据库或生产环境测试</strong>。当前仓库、实际部署与当前版本的验收结果仍未核验。</p><p><strong>2026-11-04 补充核验</strong>：本文与白皮书 V1.1 已对照代码仓库 <code>idp-xyz/idp-cmi</code>（ADR-0001 第 6–9 节、<code>api/openapi.yaml</code>、集成与评估测试、CI 记录）逐条核对；接口草案已撤下。核对结论：实现满足两份文档的治理原则，明示的缺口为审批引用的独立核验、按敏感级别的外发策略、包内预算不足 / 缺失原因报告、来源可追溯率与成本度量、密钥轮换与运行手册（部署范畴）。</p>
 </section>
 <section class="chapter" id="chapter-16" data-chapter><div class="chapter-header"><span class="chapter-index">16</span><div><span class="eyebrow">CHAPTER 16</span><h2>交付阶段与优先级</h2></div></div><figure class="diagram"><div class="figure-head"><div><span class="eyebrow">FIGURE 09</span><h4>从现状核验到可运营交付</h4><p>每个阶段都以可追溯的证据检查完成情况。</p></div><span class="figure-glyph" aria-hidden="true">↗</span></div><div class="roadmap"><div><b>G0</b><span>现状核验</span></div><div><b>G1</b><span>安全内核</span></div><div><b>G2</b><span>编译治理</span></div><div><b>G3</b><span>优化检索</span></div><div><b>G4</b><span>运营扩展</span></div></div><figcaption>阶段为建议路径，实际实施顺序和资源由当前代码与业务范围决定。</figcaption></figure>
 <div class="table-wrap" role="region" tabindex="0" aria-label="表格，可横向滚动"><table>
