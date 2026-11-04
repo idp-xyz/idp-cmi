@@ -41,7 +41,7 @@
 <td>不能推断为已实现，也不能推断为不存在</td>
 </tr>
 </tbody></table></div>
-<p><strong>本次资料范围：</strong> 白皮书、历史 RFC、核心规格与技术设计，以及 2026-10-15/16 原型、安全门禁和接口快照。检索可访问的仓库名称未发现明确的 CMI 仓库；其他仓库或部署可能存在后续实现，当前未核验。历史材料集中在单独归档中，入口见第 18 章。</p><p><strong>当前仓库状态（2026-11-04 补充）</strong>：本文第 12–14、16 章原依据 2026-10 月的 Python 原型快照。现在有了真实实现——<code>idp-xyz/idp-cmi</code>（Go），里程碑 M1–M5（ADR-0001 D1–D27）已完成并有 CI 证据，契约 <code>idp.telos.cmi</code> 1.3.0 已登记。凡“历史快照”字样均指被取代的原型；当前能力以仓库内由测试钉住的三份权威件为准：<code>docs/adr/ADR-0001-cmi-design.md</code>（决策与实施结果）、<code>api/openapi.yaml</code>（接口）、<code>docs/eval/</code>（检索评估）。本文不再单独维护一份“现状”，只做入口与原则。</p>
+<p><strong>本次资料范围：</strong> 白皮书、历史 RFC、核心规格与技术设计，以及 2026-10-15/16 原型、安全门禁和接口快照。检索可访问的仓库名称未发现明确的 CMI 仓库；其他仓库或部署可能存在后续实现，当前未核验。历史材料集中在单独归档中，入口见第 18 章。</p><p><strong>当前仓库状态（2026-11-04 补充）</strong>：本文第 12–14、16 章原依据 2026-10 月的 Python 原型快照。现在有了真实实现——<code>idp-xyz/idp-cmi</code>（Go），里程碑 M1–M6（ADR-0001 D1–D31）已完成并有 CI 证据，契约 <code>idp.telos.cmi</code> 1.4.0 已登记。凡“历史快照”字样均指被取代的原型；当前能力以仓库内由测试钉住的三份权威件为准：<code>docs/adr/ADR-0001-cmi-design.md</code>（决策与实施结果）、<code>api/openapi.yaml</code>（接口）、<code>docs/eval/</code>（检索评估）。本文不再单独维护一份“现状”，只做入口与原则。</p>
 <p><strong>阅读顺序：</strong> 管理者先读第 2–5、14、16 章；架构与研发侧重点读第 3、6–13、15–17 章；维护者查看第 17–18 章。图中带“目标”的部分表示设计关系，不代表线上已部署。</p>
 </section>
 <section class="chapter" id="chapter-02" data-chapter><div class="chapter-header"><span class="chapter-index">02</span><div><span class="eyebrow">CHAPTER 02</span><h2>产品定位与责任边界</h2></div></div><h3 id="2-1-CMI-的使命">2.1 CMI 的使命</h3><p>CMI 是可独立部署和调用的企业级上下文与记忆基础设施。它面向授权主体，在有来源、范围、生命周期、权限和可追溯性的前提下，保存与检索可复用的记忆，并按任务组织上下文。它应同时服务个人、团队和企业，而不将某一种界面或某一个智能体框架作为前提。</p>
@@ -164,7 +164,7 @@
 <td>已实现：<code>Erasure</code>（选择器、屏障捕获的目标、各域状态、verified；备份与已交付明文明示不覆盖，D20）</td>
 </tr>
 </tbody></table></div>
-<p><strong>2026-11-04 更新</strong>：状态列已改为当前仓库的实现；对象的字段以契约 <code>idp.telos.cmi</code> 1.3.0 与 <code>api/openapi.yaml</code> 为准。</p>
+<p><strong>2026-11-04 更新</strong>：状态列已改为当前仓库的实现；对象的字段以契约 <code>idp.telos.cmi</code> 1.4.0 与 <code>api/openapi.yaml</code> 为准。</p>
 <p>这是一组概念模型，不是对生产数据库字段和完整 API 的断言。字段名称、是否必填、数据类型、错误码以正式审定的契约和实现版本为准；快照中的精简响应不等于上述完整对象。</p>
 <h3 id="4-2-时间-版本和来源">4.2 时间、版本和来源</h3><ul>
 <li><strong>有效时间</strong>表示内容在业务世界中何时适用；<strong>记录时间</strong>表示系统何时记录该版本。两者不一定相同。时间模型可以支持追溯，但具体一致性语义、并发排序与查询接口须在实现和测试中定义。</li>
@@ -494,7 +494,7 @@
 <tr><td><code>POST /cmi/v1/privacy/erasure-requests</code>、<code>GET /cmi/v1/operations/{id}</code></td><td><code>POST /api/v1/erasures</code>、<code>GET /api/v1/erasures/{id}</code>（各域状态内嵌，无独立操作对象）</td></tr>
 </tbody></table></div>
 <h3 id="12-3-外部接入边界">12.3 外部接入边界</h3><p>HOST 可获取经许可的任务上下文；EER 可将来源或授权上下文用于执行前判断；Workspace 可提供检索与管理界面；MCP Infrastructure 可在批准后接入相应适配器；第三方应用可以调用受控 API。任何接入都必须独立完成认证、授权、来源校验和数据分类，不默认继承调用方在其他系统的全部权限。</p>
-<h3 id="12-4-对齐白皮书的目标契约草案">12.4 契约的权威来源</h3><p>CMI 对外的数据契约是 <code>idp.telos.cmi</code>（当前 1.3.0：ContextPackage、ContextItem、MemoryRecord、Source、KnowledgeDocument、Envelope、Entity、Verification、ItemStatus、AsOf），由 idp-cmi 的 <code>api/contracts/</code> 产出、实现侧一致性测试钉住，并登记在 idp-telos-go 的 <code>idp-contracts/</code>（验证器核对逐字节一致与只增不改）。REST 接口由仓库 <code>api/openapi.yaml</code> 描述。本文早先版本附带的目标设计 OpenAPI 草案（<code>/cmi/v1/…</code>）已撤下，以免与真实接口并存误导。</p><p>下表是服务端对每类请求必须做的判断，均已在实现中落实：</p>
+<h3 id="12-4-对齐白皮书的目标契约草案">12.4 契约的权威来源</h3><p>CMI 对外的数据契约是 <code>idp.telos.cmi</code>（当前 1.4.0：ContextPackage、ContextItem、MemoryRecord、Source、KnowledgeDocument、Envelope、Entity、Verification、ItemStatus、AsOf、Omitted），由 idp-cmi 的 <code>api/contracts/</code> 产出、实现侧一致性测试钉住，并登记在 idp-telos-go 的 <code>idp-contracts/</code>（验证器核对逐字节一致与只增不改）。REST 接口由仓库 <code>api/openapi.yaml</code> 描述。本文早先版本附带的目标设计 OpenAPI 草案（<code>/cmi/v1/…</code>）已撤下，以免与真实接口并存误导。</p><p>下表是服务端对每类请求必须做的判断，均已在实现中落实：</p>
 <div class="table-scroll" role="region" aria-label="表格，可横向滚动" tabindex="0"><table>
 <thead><tr><th>逻辑请求</th><th>服务端的判断（实现）</th></tr></thead>
 <tbody>
@@ -694,7 +694,7 @@
 <p>必须给出数据集规模、基线、计算方法、失败样本、权限策略和置信范围；分母为零时标记不适用，不将其显示为 100%。目标阈值由具体业务和安全负责人确定。</p>
 <h3 id="15-3-运行手册最小内容">15.3 运行手册最小内容</h3><p>记录服务及依赖健康、策略拒绝、来源验证失败、索引滞后、outbox 积压、擦除工单、权限异常及成本；定义报警负责人、分级响应、回滚、备份恢复演练和事件复盘。可用性目标、恢复时间/恢复点目标应根据部署架构和实测商定，不能从原型测试推断。</p>
 <h3 id="15-4-本次文档核验记录">15.4 本次文档核验记录</h3><p>2026-11-04 的整理对照了当前白皮书、统一技术入口、历史核心规格/技术设计和 2026-10-15/16 原型证据。白皮书的 HTML 与 Markdown 做了章节、正文、表格、链接和图示结构核对；统一入口经过正文、目录、链接、图示和字体覆盖检查，并对搜索、导航及打印入口进行了脚本级模拟。</p>
-<p>目标 OpenAPI 草案进行了路径、内部引用、路径参数、六类范围、七种状态及部分正常/异常请求载荷的结构检查；白皮书、统一入口和接口草案做了共同约束的交叉检查。以上结果只覆盖资料和契约的静态内容，<strong>不等于完整 OpenAPI 标准校验、安全审计、浏览器全页面渲染、真实数据库或生产环境测试</strong>。当前仓库、实际部署与当前版本的验收结果仍未核验。</p><p><strong>2026-11-04 补充核验</strong>：本文与白皮书 V1.1 已对照代码仓库 <code>idp-xyz/idp-cmi</code>（ADR-0001 第 6–9 节、<code>api/openapi.yaml</code>、集成与评估测试、CI 记录）逐条核对；接口草案已撤下。核对结论：实现满足两份文档的治理原则，明示的缺口为审批引用的独立核验、按敏感级别的外发策略、包内预算不足 / 缺失原因报告、来源可追溯率与成本度量、密钥轮换与运行手册（部署范畴）。</p>
+<p>目标 OpenAPI 草案进行了路径、内部引用、路径参数、六类范围、七种状态及部分正常/异常请求载荷的结构检查；白皮书、统一入口和接口草案做了共同约束的交叉检查。以上结果只覆盖资料和契约的静态内容，<strong>不等于完整 OpenAPI 标准校验、安全审计、浏览器全页面渲染、真实数据库或生产环境测试</strong>。当前仓库、实际部署与当前版本的验收结果仍未核验。</p><p><strong>2026-11-04 补充核验</strong>：本文与白皮书 V1.1 已对照代码仓库 <code>idp-xyz/idp-cmi</code>（ADR-0001 第 6–9 节、<code>api/openapi.yaml</code>、集成与评估测试、CI 记录）逐条核对；接口草案已撤下。核对结论：实现满足两份文档的治理原则，明示的缺口为审批引用的独立核验、按敏感级别的外发策略、包内预算不足 / 缺失原因报告、来源可追溯率与成本度量、密钥轮换与运行手册（部署范畴）。</p><p><strong>2026-11-04 缺口处置</strong>：其中属于 CMI 本体的四项已作为里程碑 M6 实现（ADR-0001 第 10–11 节）：包以 <code>omitted</code> 报告因预算、标记、候选、存疑、来源排除、相似度下限而未放入的条目数（D28，契约 1.4.0）；租户策略 <code>externalModelCeiling</code> 使高于该级别的内容不送嵌入与整合模型（D29）；配置 <code>authorization.approvals</code> 后审批引用须经审批系统按对象、目标状态与时效核验，策略 <code>requireApproval</code> 可强制接纳候选时带引用（D30）；评估报告来源可追溯率，低于 1.0 即失败（D31）。成本度量、委派在 CMI 内判定、精确标识独立路由、包内 tokenizer 配置不做；密钥轮换、运行手册、备份内擦除与真实 OPA 策略包属于部署与运营。</p>
 </section>
 <section class="chapter" id="chapter-16" data-chapter><div class="chapter-header"><span class="chapter-index">16</span><div><span class="eyebrow">CHAPTER 16</span><h2>交付阶段与优先级</h2></div></div><figure class="diagram"><div class="figure-head"><div><span class="eyebrow">FIGURE 09</span><h4>从现状核验到可运营交付</h4><p>每个阶段都以可追溯的证据检查完成情况。</p></div><span class="figure-glyph" aria-hidden="true">↗</span></div><div class="roadmap"><div><b>G0</b><span>现状核验</span></div><div><b>G1</b><span>安全内核</span></div><div><b>G2</b><span>编译治理</span></div><div><b>G3</b><span>优化检索</span></div><div><b>G4</b><span>运营扩展</span></div></div><figcaption>阶段为建议路径，实际实施顺序和资源由当前代码与业务范围决定。</figcaption></figure>
 <div class="table-wrap" role="region" tabindex="0" aria-label="表格，可横向滚动"><table>
@@ -731,7 +731,7 @@
 <td>安全与运营验收、对接测试及负责人批准</td>
 </tr>
 </tbody></table></div>
-<p><strong>2026-11-04 更新</strong>：G0–G3 的内容已由 idp-cmi 的里程碑 M1–M5 完成（对应：G0、G1 = M1 与 M5 的 D19–D21；G2 = M2 的实体与 M5 的 D22–D24；G3 = M2 的混合检索、M3 的整合与 M5 的 D27）；G4 中的擦除传播与监控已实现，恢复演练、MCP 适配与生产准入未开始。阶段是建议的工作组织，不应被误解为所有功能严格串行；生产要求必须在实际发布前完成。具体时间、人力、预算和生产目标需基于当前代码与业务范围估算。</p>
+<p><strong>2026-11-04 更新</strong>：G0–G3 的内容已由 idp-cmi 的里程碑 M1–M6 完成（对应：G0、G1 = M1、M5 的 D19–D21 与 M6 的 D30；G2 = M2 的实体、M5 的 D22–D24 与 M6 的 D28、D29；G3 = M2 的混合检索、M3 的整合、M5 的 D27 与 M6 的 D31）；G4 中的擦除传播与监控已实现，恢复演练、MCP 适配与生产准入未开始。阶段是建议的工作组织，不应被误解为所有功能严格串行；生产要求必须在实际发布前完成。具体时间、人力、预算和生产目标需基于当前代码与业务范围估算。</p>
 </section>
 <section class="chapter" id="chapter-17" data-chapter><div class="chapter-header"><span class="chapter-index">17</span><div><span class="eyebrow">CHAPTER 17</span><h2>文档治理与持续维护</h2></div></div><h3 id="17-1-一个入口-多种权威来源">17.1 一个入口，多种权威来源</h3><p>本文作为<strong>统一阅读和索引入口</strong>，整合信息并链接证据；它不能单独替代已批准的架构决策、正式 API 契约、实际运行代码或测试报告。事实的权威来源按类型划分，避免一份“总文档”覆盖其他应有证据。</p>
 <div class="table-wrap" role="region" tabindex="0" aria-label="表格，可横向滚动"><table>

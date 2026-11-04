@@ -140,3 +140,18 @@ Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到�
 
 **契约**：D28 进入 `idp.telos.cmi` 1.4.0（ContextPackage 的 `omitted`，新定义 Omitted），只做新增。
 
+
+## 11. M6 实施结果（2026-11-04，WSL 实测）
+
+- D28：解析对每条去重后的候选记录未进包的原因：`budget`（token 或条目数）、`flagged`（`includeFlagged` 关闭时）、`candidate`、`disputed`、`forbidden`（PDP 义务排除来源）、`lowSimilarity`（低于 `SemanticFloor` 的仅向量命中）；全为 0 时不出现 `omitted`。候选、存疑、标记与排除来源以与检索同一查询条件的全文计数得到，ACL、敏感上限与租户隔离过滤掉的不计。
+- D29：策略 `externalModelCeiling`（缺省 internal，迁移 0009）。高于它的记忆与文档在写入时不嵌入；投影 Worker 对其事件直接完成而不调用端点；回填跳过；整合分组不收它们。全文索引照常建立。下调策略在同一事务内清除新上限以上的已存向量；上调后由回填 Worker 补齐。
+- D30：配置 `authorization.approvals`（`url`、`caFile`、`timeout`）。带 `approvalRef` 的转换先请求审批系统，回答须 `valid`、有审批人、`expiresAt` 在未来，且回显的 `recordId` / `to`（若有）与请求一致；否则 409 `APPROVAL_INVALID`，不可达或非 200 为 503 `APPROVAL_UNAVAILABLE`，记录状态不变。审计记 `approvalVerified`、`approvedBy`、`approvalExpiresAt`；未配置审批系统时引用照记，`approvalVerified: false`。策略 `requireApproval`（迁移 0010）使"候选 → active"必须带引用，否则 409 `APPROVAL_REQUIRED`；拒绝（→ revoked）不需要。
+- D31：评估对每个返回条目以同一读者身份反查：记忆回到记录（来源与引用一致、仍 active、来源已登记），知识回到该 URI 的现行文档与存在的 chunk 序号。`docs/eval/` 报告 `traceabilityRate`；lexical 与 hybrid 均为 1.0，低于 1.0 测试失败。
+- 契约 `idp.telos.cmi` 1.4.0（D28 的 `omitted` 与 Omitted 定义）只做新增，已登记到 idp-contracts。D29、D30 只改管理接口与配置，不进契约。
+
+**验证**：单元（含 `internal/approvals` 的有效、拒绝、过期、无时效、对象不符、转换不符、不可达）、契约（1.4.0）、集成（新增 omitted-report、approval-verification、external-model-ceiling 三个场景）、评估集（含可追溯率）全部通过。
+
+**局限（不标 PASS）**
+- 审批只验证了假审批系统；与真实工单或审批平台的对接需按其接口写适配。
+- `externalModelCeiling` 只管 CMI 自己调用的嵌入与整合模型；包交付给 HOST 或 EER 之后送往哪个模型，由它们的策略决定。
+- `omitted` 的计数是全文路径上的近似：仅向量命中的候选、存疑或被标记条目不计入。
