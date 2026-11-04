@@ -82,7 +82,7 @@ type results struct {
 	GeneratedBy string    `json:"generatedBy"`
 }
 
-func scratch(t *testing.T) (*postgres.Store, string) {
+func scratch(t *testing.T) (*postgres.Store, string, string) {
 	t.Helper()
 	base := os.Getenv("IDP_TEST_PG_OWNER_URL")
 	if base == "" {
@@ -126,7 +126,7 @@ func scratch(t *testing.T) (*postgres.Store, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(store.Close)
-	return store, tenant
+	return store, tenant, owner
 }
 
 func TestResolverOnTheLabelledSet(t *testing.T) {
@@ -146,7 +146,7 @@ func TestResolverOnTheLabelledSet(t *testing.T) {
 		name string
 		emb  embedding.Embedder
 	}{{"lexical", nil}, {"hybrid", fake}} {
-		store, tenant := scratch(t)
+		store, tenant, owner := scratch(t)
 		store.Now = func() time.Time { return now }
 		store.Embedder = cfg.emb
 		ctx := context.Background()
@@ -172,6 +172,16 @@ func TestResolverOnTheLabelledSet(t *testing.T) {
 				}
 			}
 		}
+		// documents are dated by the database clock; pin them to the evaluation's clock, or their
+		// freshness (and so the ranking) would depend on the time of day the evaluation runs
+		pin, err := pgx.Connect(ctx, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pin.Exec(ctx, `UPDATE knowledge_documents SET created_at = $1`, now.Add(-48*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		pin.Close(ctx)
 		for _, m := range ds.Memories {
 			kind, id, _ := strings.Cut(m.Scope, ":")
 			rec := cmi.MemoryRecord{Scope: cmi.Scope{Kind: kind, ID: id}, Kind: m.Kind, Content: m.Content, Entities: m.Entities, Sensitivity: cmi.SensitivityInternal,
