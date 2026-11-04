@@ -98,6 +98,8 @@ paths:
       summary: Share a record into a unit explicitly (ADR-0001 D22) - the record's subject or an administrator, who must belong to the unit; a copy with sharedFrom is created, the original is untouched
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [scope], properties: {scope: {type: object, properties: {kind: {type: string, enum: [organization, team, project]}, id: {type: string}}}, reason: {type: string}}}}}}
       responses: {'201': {description: the shared copy}, '403': {$ref: '#/components/responses/Problem'}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}}
+  /api/v1/projections:
+    get: {summary: 'The tenant''s vector projection backlog (ADR-0001 D26): pending outbox events by kind, the age of the oldest, the embedding model; packages carry the lag as projectionLag', responses: {'200': {description: backlog}}}
   /api/v1/erasures:
     post:
       summary: Request an erasure (ADR-0001 D20) by record ids, document ids, provenance ref, subject scope or entity; the read barrier takes effect in this call, the purge of each domain (content, vectors, index, entities, packages, audit) follows asynchronously

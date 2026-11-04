@@ -598,7 +598,8 @@ type Package struct {
 	Purpose       string    `json:"purpose"`
 	Query         string    `json:"query"`
 	Scope         *Scope    `json:"scope,omitempty"`
-	AsOf          *AsOf     `json:"asOf,omitempty"` // the bitemporal view the package was assembled for (D25)
+	AsOf          *AsOf     `json:"asOf,omitempty"`          // the bitemporal view the package was assembled for (D25)
+	ProjectionLag float64   `json:"projectionLag,omitempty"` // seconds the vector projection was behind the canonical rows when assembled (D26); 0 = none
 	Items         []Item    `json:"items"`
 	Budget        Budget    `json:"budget"`
 	AssembledAt   time.Time `json:"assembledAt"`

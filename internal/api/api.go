@@ -446,6 +446,12 @@ func (a *API) Handler() http.Handler {
 		return http.StatusNoContent, nil, a.Store.DeleteUnit(r.Context(), p.Tenant, r.PathValue("kind"), r.PathValue("id"), p.Subject)
 	}, admin))
 
+	// ---- projections (D26): administrators ----
+	mux.Handle("GET /api/v1/projections", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		out, err := a.Store.ProjectionBacklog(r.Context(), p.Tenant)
+		return 200, out, err
+	}, admin))
+
 	// ---- erasure (D20): administrators ----
 	mux.Handle("POST /api/v1/erasures", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		var in postgres.ErasureSelector

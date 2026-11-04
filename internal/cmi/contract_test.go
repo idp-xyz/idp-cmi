@@ -381,6 +381,7 @@ func TestContractRejectsWhatCMIRejects(t *testing.T) {
 		"budget over cap":     {"budget.maxTokens", 64000},
 		"scope bad kind":      {"scope.kind", "squad"},
 		"item bad match":      {"items.0.match", "fuzzy"},
+		"negative lag":        {"projectionLag", -1},
 		"asOf bad time":       {"asOf.valid", "yesterday"},
 		"asOf unknown field":  {"asOf.at", "2026-11-04T00:00:00Z"},
 		"item bad entity":     {"items.1.entities.0.type", "Order"},

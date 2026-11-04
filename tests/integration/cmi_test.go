@@ -1103,6 +1103,59 @@ func TestCMIEndToEnd(t *testing.T) {
 		e.must(422, "GET", "/v1/memory/records?validAt=yesterday", "carol", nil)
 	})
 
+	t.Run("projections", func(t *testing.T) {
+		// D26: vectors are an outbox-driven projection; the backlog is visible and packages carry the lag
+		now := e.now
+		if _, err := e.store.Project(context.Background(), 500); err != nil { // drain what earlier scenarios enqueued
+			t.Fatal(err)
+		}
+		if st := e.must(200, "GET", "/api/v1/projections", "alice", nil); st["pending"] != 0.0 {
+			t.Fatalf("%v", st)
+		}
+		e.must(403, "GET", "/api/v1/projections", "carol", nil)
+		// with the endpoint down, the write succeeds and the event waits
+		e.store.Embedder = nil
+		rec := memory("orders", "order:9901", "subject", "carol", "Collections resume on Monday at the depot.", "internal", now)
+		r := e.must(201, "POST", "/v1/memory/records", "bob", rec)
+		st := e.must(200, "GET", "/api/v1/projections", "alice", nil)
+		if st["pending"] != 1.0 || st["byKind"].(map[string]any)["memory"] != 1.0 {
+			t.Fatalf("%v", st)
+		}
+		pkg := e.must(200, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "collections resume Monday"})
+		if _, ok := pkg["package"].(map[string]any)["projectionLag"]; !ok {
+			t.Fatalf("package does not report the lag: %v", pkg["package"])
+		}
+		// the projection worker catches up; the record is now found semantically ("pickup" ~ "collections")
+		e.store.Embedder = e.embedder
+		if n, err := e.store.Project(context.Background(), 500); err != nil || n != 1 {
+			t.Fatalf("%d %v", n, err)
+		}
+		if st := e.must(200, "GET", "/api/v1/projections", "alice", nil); st["pending"] != 0.0 {
+			t.Fatalf("%v", st)
+		}
+		found := items(e.must(200, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "pickup", "entities": []map[string]any{}, "kinds": []string{"memory"}}))
+		var semantic bool
+		for _, it := range found {
+			if it["id"] == r["recordId"] && it["match"] == "semantic" {
+				semantic = true
+			}
+		}
+		if !semantic {
+			t.Fatalf("projected vector not used: %v", found)
+		}
+		// an event for a row that was revoked meanwhile is processed without a write
+		e.store.Embedder = nil
+		r2 := e.must(201, "POST", "/v1/memory/records", "bob", memory("orders", "order:9902", "subject", "carol", "Transient note.", "internal", now))
+		e.must(200, "POST", "/v1/memory/revoke", "alice", map[string]any{"recordId": r2["recordId"], "reason": "transient"})
+		e.store.Embedder = e.embedder
+		if n, err := e.store.Project(context.Background(), 500); err != nil || n != 1 {
+			t.Fatalf("%d %v", n, err)
+		}
+		if st := e.must(200, "GET", "/api/v1/projections", "alice", nil); st["pending"] != 0.0 {
+			t.Fatalf("%v", st)
+		}
+	})
+
 	t.Run("audit-and-policy", func(t *testing.T) {
 		if n := len(e.must(200, "GET", "/api/v1/audit", "alice", nil)["events"].([]any)); n < 6 {
 			t.Fatalf("audit events %d", n)

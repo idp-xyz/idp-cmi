@@ -172,6 +172,9 @@ func (s *Store) insertMemory(ctx context.Context, tx pgx.Tx, tenant string, in c
 	if err := insertEntities(ctx, tx, tenant, "memory", id, in.Entities); err != nil {
 		return nil, err
 	}
+	if err := enqueueProjection(ctx, tx, tenant, "memory", id, 0, 1, "upsert"); err != nil { // D26
+		return nil, err
+	}
 	if err := Audit(ctx, tx, tenant, by, "memory.create", id, map[string]any{"source": src.Name, "ref": in.Provenance.Ref, "scope": in.Scope, "kind": in.Kind, "sensitivity": in.Sensitivity, "flags": flags, "entities": len(in.Entities)}); err != nil {
 		return nil, err
 	}

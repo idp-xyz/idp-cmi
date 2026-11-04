@@ -293,6 +293,9 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 		pkg.Budget.UsedTokens += c.item.Tokens
 		pkg.Items = append(pkg.Items, c.item)
 	}
+	if lag, err := r.Store.ProjectionLag(ctx, tenant); err == nil && lag > 0 {
+		pkg.ProjectionLag = round4(lag) // D26: the consumer knows the vector index may be behind
+	}
 	pkg.ExpiresAt = now.Add(time.Duration(policy.PackageTTLSeconds) * time.Second).UTC().Truncate(time.Second)
 	env, err := cmi.Seal(pkg)
 	if err != nil {

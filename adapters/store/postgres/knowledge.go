@@ -107,6 +107,9 @@ func (s *Store) CreateDocument(ctx context.Context, tenant string, in cmi.Docume
 			b.Queue(`INSERT INTO knowledge_chunks (tenant_id, document_id, seq, content, search, flags, embedding, embedding_model) VALUES ($1, $2, $3, $4, to_tsvector('simple', $4) || to_tsvector('simple', $5), $6, $7, $8)`,
 				tenant, id, i, c, cmi.Bigrams(c), flags, vec, vecModel)
 		}
+		for i := range chunks { // D26
+			b.Queue(`INSERT INTO projection_events (tenant_id, kind, object_id, seq, version, action) VALUES ($1, 'chunk', $2, $3, 1, 'upsert')`, tenant, id, i)
+		}
 		if err := tx.SendBatch(ctx, b).Close(); err != nil {
 			return err
 		}

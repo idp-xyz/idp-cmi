@@ -212,6 +212,11 @@ func serve(log *slog.Logger) error {
 				case <-ctx.Done():
 					return
 				case <-t.C:
+					if n, err := store.Project(ctx, 200); err != nil && ctx.Err() == nil { // ADR-0001 D26
+						log.Warn("embedding projection failed", "error", err)
+					} else if n > 0 {
+						log.Info("projected events", "events", n, "model", embedder.Model())
+					}
 					if n, err := store.BackfillEmbeddings(ctx, 100); err != nil && ctx.Err() == nil {
 						log.Warn("embedding backfill failed", "error", err)
 					} else if n > 0 {
