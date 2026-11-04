@@ -156,6 +156,11 @@ paths:
     get:
       summary: Read a package back (its requester or an administrator); stale lists the cited items that have since expired, been revoked or superseded
       responses: {'200': {description: 'package, digest, stale, staleItems, expiresAt, redacted (true when erased items'' plaintext was removed from the stored document; the digest is of the sealed original)'}, '404': {$ref: '#/components/responses/Problem'}}
+  /v1/context/packages/{id}/verify:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: 'Verify a package at delivery time (ADR-0001 D24): stale and staleItems as in the read-back, plus every cited item''s current status, version and usability; the package''s validity is not extended. Contract idp.telos.cmi Verification'
+      responses: {'200': {description: verification}, '404': {$ref: '#/components/responses/Problem'}}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}

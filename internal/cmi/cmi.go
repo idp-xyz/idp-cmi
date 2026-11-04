@@ -567,6 +567,28 @@ type Package struct {
 // SchemaVersion of the package document.
 const SchemaVersion = "idp.cmi.package/v1"
 
+// Verification is what a consumer learns about a package at delivery time (D24): whether any item
+// it cites has since been revoked, expired, disputed, superseded or erased, and each item's current
+// status and version. It never extends the package's validity.
+type Verification struct {
+	PackageID  string       `json:"packageId"`
+	Stale      bool         `json:"stale"`
+	StaleItems []string     `json:"staleItems"`
+	Redacted   bool         `json:"redacted"`
+	Items      []ItemStatus `json:"items"`
+	ExpiresAt  time.Time    `json:"expiresAt"`
+	VerifiedAt time.Time    `json:"verifiedAt"`
+}
+
+// ItemStatus is one cited item's current state.
+type ItemStatus struct {
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
+	Status  string `json:"status"` // active | candidate | disputed | superseded | expired | revoked | missing
+	Version int    `json:"version,omitempty"`
+	Usable  bool   `json:"usable"` // active and within validity
+}
+
 // Envelope is a package with its digest.
 type Envelope struct {
 	Digest   string          `json:"digest"`

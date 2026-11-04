@@ -1028,6 +1028,43 @@ func TestCMIEndToEnd(t *testing.T) {
 		mode = "normal"
 	})
 
+	t.Run("verify-at-delivery", func(t *testing.T) {
+		// D24: a consumer re-checks a package before using it; the answer names what went stale
+		now := e.now
+		e.must(201, "POST", "/v1/memory/records", "bob", memory("orders", "order:9101", "subject", "carol", "Carol asked for a Saturday pickup window.", "internal", now))
+		pkg := e.must(200, "POST", "/v1/context/resolve", "carol", map[string]any{"query": "Saturday pickup window", "kinds": []string{"memory"}})
+		id := pkg["packageId"].(string)
+		v := e.must(200, "POST", "/v1/context/packages/"+id+"/verify", "carol", nil)
+		if v["stale"] != false || len(v["staleItems"].([]any)) != 0 || len(v["items"].([]any)) == 0 {
+			t.Fatalf("%v", v)
+		}
+		for _, it := range v["items"].([]any) {
+			if im := it.(map[string]any); im["usable"] != true || im["status"] != "active" || im["version"].(float64) < 1 {
+				t.Fatalf("%v", im)
+			}
+		}
+		e.must(404, "POST", "/v1/context/packages/"+id+"/verify", "dan", nil) // another requester
+		var target string
+		for _, it := range v["items"].([]any) {
+			if im := it.(map[string]any); im["kind"] == "memory" {
+				target = im["id"].(string)
+			}
+		}
+		e.must(200, "POST", "/v1/memory/revoke", "alice", map[string]any{"recordId": target, "reason": "window changed"})
+		v2 := e.must(200, "POST", "/v1/context/packages/"+id+"/verify", "alice", nil) // an administrator may verify any package
+		if v2["stale"] != true || fmt.Sprint(v2["staleItems"]) != fmt.Sprintf("[%s]", target) {
+			t.Fatalf("%v", v2)
+		}
+		for _, it := range v2["items"].([]any) {
+			if im := it.(map[string]any); im["id"] == target && (im["status"] != "revoked" || im["usable"] != false || im["version"] != 2.0) {
+				t.Fatalf("%v", im)
+			}
+		}
+		if v2["expiresAt"] != pkg["package"].(map[string]any)["expiresAt"] {
+			t.Fatalf("verification extended the package: %v vs %v", v2["expiresAt"], pkg["package"].(map[string]any)["expiresAt"])
+		}
+	})
+
 	t.Run("audit-and-policy", func(t *testing.T) {
 		if n := len(e.must(200, "GET", "/api/v1/audit", "alice", nil)["events"].([]any)); n < 6 {
 			t.Fatalf("audit events %d", n)

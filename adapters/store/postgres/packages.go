@@ -87,6 +87,45 @@ func (s *Store) GetPackage(ctx context.Context, tenant, id, requester string) (*
 	return &out, nil
 }
 
+// VerifyPackage reports the current state of every item a package cites (D24). The requester (or
+// an administrator, requester "") may ask; the package's validity is not extended.
+func (s *Store) VerifyPackage(ctx context.Context, tenant, id, requester string) (*cmi.Verification, error) {
+	out := &cmi.Verification{PackageID: id, StaleItems: []string{}, Items: []cmi.ItemStatus{}, VerifiedAt: s.now().UTC().Truncate(time.Second)}
+	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+		var refs []byte
+		if err := tx.QueryRow(ctx, `SELECT item_refs, expires_at, redacted FROM context_packages WHERE id = $1 AND ($2 = '' OR requested_by = $2)`, id, requester).Scan(&refs, &out.ExpiresAt, &out.Redacted); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fail("NOT_FOUND", "package not found")
+			}
+			return err
+		}
+		var items []ItemRef
+		if err := json.Unmarshal(refs, &items); err != nil {
+			return err
+		}
+		for _, it := range items {
+			st := cmi.ItemStatus{Kind: it.Kind, ID: it.ID, Status: "missing"}
+			var err error
+			if it.Kind == cmi.ItemMemory {
+				err = tx.QueryRow(ctx, `SELECT status, version, status = 'active' AND (valid_until IS NULL OR valid_until > now()) AND erasure_id IS NULL FROM memory_records WHERE id = $1`, it.ID).Scan(&st.Status, &st.Version, &st.Usable)
+			} else {
+				err = tx.QueryRow(ctx, `SELECT status, revision, status = 'active' AND (valid_until IS NULL OR valid_until > now()) AND erasure_id IS NULL FROM knowledge_documents WHERE id = $1`, it.ID).Scan(&st.Status, &st.Version, &st.Usable)
+			}
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			if !st.Usable {
+				out.Stale = true
+				out.StaleItems = append(out.StaleItems, it.ID)
+			}
+			out.Items = append(out.Items, st)
+		}
+		out.ExpiresAt = out.ExpiresAt.UTC()
+		return nil
+	})
+	return out, err
+}
+
 // Sweep marks records and documents past their validity as expired (D6). It runs across tenants
 // under the sweeper policy and returns how many rows changed.
 func (s *Store) Sweep(ctx context.Context) (int, error) {

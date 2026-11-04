@@ -703,6 +703,15 @@ func (a *API) Handler() http.Handler {
 		return 200, map[string]any{"packageId": r.PathValue("id"), "digest": out.Envelope.Digest, "package": out.Envelope.Document, "stale": out.Stale, "staleItems": out.StaleIDs, "expiresAt": out.ExpiredAt, "redacted": out.Redacted}, nil
 	}, reader, writer))
 
+	mux.Handle("POST /v1/context/packages/{id}/verify", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		requester := p.Subject
+		if p.Has(admin) {
+			requester = ""
+		}
+		out, err := a.Store.VerifyPackage(r.Context(), p.Tenant, r.PathValue("id"), requester)
+		return 200, out, err
+	}, reader, writer))
+
 	var h http.Handler = a.authenticate(mux)
 	if a.Metrics != nil {
 		h = observability.HTTPMetrics(a.Metrics, "idp_cmi", h)

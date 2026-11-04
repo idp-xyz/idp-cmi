@@ -82,7 +82,7 @@ func (k *contract) schema(def string) *jsonschema.Schema {
 	return s
 }
 
-var roots = map[string]bool{"ContextPackage": true, "MemoryRecord": true, "Source": true, "KnowledgeDocument": true, "Envelope": true}
+var roots = map[string]bool{"ContextPackage": true, "MemoryRecord": true, "Source": true, "KnowledgeDocument": true, "Envelope": true, "Verification": true}
 
 func (k *contract) validate(def string, raw []byte) error {
 	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
@@ -195,8 +195,14 @@ func buildExamples(t *testing.T) []byte {
 	for _, d := range exampleDocuments() {
 		add("KnowledgeDocument", d)
 	}
+	add("Verification", cmi.Verification{PackageID: "3f2a9c1e-0000-4000-8000-000000000010", Stale: true, StaleItems: []string{"6c7d8e9f-0000-4000-8000-000000000030"}, Redacted: false,
+		Items: []cmi.ItemStatus{{Kind: cmi.ItemKnowledge, ID: "5b6c7d8e-0000-4000-8000-000000000020", Status: cmi.StatusActive, Version: 1, Usable: true},
+			{Kind: cmi.ItemMemory, ID: "6c7d8e9f-0000-4000-8000-000000000030", Status: cmi.StatusRevoked, Version: 2, Usable: false},
+			{Kind: cmi.ItemMemory, ID: "7d8e9fa0-0000-4000-8000-000000000040", Status: cmi.StatusActive, Version: 1, Usable: true},
+			{Kind: cmi.ItemMemory, ID: "c3d4e5f6-0000-4000-8000-000000000058", Status: cmi.StatusActive, Version: 1, Usable: true}},
+		ExpiresAt: at.Add(time.Hour), VerifiedAt: at.Add(30 * time.Minute)})
 	b, err := json.MarshalIndent(examplesFile{
-		Description: "idp.telos.cmi 1.0.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
+		Description: "idp.telos.cmi 1.2.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
 		GeneratedBy: "go test ./internal/cmi -run TestContract -update",
 		Examples:    out,
 	}, "", "  ")
@@ -291,7 +297,8 @@ func TestContractFieldsMatchGo(t *testing.T) {
 		return out
 	}
 	closed := map[string]any{"ContextPackage": cmi.Package{}, "ContextItem": cmi.Item{}, "Scope": cmi.Scope{}, "Budget": cmi.Budget{}, "Provenance": cmi.Provenance{}, "ACL": cmi.ACL{},
-		"Validity": cmi.Validity{}, "Revocation": cmi.Revocation{}, "MemoryRecord": cmi.MemoryRecord{}, "Source": cmi.Source{}, "KnowledgeDocument": cmi.Document{}, "Envelope": cmi.Envelope{}, "Entity": cmi.Entity{}}
+		"Validity": cmi.Validity{}, "Revocation": cmi.Revocation{}, "MemoryRecord": cmi.MemoryRecord{}, "Source": cmi.Source{}, "KnowledgeDocument": cmi.Document{}, "Envelope": cmi.Envelope{}, "Entity": cmi.Entity{},
+		"Verification": cmi.Verification{}, "ItemStatus": cmi.ItemStatus{}}
 	for def, zero := range closed {
 		d, ok := defs[def].(map[string]any)
 		if !ok {
