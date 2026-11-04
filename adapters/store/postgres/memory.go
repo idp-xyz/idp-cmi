@@ -14,7 +14,7 @@ import (
 
 const memoryCols = `m.id::text, s.name, m.scope_kind, m.scope_id, m.kind, m.content, m.structured, m.tags, m.prov_ref, m.prov_observed_at, m.prov_recorded_by,
 	m.valid_from, m.valid_until, m.status, m.revoked_at, coalesce(m.revoked_by, ''), coalesce(m.revoked_reason, ''), m.sensitivity, m.acl_subjects, m.acl_roles, m.created_at,
-	m.flags, ` + "(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'memory' AND e.object_id = m.id)"
+	m.flags, m.version, ` + "(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'memory' AND e.object_id = m.id)"
 
 func scanMemory(row pgx.Row) (*cmi.MemoryRecord, error) {
 	var m cmi.MemoryRecord
@@ -22,7 +22,7 @@ func scanMemory(row pgx.Row) (*cmi.MemoryRecord, error) {
 	var validUntil, revokedAt *time.Time
 	var revokedBy, revokedReason, entities string
 	if err := row.Scan(&m.ID, &m.Provenance.Source, &m.Scope.Kind, &m.Scope.ID, &m.Kind, &m.Content, &structured, &m.Tags, &m.Provenance.Ref, &m.Provenance.ObservedAt, &m.Provenance.RecordedBy,
-		&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &entities); err != nil {
+		&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &m.Version, &entities); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fail("NOT_FOUND", "memory record not found")
 		}
@@ -175,13 +175,16 @@ func (s *Store) ListMemory(ctx context.Context, tenant string, scope cmi.Scope, 
 
 // RevokeMemory withdraws records by id or by provenance reference (D6). It returns how many were
 // revoked. A writer may revoke what it recorded itself; an administrator anything.
-func (s *Store) RevokeMemory(ctx context.Context, tenant, id, ref, by, reason string, admin bool) (int, error) {
+func (s *Store) RevokeMemory(ctx context.Context, tenant, id, ref, by, reason string, admin bool, ifMatch int) (int, error) {
 	if (id == "") == (ref == "") {
 		return 0, fail("INVALID", "give either recordId or ref")
 	}
+	if ifMatch != 0 && id == "" {
+		return 0, fail("INVALID", "If-Match applies to a single recordId")
+	}
 	n := 0
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		q := `UPDATE memory_records SET status = 'revoked', revoked_at = now(), revoked_by = $1, revoked_reason = $2 WHERE status <> 'revoked'`
+		q := `UPDATE memory_records SET status = 'revoked', revoked_at = now(), revoked_by = $1, revoked_reason = $2, version = version + 1 WHERE status <> 'revoked'`
 		args := []any{by, reason}
 		if id != "" {
 			q += ` AND id = $3`
@@ -193,12 +196,22 @@ func (s *Store) RevokeMemory(ctx context.Context, tenant, id, ref, by, reason st
 		if !admin {
 			q += ` AND created_by = $1`
 		}
+		if ifMatch != 0 {
+			q += ` AND version = $4`
+			args = append(args, ifMatch)
+		}
 		tag, err := tx.Exec(ctx, q, args...)
 		if err != nil {
 			return err
 		}
 		n = int(tag.RowsAffected())
 		if n == 0 && id != "" {
+			if ifMatch != 0 {
+				var current int
+				if err := tx.QueryRow(ctx, `SELECT version FROM memory_records WHERE id = $1`, id).Scan(&current); err == nil && current != ifMatch {
+					return fail("CONFLICT", "record %s is at version %d, not %d", id, current, ifMatch)
+				}
+			}
 			return fail("NOT_FOUND", "no revocable record %s for this principal", id)
 		}
 		return Audit(ctx, tx, tenant, by, "memory.revoke", id, map[string]any{"ref": ref, "reason": reason, "records": n})
@@ -244,7 +257,7 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 			var r float64
 			m := &h.Record
 			if err := rows.Scan(&m.ID, &m.Provenance.Source, &m.Scope.Kind, &m.Scope.ID, &m.Kind, &m.Content, &structured, &m.Tags, &m.Provenance.Ref, &m.Provenance.ObservedAt, &m.Provenance.RecordedBy,
-				&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &entities, &r, &h.Trust); err != nil {
+				&m.Validity.ValidFrom, &validUntil, &m.Status, &revokedAt, &revokedBy, &revokedReason, &m.Sensitivity, &m.ACL.Subjects, &m.ACL.Roles, &m.CreatedAt, &m.Flags, &m.Version, &entities, &r, &h.Trust); err != nil {
 				return err
 			}
 			if validUntil != nil {

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:idp:telos:cmi:1.1.0",
-  "title": "idp.telos.cmi 1.1.0",
-  "description": "idp-cmi（Context, Memory & Knowledge Infrastructure）对外发布的契约：ContextPackage（解析上下文得到的不可变、内容寻址的包，ADR-0001 D5）、ContextItem、MemoryRecord（记忆记录，D3）、Source（来源，D2）、KnowledgeDocument（知识文档的元数据，D4）、Envelope（包加摘要）、Entity（显式的业务对象引用，D13）。1.1.0 相对 1.0.0 只做新增：MemoryRecord 与 KnowledgeDocument 的 entities 与 flags（D12 写入时扫描的标记）、ContextItem 的 entities / match（D11 混合检索的命中方式）/ flags。生产者是 idp-cmi，权威副本在 idp-cmi/api/contracts/，由 go test ./internal/cmi -run TestContract 保证与实现一致；idp-contracts 中的副本只能与之逐字节相同。JSON Schema 只描述形状与可本地判定的规则；摘要是否匹配由 cmi.Open 判定，可见性与时效由 CMI 的查询判定。",
+  "$id": "urn:idp:telos:cmi:1.2.0",
+  "title": "idp.telos.cmi 1.2.0",
+  "description": "idp-cmi（Context, Memory & Knowledge Infrastructure）对外发布的契约：ContextPackage（解析上下文得到的不可变、内容寻址的包，ADR-0001 D5）、ContextItem、MemoryRecord（记忆记录，D3）、Source（来源，D2）、KnowledgeDocument（知识文档的元数据，D4）、Envelope（包加摘要）、Entity（显式的业务对象引用，D13）。1.1.0 相对 1.0.0 只做新增：MemoryRecord 与 KnowledgeDocument 的 entities 与 flags（D12 写入时扫描的标记）、ContextItem 的 entities / match（D11 混合检索的命中方式）/ flags。生产者是 idp-cmi，权威副本在 idp-cmi/api/contracts/，由 go test ./internal/cmi -run TestContract 保证与实现一致；idp-contracts 中的副本只能与之逐字节相同。JSON Schema 只描述形状与可本地判定的规则；摘要是否匹配由 cmi.Open 判定，可见性与时效由 CMI 的查询判定。 1.2.0 相对 1.1.0 只做新增（M5）：MemoryRecord 的 version 与 KnowledgeDocument 的 revision（D19 预期版本）。",
   "oneOf": [
     {
       "$ref": "#/$defs/ContextPackage"
@@ -437,6 +437,11 @@
             "pattern": "^injection:[a-z_]+$"
           },
           "description": "写入时扫描的标记（D12）；由 CMI 设置，写入者给的被忽略。有标记的内容默认不进上下文包"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "每次状态变化加一；撤销与转换以 If-Match 指明期望的版本（D19）"
         }
       }
     },
@@ -602,6 +607,11 @@
             "pattern": "^injection:[a-z_]+$"
           },
           "description": "其 chunk 写入时扫描标记的并集（D12）；被标记的 chunk 不进上下文包，其余 chunk 照常"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "该文档行每次状态变化加一（D19）；version 是同一 URI 的第几版"
         }
       }
     },

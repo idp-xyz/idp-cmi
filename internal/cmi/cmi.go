@@ -239,6 +239,7 @@ type MemoryRecord struct {
 	ACL         ACL             `json:"acl"`
 	Entities    []Entity        `json:"entities,omitempty"` // business objects the record refers to (D13)
 	Flags       []string        `json:"flags,omitempty"`    // write-time scan findings (D12); set by the CMI, never by the writer
+	Version     int             `json:"version,omitempty"`  // bumped by every state change; If-Match names the expected one (D19)
 	CreatedAt   time.Time       `json:"createdAt"`
 }
 
@@ -299,6 +300,9 @@ func (m *MemoryRecord) Validate() error {
 			return fmt.Errorf("flag %q is not a scan finding", f)
 		}
 	}
+	if m.Version < 0 {
+		return errors.New("version must be positive")
+	}
 	return m.ACL.Validate()
 }
 
@@ -343,6 +347,7 @@ type Document struct {
 	ACL           ACL         `json:"acl"`
 	Entities      []Entity    `json:"entities,omitempty"` // business objects the document refers to (D13)
 	Flags         []string    `json:"flags,omitempty"`    // union of its chunks' write-time scan findings (D12)
+	Revision      int         `json:"revision,omitempty"` // bumped by every state change of this document row (D19); version is the URI's
 	Revocation    *Revocation `json:"revocation,omitempty"`
 	CreatedBy     string      `json:"createdBy"`
 	CreatedAt     time.Time   `json:"createdAt"`

@@ -195,7 +195,8 @@
         "validity": {
           "validFrom": "2026-11-04T08:00:00Z",
           "validUntil": "2027-02-02T09:00:00Z"
-        }
+        },
+        "version": 1
       }
     },
     {
@@ -229,7 +230,8 @@
         "tags": [],
         "validity": {
           "validFrom": "2026-11-04T09:00:00Z"
-        }
+        },
+        "version": 2
       }
     },
     {
@@ -302,6 +304,7 @@
             "type": "service"
           }
         ],
+        "revision": 1,
         "sensitivity": "internal",
         "source": "handbook",
         "status": "active",
@@ -324,6 +327,7 @@
         "createdAt": "2026-11-01T09:00:00Z",
         "createdBy": "alice",
         "documentId": "b1c2d3e4-0000-4000-8000-000000000080",
+        "revision": 2,
         "revocation": {
           "at": "2026-11-04T09:00:00Z",
           "by": "alice",

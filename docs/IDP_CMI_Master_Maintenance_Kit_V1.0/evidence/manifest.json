@@ -1,0 +1,66 @@
+{
+  "source_archive": "IDP_CMI_PR03_1_Database_Security_Gate_V0.1.zip",
+  "source_archive_sha256": "b3f52f63d9509edb837a5a105fd9e4b5c9e27052b088207460587fc876075a48",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "695cb73002a7a992ce3f10b3fb279e663436645518b598dbe7ed618468b7e37c",
+      "size_bytes": 324
+    },
+    {
+      "path": "api/implemented.openapi.json",
+      "sha256": "c12d718e2e39c963932337c927a92e8253f3b2de2492ad2d7fae07ef8e7a731d",
+      "size_bytes": 16736
+    },
+    {
+      "path": "contracts/authorization-context.schema.json",
+      "sha256": "f39f0ce89537877c70ed9c07726f0caf449750cf62e9b9d3cbc4f487c21111ab",
+      "size_bytes": 2699
+    },
+    {
+      "path": "contracts/context-bundle.schema.json",
+      "sha256": "af3d92d2252791372750e50a6fa13e5fe56d5c1840eba3304c25699a337c2503",
+      "size_bytes": 7551
+    },
+    {
+      "path": "contracts/design_openapi.yaml",
+      "sha256": "e18b2f63dd3daf4a9c353a8f02e4c10ec155552401287fa879a06f3de1f84857",
+      "size_bytes": 16660
+    },
+    {
+      "path": "contracts/erasure-tombstone.schema.json",
+      "sha256": "1dd58e11daec39ca13a6ac465c01ad93ac6909a5ab3994ae68eb61427cfceb80",
+      "size_bytes": 1148
+    },
+    {
+      "path": "contracts/lifecycle-transition.schema.json",
+      "sha256": "9abd5927c639761308e21349621aa31560265ba9daa41ad3174efb1f9bef1a79",
+      "size_bytes": 2015
+    },
+    {
+      "path": "contracts/memory-record.schema.json",
+      "sha256": "cf76c210102842758394ba60077f8a1dda19ba312d080157d1a383db392c6ca2",
+      "size_bytes": 5637
+    },
+    {
+      "path": "contracts/source-record.schema.json",
+      "sha256": "d25be4f988224300cce87215f1d21babd6368e87db986f22bff0bf8e9726ed51",
+      "size_bytes": 3121
+    },
+    {
+      "path": "docs/PR03_1_GATE.md",
+      "sha256": "ab250c611ecfbbf7f3a794d99f0f2042ec9250f415de85b930b560b395ef71f1",
+      "size_bytes": 3139
+    },
+    {
+      "path": "docs/QA_REPORT.md",
+      "sha256": "e31f4b952f2b0c1f90e250ed7841276e7967a8a1d5383ecb6c03142ebf32793b",
+      "size_bytes": 987
+    },
+    {
+      "path": "docs/contract_deltas.md",
+      "sha256": "cc39445c75414079e85fd4621f1129cac692b7754ae8e176981106226521e83c",
+      "size_bytes": 1809
+    }
+  ]
+}

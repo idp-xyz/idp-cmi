@@ -144,7 +144,13 @@ func newEnv(t *testing.T) *env {
 	return e
 }
 
-func (e *env) call(method, path, who string, body any) (int, map[string]any) {
+func (e *env) call(method, path, who string, body any, headers ...string) (int, map[string]any) {
+	e.t.Helper()
+	st, out, _ := e.callH(method, path, who, body, headers...)
+	return st, out
+}
+
+func (e *env) callH(method, path, who string, body any, headers ...string) (int, map[string]any, http.Header) {
 	e.t.Helper()
 	var rd io.Reader
 	if body != nil {
@@ -154,6 +160,9 @@ func (e *env) call(method, path, who string, body any) (int, map[string]any) {
 	req, _ := http.NewRequest(method, e.api.URL+path, rd)
 	req.Header.Set("Authorization", "Bearer "+e.tokens[who])
 	req.Header.Set("Content-Type", "application/json")
+	for i := 0; i+1 < len(headers); i += 2 {
+		req.Header.Set(headers[i], headers[i+1])
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		e.t.Fatal(err)
@@ -166,12 +175,12 @@ func (e *env) call(method, path, who string, body any) (int, map[string]any) {
 			e.t.Fatalf("%s %s: %d non-JSON body %s", method, path, resp.StatusCode, raw)
 		}
 	}
-	return resp.StatusCode, out
+	return resp.StatusCode, out, resp.Header
 }
 
-func (e *env) must(status int, method, path, who string, body any) map[string]any {
+func (e *env) must(status int, method, path, who string, body any, headers ...string) map[string]any {
 	e.t.Helper()
-	st, out := e.call(method, path, who, body)
+	st, out := e.call(method, path, who, body, headers...)
 	if st != status {
 		e.t.Fatalf("%s %s as %s: want %d, got %d %v", method, path, who, status, st, out)
 	}
@@ -678,6 +687,53 @@ func TestCMIEndToEnd(t *testing.T) {
 		}
 		if n := len(e.must(200, "GET", "/api/v1/evaluations", "erin", nil)["evaluations"].([]any)); n != 0 {
 			t.Fatalf("evaluations leaked: %d", n)
+		}
+	})
+
+	t.Run("idempotency-and-versions", func(t *testing.T) {
+		// D19: the same key with the same request replays; with another request it conflicts
+		now := e.now
+		rec := memory("orders", "order:5001", "subject", "carol", "Carol asked for an invoice copy.", "internal", now)
+		first := e.must(201, "POST", "/v1/memory/records", "bob", rec, "Idempotency-Key", "k-5001")
+		st, again, hdr := e.callH("POST", "/v1/memory/records", "bob", rec, "Idempotency-Key", "k-5001")
+		if st != 200 || again["recordId"] != first["recordId"] || hdr.Get("Idempotent-Replayed") != "true" {
+			t.Fatalf("%d %v %v", st, again, hdr)
+		}
+		other := memory("orders", "order:5002", "subject", "carol", "Something else.", "internal", now)
+		e.must(409, "POST", "/v1/memory/records", "bob", other, "Idempotency-Key", "k-5001")
+		e.must(422, "POST", "/v1/memory/records", "bob", other, "Idempotency-Key", "bad key!")
+		// another writer's identical key is its own
+		e.must(201, "POST", "/v1/memory/records", "alice", other, "Idempotency-Key", "k-5001")
+		if n := len(e.must(200, "GET", "/v1/memory/records?scopeKind=subject&scopeId=carol", "alice", nil)["records"].([]any)); n < 2 {
+			t.Fatalf("%d records", n)
+		}
+		// versions: a fresh record is at 1; revoking with the wrong If-Match conflicts, the right one succeeds and bumps it
+		id := first["recordId"].(string)
+		if first["version"] != 1.0 {
+			t.Fatalf("%v", first["version"])
+		}
+		e.must(409, "POST", "/v1/memory/revoke", "bob", map[string]any{"recordId": id}, "If-Match", "7")
+		e.must(422, "POST", "/v1/memory/revoke", "bob", map[string]any{"recordId": id}, "If-Match", "x")
+		e.must(422, "POST", "/v1/memory/revoke", "bob", map[string]any{"ref": "order:5001"}, "If-Match", "1")
+		if n := e.must(200, "POST", "/v1/memory/revoke", "bob", map[string]any{"recordId": id}, "If-Match", "1")["revoked"]; n != 1.0 {
+			t.Fatalf("%v", n)
+		}
+		if got := e.must(200, "GET", "/v1/memory/records/"+id, "carol", nil); got["status"] != "revoked" || got["version"] != 2.0 {
+			t.Fatalf("%v", got)
+		}
+		// documents: idempotent indexing and revision-guarded revocation
+		doc := map[string]any{"source": "handbook", "uri": "handbook://keys", "title": "Keys", "sensitivity": "internal", "acl": map[string]any{}, "text": "Keys are issued at the depot desk."}
+		d1 := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", doc, "Idempotency-Key", "doc-keys")
+		if d2 := e.must(200, "POST", "/api/v1/knowledge/documents", "alice", doc, "Idempotency-Key", "doc-keys"); d2["documentId"] != d1["documentId"] || d1["revision"] != 1.0 {
+			t.Fatalf("%v %v", d1, d2)
+		}
+		if n := len(e.must(200, "GET", "/api/v1/knowledge/documents", "alice", nil)["documents"].([]any)); n == 0 {
+			t.Fatal("no documents")
+		}
+		did := d1["documentId"].(string)
+		e.must(409, "DELETE", "/api/v1/knowledge/documents/"+did, "alice", nil, "If-Match", "3")
+		if got := e.must(200, "DELETE", "/api/v1/knowledge/documents/"+did, "alice", nil, "If-Match", "1"); got["status"] != "revoked" || got["revision"] != 2.0 {
+			t.Fatalf("%v", got)
 		}
 	})
 

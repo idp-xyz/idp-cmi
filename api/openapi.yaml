@@ -34,7 +34,8 @@ paths:
     get: {summary: Get a source by id or name, responses: {'200': {description: source}, '404': {$ref: '#/components/responses/Problem'}}}
   /api/v1/knowledge/documents:
     post:
-      summary: Index a knowledge document (ADR-0001 D4); a new version of the same uri supersedes the active one
+      summary: Index a knowledge document (ADR-0001 D4); a new version of the same uri supersedes the active one. Idempotency-Key (D19) makes retries safe
+      parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
       requestBody: {required: true, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/Document'}, {type: object, required: [text], properties: {text: {type: string}}}]}}}}
       responses: {'201': {description: indexed, content: {application/json: {schema: {$ref: '#/components/schemas/Document'}}}}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
     get: {summary: List documents (newest first), responses: {'200': {description: documents}}}
@@ -42,8 +43,8 @@ paths:
     parameters: [{$ref: '#/components/parameters/id'}]
     get: {summary: Get a document's metadata, responses: {'200': {description: document}, '404': {$ref: '#/components/responses/Problem'}}}
     delete:
-      summary: Revoke a document (ADR-0001 D6); it leaves retrieval and packages citing it read as stale
-      parameters: [{name: reason, in: query, schema: {type: string}}]
+      summary: Revoke a document (ADR-0001 D6); it leaves retrieval and packages citing it read as stale. If-Match (D19) names the expected revision
+      parameters: [{name: reason, in: query, schema: {type: string}}, {$ref: '#/components/parameters/ifMatch'}]
       responses: {'200': {description: revoked}, '404': {$ref: '#/components/responses/Problem'}}
   /api/v1/policy:
     get: {summary: The tenant's policy (sensitivity ceilings per role, default memory TTL, package TTL), responses: {'200': {description: policy, content: {application/json: {schema: {$ref: '#/components/schemas/Policy'}}}}}}
@@ -90,7 +91,8 @@ paths:
     get: {summary: One evaluation with its evidence, responses: {'200': {description: evaluation}, '404': {$ref: '#/components/responses/Problem'}}}
   /v1/memory/records:
     post:
-      summary: Append a memory record (ADR-0001 D3); provenance and a registered source are required, the writer's ceiling bounds the sensitivity
+      summary: Append a memory record (ADR-0001 D3); provenance and a registered source are required, the writer's ceiling bounds the sensitivity. Idempotency-Key (D19) makes retries safe
+      parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}
       responses: {'201': {description: recorded, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}, '403': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
     get:
@@ -102,7 +104,8 @@ paths:
     get: {summary: Get a record the caller may see (any status), responses: {'200': {description: record}, '404': {$ref: '#/components/responses/Problem'}}}
   /v1/memory/revoke:
     post:
-      summary: Revoke records by id or by provenance reference (ADR-0001 D6); a writer revokes what it recorded, an administrator anything
+      summary: Revoke records by id or by provenance reference (ADR-0001 D6); a writer revokes what it recorded, an administrator anything. If-Match (D19) names the expected version of the single record
+      parameters: [{$ref: '#/components/parameters/ifMatch'}]
       requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {recordId: {type: string}, ref: {type: string}, reason: {type: string}}}}}}
       responses: {'200': {description: how many records were revoked}, '404': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
   /v1/entities/{type}/{id}:
@@ -125,6 +128,8 @@ components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
   parameters:
+    idempotencyKey: {name: Idempotency-Key, in: header, schema: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,128}$'}, description: 'the same key with the same request replays the first answer (200, Idempotent-Replayed: true); with another request it is a 409 (ADR-0001 D19). Keys are kept 24 hours'}
+    ifMatch: {name: If-Match, in: header, schema: {type: integer, minimum: 1}, description: 'the version (records) or revision (documents) the caller expects; 409 when it moved (ADR-0001 D19)'}
     ref: {name: ref, in: path, required: true, schema: {type: string}, description: id or name}
     id: {name: id, in: path, required: true, schema: {type: string}}
   responses:
@@ -155,6 +160,7 @@ components:
         acl: {type: object, properties: {subjects: {type: array, items: {type: string}}, roles: {type: array, items: {type: string}}}}
         entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}, description: business objects the record refers to (ADR-0001 D13)}
         flags: {type: array, items: {type: string}, readOnly: true, description: 'write-time scan findings (ADR-0001 D12), e.g. injection:instruction_override; flagged records stay out of packages unless the policy includes them'}
+        version: {type: integer, readOnly: true, description: bumped by every state change (ADR-0001 D19)}
         createdAt: {type: string, format: date-time}
     Entity:
       type: object
@@ -164,7 +170,7 @@ components:
       description: contract idp.telos.cmi KnowledgeDocument (metadata; the text is indexed, not returned)
       type: object
       required: [source, uri, title, sensitivity]
-      properties: {documentId: {type: string}, source: {type: string}, uri: {type: string}, title: {type: string}, version: {type: integer}, contentSha256: {type: string}, byteSize: {type: integer}, chunkCount: {type: integer}, status: {type: string, enum: [active, superseded, revoked, expired]}, validUntil: {type: string, format: date-time}, sensitivity: {type: string, enum: [public, internal, confidential, restricted]}, acl: {type: object}, revocation: {type: object}, createdBy: {type: string}, createdAt: {type: string, format: date-time}, entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}}, flags: {type: array, items: {type: string}, readOnly: true}}
+      properties: {documentId: {type: string}, source: {type: string}, uri: {type: string}, title: {type: string}, version: {type: integer}, contentSha256: {type: string}, byteSize: {type: integer}, chunkCount: {type: integer}, status: {type: string, enum: [active, superseded, revoked, expired]}, validUntil: {type: string, format: date-time}, sensitivity: {type: string, enum: [public, internal, confidential, restricted]}, acl: {type: object}, revocation: {type: object}, createdBy: {type: string}, createdAt: {type: string, format: date-time}, entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}}, flags: {type: array, items: {type: string}, readOnly: true}, revision: {type: integer, readOnly: true}}
     Connector:
       type: object
       required: [source, name, kind, config]

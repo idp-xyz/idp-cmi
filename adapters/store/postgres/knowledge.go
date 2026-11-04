@@ -12,7 +12,7 @@ import (
 )
 
 const docCols = `d.id::text, s.name, d.uri, d.title, d.version, d.content_sha256, d.byte_size, d.chunk_count, d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles,
-	d.revoked_at, coalesce(d.revoked_by, ''), coalesce(d.revoked_reason, ''), d.created_by, d.created_at, d.flags, ` +
+	d.revoked_at, coalesce(d.revoked_by, ''), coalesce(d.revoked_reason, ''), d.created_by, d.created_at, d.flags, d.revision, ` +
 	"(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'knowledge' AND e.object_id = d.id)"
 
 func scanDoc(row pgx.Row) (*cmi.Document, error) {
@@ -20,7 +20,7 @@ func scanDoc(row pgx.Row) (*cmi.Document, error) {
 	var validUntil, revokedAt *time.Time
 	var revokedBy, revokedReason, entities string
 	if err := row.Scan(&d.ID, &d.Source, &d.URI, &d.Title, &d.Version, &d.ContentSHA256, &d.ByteSize, &d.ChunkCount, &d.Status, &validUntil, &d.Sensitivity, &d.ACL.Subjects, &d.ACL.Roles,
-		&revokedAt, &revokedBy, &revokedReason, &d.CreatedBy, &d.CreatedAt, &d.Flags, &entities); err != nil {
+		&revokedAt, &revokedBy, &revokedReason, &d.CreatedBy, &d.CreatedAt, &d.Flags, &d.Revision, &entities); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fail("NOT_FOUND", "document not found")
 		}
@@ -81,7 +81,7 @@ func (s *Store) CreateDocument(ctx context.Context, tenant string, in cmi.Docume
 		if err := tx.QueryRow(ctx, `SELECT coalesce(max(version), 0) + 1 FROM knowledge_documents WHERE uri = $1`, in.URI).Scan(&version); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status = 'superseded' WHERE uri = $1 AND status = 'active'`, in.URI); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status = 'superseded', revision = revision + 1 WHERE uri = $1 AND status = 'active'`, in.URI); err != nil {
 			return err
 		}
 		var validUntil any
@@ -157,14 +157,21 @@ func (s *Store) ListDocuments(ctx context.Context, tenant string, limit int) ([]
 }
 
 // RevokeDocument withdraws a document (D6): it leaves retrieval, packages citing it read as stale.
-func (s *Store) RevokeDocument(ctx context.Context, tenant, id, by, reason string) (*cmi.Document, error) {
+func (s *Store) RevokeDocument(ctx context.Context, tenant, id, by, reason string, ifMatch int) (*cmi.Document, error) {
 	var out *cmi.Document
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status = 'revoked', revoked_at = now(), revoked_by = $2, revoked_reason = $3 WHERE id = $1 AND status IN ('active', 'superseded')`, id, by, reason)
+		tag, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status = 'revoked', revoked_at = now(), revoked_by = $2, revoked_reason = $3, revision = revision + 1
+			WHERE id = $1 AND status IN ('active', 'superseded') AND ($4 = 0 OR revision = $4)`, id, by, reason, ifMatch)
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
+			if ifMatch != 0 {
+				var current int
+				if err := tx.QueryRow(ctx, `SELECT revision FROM knowledge_documents WHERE id = $1`, id).Scan(&current); err == nil && current != ifMatch {
+					return fail("CONFLICT", "document %s is at revision %d, not %d", id, current, ifMatch)
+				}
+			}
 			return fail("NOT_FOUND", "no revocable document %s", id)
 		}
 		if err := Audit(ctx, tx, tenant, by, "knowledge.revoke", id, map[string]any{"reason": reason}); err != nil {
@@ -217,7 +224,7 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 			var revokedBy, revokedReason, entities string
 			var r float64
 			if err := rows.Scan(&d.ID, &d.Source, &d.URI, &d.Title, &d.Version, &d.ContentSHA256, &d.ByteSize, &d.ChunkCount, &d.Status, &validUntil, &d.Sensitivity, &d.ACL.Subjects, &d.ACL.Roles,
-				&revokedAt, &revokedBy, &revokedReason, &d.CreatedBy, &d.CreatedAt, &d.Flags, &entities, &h.Seq, &h.Content, &h.Flags, &r, &h.Trust); err != nil {
+				&revokedAt, &revokedBy, &revokedReason, &d.CreatedBy, &d.CreatedAt, &d.Flags, &d.Revision, &entities, &h.Seq, &h.Content, &h.Flags, &r, &h.Trust); err != nil {
 				return err
 			}
 			if validUntil != nil {

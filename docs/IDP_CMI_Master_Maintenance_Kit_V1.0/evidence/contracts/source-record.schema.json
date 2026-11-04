@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.idp.example/cmi/v1/source-record.schema.json",
+  "title": "Source Record",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256
+    },
+    "source_system": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_object_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_type": {
+      "type": "string",
+      "enum": [
+        "event",
+        "document",
+        "conversation",
+        "api_snapshot",
+        "human_attestation"
+      ]
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "content_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-fA-F0-9]{64}$"
+    },
+    "hash_canonicalization": {
+      "type": "string",
+      "minLength": 1
+    },
+    "content_location": {
+      "type": "string",
+      "minLength": 1
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ]
+    },
+    "source_trust": {
+      "type": "string",
+      "enum": [
+        "authoritative_domain",
+        "verified_document",
+        "internal_observation",
+        "user_statement",
+        "external_untrusted"
+      ]
+    },
+    "authority_scope": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "type": "string",
+          "minLength": 1
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_type": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "system",
+        "domain",
+        "object_type"
+      ]
+    },
+    "access_policy_ref": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256
+    },
+    "retention_policy_ref": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "available",
+        "restricted",
+        "revoked"
+      ]
+    },
+    "source_etag": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trace_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "source_id",
+    "tenant_id",
+    "source_system",
+    "source_object_key",
+    "source_revision",
+    "source_type",
+    "captured_at",
+    "recorded_at",
+    "content_hash",
+    "hash_canonicalization",
+    "content_location",
+    "classification",
+    "source_trust",
+    "authority_scope",
+    "access_policy_ref",
+    "retention_policy_ref",
+    "status"
+  ]
+}

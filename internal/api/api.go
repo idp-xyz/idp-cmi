@@ -4,12 +4,17 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"idp-cmi/adapters/identity"
@@ -83,6 +88,61 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 
 type handler func(r *http.Request, p authorization.Principal) (int, any, error)
 
+// withHeaders is a body with response headers (idempotent replays say so).
+type withHeaders struct {
+	body    any
+	headers map[string]string
+}
+
+// ifMatch reads the expected version from If-Match (D19); 0 when absent.
+func ifMatch(r *http.Request) (int, error) {
+	v := strings.Trim(strings.TrimSpace(r.Header.Get("If-Match")), `"`)
+	if v == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 0, transport.Fail(http.StatusUnprocessableEntity, "INVALID", "If-Match must be a positive version number")
+	}
+	return n, nil
+}
+
+// idempotent runs write under the request's Idempotency-Key when there is one (D19). The request
+// hash covers the path and the raw body, so a replay with another body is a conflict.
+func (a *API) idempotent(r *http.Request, p authorization.Principal, raw []byte, write func() (int, any, error)) (int, any, error) {
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if key == "" {
+		return write()
+	}
+	sum := sha256.Sum256(append([]byte(r.Method+" "+r.URL.Path+"\n"), raw...))
+	status, body, replayed, err := a.Store.Idempotent(r.Context(), p.Tenant, p.Subject, key, hex.EncodeToString(sum[:]), write)
+	if err != nil {
+		return 0, nil, err
+	}
+	if replayed {
+		return http.StatusOK, &withHeaders{body: body, headers: map[string]string{"Idempotent-Replayed": "true"}}, nil
+	}
+	return status, body, nil
+}
+
+// readBody reads a bounded JSON body once (so it can be hashed and decoded).
+func readBody(r *http.Request) ([]byte, error) {
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, MaxBody))
+	if err != nil {
+		return nil, transport.Fail(http.StatusBadRequest, "BAD_REQUEST", "body unreadable: "+err.Error())
+	}
+	return raw, nil
+}
+
+func decodeRaw(raw []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return transport.Fail(http.StatusBadRequest, "BAD_REQUEST", "invalid JSON body: "+err.Error())
+	}
+	return nil
+}
+
 // role requires one of the roles; an administrator may do everything.
 func (a *API) role(h handler, roles ...string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +161,12 @@ func (a *API) role(h handler, roles ...string) http.HandlerFunc {
 		if err != nil {
 			a.writeError(w, r, err)
 			return
+		}
+		if wh, ok := body.(*withHeaders); ok {
+			for k, v := range wh.headers {
+				w.Header().Set(k, v)
+			}
+			body = wh.body
 		}
 		if body == nil {
 			w.WriteHeader(status)
@@ -197,15 +263,21 @@ func (a *API) Handler() http.Handler {
 		return 200, out, err
 	}, admin, writer, reader))
 	mux.Handle("POST /api/v1/knowledge/documents", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		raw, err := readBody(r)
+		if err != nil {
+			return 0, nil, err
+		}
 		var in struct {
 			cmi.Document
 			Text string `json:"text"`
 		}
-		if err := decode(r, &in); err != nil {
+		if err := decodeRaw(raw, &in); err != nil {
 			return 0, nil, err
 		}
-		out, err := a.Store.CreateDocument(r.Context(), p.Tenant, in.Document, in.Text, p.Subject)
-		return http.StatusCreated, out, err
+		return a.idempotent(r, p, raw, func() (int, any, error) {
+			out, err := a.Store.CreateDocument(r.Context(), p.Tenant, in.Document, in.Text, p.Subject)
+			return http.StatusCreated, out, err
+		})
 	}, admin))
 	mux.Handle("GET /api/v1/knowledge/documents", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -217,7 +289,11 @@ func (a *API) Handler() http.Handler {
 		return 200, out, err
 	}, admin))
 	mux.Handle("DELETE /api/v1/knowledge/documents/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
-		out, err := a.Store.RevokeDocument(r.Context(), p.Tenant, r.PathValue("id"), p.Subject, r.URL.Query().Get("reason"))
+		expected, err := ifMatch(r)
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.RevokeDocument(r.Context(), p.Tenant, r.PathValue("id"), p.Subject, r.URL.Query().Get("reason"), expected)
 		return 200, out, err
 	}, admin))
 	mux.Handle("GET /api/v1/policy", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
@@ -326,16 +402,22 @@ func (a *API) Handler() http.Handler {
 
 	// ---- memory (writers) ----
 	mux.Handle("POST /v1/memory/records", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		raw, err := readBody(r)
+		if err != nil {
+			return 0, nil, err
+		}
 		var in cmi.MemoryRecord
-		if err := decode(r, &in); err != nil {
+		if err := decodeRaw(raw, &in); err != nil {
 			return 0, nil, err
 		}
 		v, err := a.visibility(r.Context(), p)
 		if err != nil {
 			return 0, nil, err
 		}
-		out, err := a.Store.CreateMemory(r.Context(), p.Tenant, in, p.Subject, v.Ceiling)
-		return http.StatusCreated, out, err
+		return a.idempotent(r, p, raw, func() (int, any, error) {
+			out, err := a.Store.CreateMemory(r.Context(), p.Tenant, in, p.Subject, v.Ceiling)
+			return http.StatusCreated, out, err
+		})
 	}, writer))
 	mux.Handle("GET /v1/memory/records/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		v, err := a.visibility(r.Context(), p)
@@ -377,7 +459,11 @@ func (a *API) Handler() http.Handler {
 		if err := decode(r, &in); err != nil {
 			return 0, nil, err
 		}
-		n, err := a.Store.RevokeMemory(r.Context(), p.Tenant, in.RecordID, in.Ref, p.Subject, in.Reason, p.Has(admin))
+		expected, err := ifMatch(r)
+		if err != nil {
+			return 0, nil, err
+		}
+		n, err := a.Store.RevokeMemory(r.Context(), p.Tenant, in.RecordID, in.Ref, p.Subject, in.Reason, p.Has(admin), expected)
 		return 200, map[string]any{"revoked": n}, err
 	}, writer))
 

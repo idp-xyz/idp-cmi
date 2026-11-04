@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.idp.example/cmi/v1/lifecycle-transition.schema.json",
+  "title": "Lifecycle Transition",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "operation_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256
+    },
+    "expected_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "target_status": {
+      "type": "string",
+      "enum": [
+        "candidate",
+        "quarantined",
+        "active",
+        "disputed",
+        "superseded",
+        "expired",
+        "revoked",
+        "erased"
+      ]
+    },
+    "reason_code": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256
+    },
+    "reason_detail_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 256
+          },
+          "source_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "content_hash": {
+            "type": "string",
+            "pattern": "^sha256:[a-fA-F0-9]{64}$"
+          },
+          "content_span": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "source_id",
+          "source_revision"
+        ]
+      }
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "approval_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "operation_id",
+    "expected_revision",
+    "target_status",
+    "reason_code",
+    "reason_detail_ref",
+    "evidence_refs",
+    "requested_at",
+    "approval_ref"
+  ]
+}

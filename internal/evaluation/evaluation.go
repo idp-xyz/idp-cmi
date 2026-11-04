@@ -66,7 +66,7 @@ func (s *Suite) Run(ctx context.Context, tenant, by string) (*postgres.Evaluatio
 	var written []string
 	defer func() { // probes never outlive the run
 		for _, id := range written {
-			_, _ = s.Store.RevokeMemory(context.WithoutCancel(ctx), tenant, id, "", RecordedBy, "evaluation probe", true)
+			_, _ = s.Store.RevokeMemory(context.WithoutCancel(ctx), tenant, id, "", RecordedBy, "evaluation probe", true, 0)
 		}
 	}()
 	write := func(source, content, sensitivity string, acl cmi.ACL, validity cmi.Validity) (string, error) {
@@ -131,7 +131,7 @@ func (s *Suite) Run(ctx context.Context, tenant, by string) (*postgres.Evaluatio
 	}
 	add("authoritative_before_informational", has(pkg, authID) && has(pkg, agentID) && first == authID, fmt.Sprintf("package %s items=%s", pkg.ID, itemIDs(pkg)))
 	// 3. revocation propagation: the package goes stale, a new resolve no longer has the record
-	if _, err := s.Store.RevokeMemory(ctx, tenant, authID, "", RecordedBy, "evaluation: revocation check", true); err != nil {
+	if _, err := s.Store.RevokeMemory(ctx, tenant, authID, "", RecordedBy, "evaluation: revocation check", true, 0); err != nil {
 		return nil, err
 	}
 	stored, err := s.Store.GetPackage(ctx, tenant, pkg.ID, "")

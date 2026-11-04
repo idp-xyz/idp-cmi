@@ -94,12 +94,16 @@ func (s *Store) Sweep(ctx context.Context) (int, error) {
 		if _, err := tx.Exec(ctx, `SELECT set_config('app.role', 'sweeper', true)`); err != nil {
 			return err
 		}
-		a, err := tx.Exec(ctx, `UPDATE memory_records SET status = 'expired' WHERE status = 'active' AND valid_until IS NOT NULL AND valid_until <= now()`)
+		a, err := tx.Exec(ctx, `UPDATE memory_records SET status = 'expired', version = version + 1 WHERE status = 'active' AND valid_until IS NOT NULL AND valid_until <= now()`)
 		if err != nil {
 			return err
 		}
-		b, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status = 'expired' WHERE status = 'active' AND valid_until IS NOT NULL AND valid_until <= now()`)
+		b, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status = 'expired', revision = revision + 1 WHERE status = 'active' AND valid_until IS NOT NULL AND valid_until <= now()`)
 		if err != nil {
+			return err
+		}
+		// idempotency keys outlive their use by a day (D19)
+		if _, err := tx.Exec(ctx, `DELETE FROM idempotency_keys WHERE created_at < now() - interval '24 hours'`); err != nil {
 			return err
 		}
 		n = int(a.RowsAffected() + b.RowsAffected())
