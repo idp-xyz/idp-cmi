@@ -1177,6 +1177,67 @@ func TestCMIEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("external-model-ceiling", func(t *testing.T) {
+		// D29: confidential content never reaches the embedding or consolidation model
+		now := e.now
+		count := func(where string, args ...any) int {
+			var n int
+			if err := e.store.InTenant(context.Background(), e.tenantA, func(tx pgx.Tx) error {
+				return tx.QueryRow(context.Background(), `SELECT count(*) FROM memory_records m WHERE `+where, args...).Scan(&n)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			return n
+		}
+		conf := memory("orders", "secret:1", "subject", "carol", "Confidential: the acquisition closes in March.", "confidential", now)
+		conf["acl"] = map[string]any{"roles": []string{"finance"}}
+		c := e.must(201, "POST", "/v1/memory/records", "bob", conf)
+		if _, err := e.store.Project(context.Background(), 500); err != nil {
+			t.Fatal(err)
+		}
+		if n := count(`m.id = $1 AND m.embedding IS NOT NULL`, c["recordId"]); n != 0 {
+			t.Fatal("confidential record was embedded")
+		}
+		if st := e.must(200, "GET", "/api/v1/projections", "alice", nil); st["pending"] != 0.0 {
+			t.Fatalf("event left pending: %v", st)
+		}
+		if n, err := e.store.BackfillEmbeddings(context.Background(), 500); err != nil || n != 0 {
+			t.Fatalf("backfill embedded above the ceiling: %d %v", n, err)
+		}
+		// it stays in the full-text index
+		if n := count(`m.id = $1 AND m.search @@ to_tsquery('simple', 'acquisition')`, c["recordId"]); n != 1 {
+			t.Fatal("confidential record not indexed lexically")
+		}
+		// five confidential episodic notes never form a consolidation group
+		for i := 0; i < 5; i++ {
+			m := memory("assistant", fmt.Sprintf("secret:ep:%d", i), "thread", "thr-sec", fmt.Sprintf("Board note %d about the acquisition.", i), "confidential", now)
+			m["kind"] = "episodic"
+			e.must(201, "POST", "/v1/memory/records", "bob", m)
+		}
+		if sum := e.must(200, "POST", "/api/v1/memory/consolidate", "alice", map[string]any{"scope": map[string]any{"kind": "thread", "id": "thr-sec"}}); sum["groups"] != 0.0 {
+			t.Fatalf("confidential notes consolidated: %v", sum)
+		}
+		// lowering the ceiling to public removes existing internal vectors; raising it lets the backfill restore them
+		before := count(`m.sensitivity = 'internal' AND m.embedding IS NOT NULL`)
+		if before == 0 {
+			t.Fatal("no internal vectors to begin with")
+		}
+		e.must(200, "PUT", "/api/v1/policy", "alice", map[string]any{"readerCeiling": "internal", "writerCeiling": "confidential", "defaultMemoryTtlDays": 0, "packageTtlSeconds": 3600, "externalModelCeiling": "public"})
+		if n := count(`m.sensitivity = 'internal' AND m.embedding IS NOT NULL`); n != 0 {
+			t.Fatalf("%d internal vectors survived the lower ceiling", n)
+		}
+		e.must(200, "PUT", "/api/v1/policy", "alice", map[string]any{"readerCeiling": "internal", "writerCeiling": "confidential", "defaultMemoryTtlDays": 0, "packageTtlSeconds": 3600, "externalModelCeiling": "internal"})
+		if n, err := e.store.BackfillEmbeddings(context.Background(), 500); err != nil || n == 0 {
+			t.Fatalf("backfill after raising the ceiling: %d %v", n, err)
+		}
+		if n := count(`m.sensitivity = 'internal' AND m.embedding IS NOT NULL`); n == 0 {
+			t.Fatal("internal vectors not restored")
+		}
+		if pol := e.must(200, "GET", "/api/v1/policy", "alice", nil); pol["externalModelCeiling"] != "internal" {
+			t.Fatalf("%v", pol)
+		}
+	})
+
 	t.Run("audit-and-policy", func(t *testing.T) {
 		if n := len(e.must(200, "GET", "/api/v1/audit", "alice", nil)["events"].([]any)); n < 6 {
 			t.Fatalf("audit events %d", n)

@@ -70,7 +70,11 @@ func (s *Store) CreateDocument(ctx context.Context, tenant string, in cmi.Docume
 		docFlags = []string{}
 	}
 	in.Entities = cmi.SortEntities(in.Entities)
-	vecs, model := s.embed(ctx, chunks)
+	var vecs [][]float32
+	var model string
+	if pol, err := s.GetPolicy(ctx, tenant); err == nil && cmi.Within(in.Sensitivity, pol.ExternalModelCeiling) { // D29
+		vecs, model = s.embed(ctx, chunks)
+	}
 	var out *cmi.Document
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		src, err := getSource(ctx, tx, in.Source)

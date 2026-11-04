@@ -136,10 +136,11 @@ func (s *Store) insertMemory(ctx context.Context, tx pgx.Tx, tenant string, in c
 	if len(in.Structured) > 0 {
 		structured = []byte(in.Structured)
 	}
-	vecs, model := s.embed(ctx, []string{in.Content})
 	var vec, vecModel any
-	if vecs != nil {
-		vec, vecModel = vecs[0], model
+	if cmi.Within(in.Sensitivity, policy.ExternalModelCeiling) { // D29: above the ceiling nothing goes to the embedding endpoint
+		if vecs, model := s.embed(ctx, []string{in.Content}); vecs != nil {
+			vec, vecModel = vecs[0], model
+		}
 	}
 	flags := in.Flags
 	if flags == nil {

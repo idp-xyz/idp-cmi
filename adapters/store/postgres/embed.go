@@ -28,7 +28,9 @@ func (s *Store) BackfillEmbeddings(ctx context.Context, limit int) (int, error) 
 			text string
 		}
 		var mem, chunks []row
-		rows, err := tx.Query(ctx, `SELECT id::text, content FROM memory_records WHERE status = 'active' AND (embedding IS NULL OR embedding_model IS DISTINCT FROM $1) ORDER BY created_at LIMIT $2`, model, limit)
+		ceiling := sensitivityRankSQL("coalesce(tp.external_model_ceiling, 'internal')")
+		rows, err := tx.Query(ctx, `SELECT m.id::text, m.content FROM memory_records m LEFT JOIN tenant_policies tp ON tp.tenant_id = m.tenant_id
+			WHERE m.status = 'active' AND m.erasure_id IS NULL AND (m.embedding IS NULL OR m.embedding_model IS DISTINCT FROM $1) AND `+sensitivityRankSQL("m.sensitivity")+` <= `+ceiling+` ORDER BY m.created_at LIMIT $2`, model, limit)
 		if err != nil {
 			return err
 		}
@@ -44,8 +46,8 @@ func (s *Store) BackfillEmbeddings(ctx context.Context, limit int) (int, error) 
 		if err := rows.Err(); err != nil {
 			return err
 		}
-		rows, err = tx.Query(ctx, `SELECT c.document_id::text, c.seq, c.content FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id
-			WHERE d.status = 'active' AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM $1) ORDER BY d.created_at, c.seq LIMIT $2`, model, limit-len(mem))
+		rows, err = tx.Query(ctx, `SELECT c.document_id::text, c.seq, c.content FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id LEFT JOIN tenant_policies tp ON tp.tenant_id = d.tenant_id
+			WHERE d.status = 'active' AND d.erasure_id IS NULL AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM $1) AND `+sensitivityRankSQL("d.sensitivity")+` <= `+ceiling+` ORDER BY d.created_at, c.seq LIMIT $2`, model, limit-len(mem))
 		if err != nil {
 			return err
 		}

@@ -106,17 +106,18 @@ type Policy struct {
 	ConsolidateMinRecords   int       `json:"consolidateMinRecords"`   // D15: episodic records a group needs before it is distilled (default 5)
 	ConsolidatedTTLDays     int       `json:"consolidatedTtlDays"`     // D15: validity of distilled statements (default 90)
 	ConsolidatedAsCandidate bool      `json:"consolidatedAsCandidate"` // D21: distilled statements wait for an administrator\'s admission
+	ExternalModelCeiling    string    `json:"externalModelCeiling"`    // D29: content above this level never reaches an external model (no vectors, no consolidation)
 	UpdatedBy               string    `json:"updatedBy,omitempty"`
 	UpdatedAt               time.Time `json:"updatedAt,omitzero"`
 	Default                 bool      `json:"default"`
 }
 
 // DefaultPolicy applies to tenants without a stored policy.
-var DefaultPolicy = Policy{ReaderCeiling: cmi.SensitivityInternal, WriterCeiling: cmi.SensitivityConfidential, PackageTTLSeconds: 3600, ConsolidateMinRecords: 5, ConsolidatedTTLDays: 90, Default: true}
+var DefaultPolicy = Policy{ReaderCeiling: cmi.SensitivityInternal, WriterCeiling: cmi.SensitivityConfidential, PackageTTLSeconds: 3600, ConsolidateMinRecords: 5, ConsolidatedTTLDays: 90, ExternalModelCeiling: cmi.SensitivityInternal, Default: true}
 
 // Validate checks a policy.
 func (p Policy) Validate() error {
-	if !cmi.ValidSensitivity(p.ReaderCeiling) || !cmi.ValidSensitivity(p.WriterCeiling) {
+	if !cmi.ValidSensitivity(p.ReaderCeiling) || !cmi.ValidSensitivity(p.WriterCeiling) || !cmi.ValidSensitivity(p.ExternalModelCeiling) {
 		return fail("INVALID", "ceilings must be public, internal, confidential or restricted")
 	}
 	if p.DefaultMemoryTTLDays < 0 || p.DefaultMemoryTTLDays > 3650 || p.PackageTTLSeconds < 60 || p.PackageTTLSeconds > 604800 {
@@ -131,8 +132,8 @@ func (p Policy) Validate() error {
 func policyOf(ctx context.Context, tx pgx.Tx, tenant string) (Policy, error) {
 	var p Policy
 	var by *string
-	err := tx.QueryRow(ctx, `SELECT reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, include_flagged, consolidate_min_records, consolidated_ttl_days, consolidated_as_candidate, updated_by, updated_at FROM tenant_policies WHERE tenant_id = $1`, tenant).
-		Scan(&p.ReaderCeiling, &p.WriterCeiling, &p.DefaultMemoryTTLDays, &p.PackageTTLSeconds, &p.IncludeFlagged, &p.ConsolidateMinRecords, &p.ConsolidatedTTLDays, &p.ConsolidatedAsCandidate, &by, &p.UpdatedAt)
+	err := tx.QueryRow(ctx, `SELECT reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, include_flagged, consolidate_min_records, consolidated_ttl_days, consolidated_as_candidate, external_model_ceiling, updated_by, updated_at FROM tenant_policies WHERE tenant_id = $1`, tenant).
+		Scan(&p.ReaderCeiling, &p.WriterCeiling, &p.DefaultMemoryTTLDays, &p.PackageTTLSeconds, &p.IncludeFlagged, &p.ConsolidateMinRecords, &p.ConsolidatedTTLDays, &p.ConsolidatedAsCandidate, &p.ExternalModelCeiling, &by, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DefaultPolicy, nil
 	}
@@ -163,20 +164,30 @@ func (s *Store) SetPolicy(ctx context.Context, tenant string, p Policy, by strin
 	if p.ConsolidatedTTLDays == 0 {
 		p.ConsolidatedTTLDays = DefaultPolicy.ConsolidatedTTLDays
 	}
+	if p.ExternalModelCeiling == "" {
+		p.ExternalModelCeiling = DefaultPolicy.ExternalModelCeiling
+	}
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
 	var out Policy
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `INSERT INTO tenant_policies (tenant_id, reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, include_flagged, consolidate_min_records, consolidated_ttl_days, consolidated_as_candidate, updated_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		if _, err := tx.Exec(ctx, `INSERT INTO tenant_policies (tenant_id, reader_ceiling, writer_ceiling, default_memory_ttl_days, package_ttl_seconds, include_flagged, consolidate_min_records, consolidated_ttl_days, consolidated_as_candidate, external_model_ceiling, updated_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 			ON CONFLICT (tenant_id) DO UPDATE SET reader_ceiling = EXCLUDED.reader_ceiling, writer_ceiling = EXCLUDED.writer_ceiling, default_memory_ttl_days = EXCLUDED.default_memory_ttl_days,
 			  package_ttl_seconds = EXCLUDED.package_ttl_seconds, include_flagged = EXCLUDED.include_flagged, consolidate_min_records = EXCLUDED.consolidate_min_records,
-			  consolidated_ttl_days = EXCLUDED.consolidated_ttl_days, consolidated_as_candidate = EXCLUDED.consolidated_as_candidate, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-			tenant, p.ReaderCeiling, p.WriterCeiling, p.DefaultMemoryTTLDays, p.PackageTTLSeconds, p.IncludeFlagged, p.ConsolidateMinRecords, p.ConsolidatedTTLDays, p.ConsolidatedAsCandidate, by); err != nil {
+			  consolidated_ttl_days = EXCLUDED.consolidated_ttl_days, consolidated_as_candidate = EXCLUDED.consolidated_as_candidate, external_model_ceiling = EXCLUDED.external_model_ceiling, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+			tenant, p.ReaderCeiling, p.WriterCeiling, p.DefaultMemoryTTLDays, p.PackageTTLSeconds, p.IncludeFlagged, p.ConsolidateMinRecords, p.ConsolidatedTTLDays, p.ConsolidatedAsCandidate, p.ExternalModelCeiling, by); err != nil {
 			return err
 		}
 		if err := Audit(ctx, tx, tenant, by, "policy.set", "", p); err != nil {
+			return err
+		}
+		// D29: vectors of content now above the external-model ceiling are removed
+		if _, err := tx.Exec(ctx, `UPDATE memory_records SET embedding = NULL, embedding_model = NULL WHERE embedding IS NOT NULL AND `+sensitivityRankSQL("sensitivity")+` > `+sensitivityRankSQL("$1"), p.ExternalModelCeiling); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE knowledge_chunks c SET embedding = NULL, embedding_model = NULL FROM knowledge_documents d WHERE d.id = c.document_id AND c.embedding IS NOT NULL AND `+sensitivityRankSQL("d.sensitivity")+` > `+sensitivityRankSQL("$1"), p.ExternalModelCeiling); err != nil {
 			return err
 		}
 		var err error
@@ -184,4 +195,9 @@ func (s *Store) SetPolicy(ctx context.Context, tenant string, p Policy, by strin
 		return err
 	})
 	return &out, err
+}
+
+// sensitivityRankSQL ranks a level expression in SQL (public 0 … restricted 3).
+func sensitivityRankSQL(expr string) string {
+	return `(CASE ` + expr + ` WHEN 'public' THEN 0 WHEN 'internal' THEN 1 WHEN 'confidential' THEN 2 ELSE 3 END)`
 }

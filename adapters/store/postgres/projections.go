@@ -119,10 +119,14 @@ func (s *Store) Project(ctx context.Context, limit int) (int, error) {
 			var current int
 			var active bool
 			var err error
+			// D29: content above the tenant's external-model ceiling is never embedded; the event is done
+			ceiling := sensitivityRankSQL("coalesce(tp.external_model_ceiling, 'internal')")
 			if e.kind == "memory" {
-				err = tx.QueryRow(ctx, `SELECT content, version, status = 'active' AND erasure_id IS NULL FROM memory_records WHERE id = $1`, e.objectID).Scan(&text, &current, &active)
+				err = tx.QueryRow(ctx, `SELECT m.content, m.version, m.status = 'active' AND m.erasure_id IS NULL AND `+sensitivityRankSQL("m.sensitivity")+` <= `+ceiling+`
+					FROM memory_records m LEFT JOIN tenant_policies tp ON tp.tenant_id = m.tenant_id WHERE m.id = $1`, e.objectID).Scan(&text, &current, &active)
 			} else {
-				err = tx.QueryRow(ctx, `SELECT c.content, d.revision, d.status = 'active' AND d.erasure_id IS NULL FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id WHERE c.document_id = $1 AND c.seq = $2`, e.objectID, e.seq).Scan(&text, &current, &active)
+				err = tx.QueryRow(ctx, `SELECT c.content, d.revision, d.status = 'active' AND d.erasure_id IS NULL AND `+sensitivityRankSQL("d.sensitivity")+` <= `+ceiling+`
+					FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id LEFT JOIN tenant_policies tp ON tp.tenant_id = d.tenant_id WHERE c.document_id = $1 AND c.seq = $2`, e.objectID, e.seq).Scan(&text, &current, &active)
 			}
 			if err != nil || !active || current != e.version {
 				continue // gone, superseded by a newer version, or no longer active: nothing to project

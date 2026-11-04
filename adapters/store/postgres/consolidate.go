@@ -47,10 +47,14 @@ func (s *Store) ConsolidationGroups(ctx context.Context, tenant string, minRecor
 		if scope != nil {
 			kind, id = scope.Kind, scope.ID
 		}
+		policy, err := policyOf(ctx, tx, tenant)
+		if err != nil {
+			return err
+		}
 		rows, err := tx.Query(ctx, `SELECT scope_kind, scope_id, sensitivity, acl_subjects, acl_roles FROM memory_records
 			WHERE kind = 'episodic' AND status = 'active' AND consolidation_id IS NULL AND (valid_until IS NULL OR valid_until > now()) AND cardinality(flags) = 0
-			  AND ($2 = '' OR (scope_kind = $2 AND scope_id = $3))
-			GROUP BY scope_kind, scope_id, sensitivity, acl_subjects, acl_roles HAVING count(*) >= $1 ORDER BY min(created_at)`, minRecords, kind, id)
+			  AND ($2 = '' OR (scope_kind = $2 AND scope_id = $3)) AND `+sensitivityRankSQL("sensitivity")+` <= `+sensitivityRankSQL("$4")+`
+			GROUP BY scope_kind, scope_id, sensitivity, acl_subjects, acl_roles HAVING count(*) >= $1 ORDER BY min(created_at)`, minRecords, kind, id, policy.ExternalModelCeiling)
 		if err != nil {
 			return err
 		}
