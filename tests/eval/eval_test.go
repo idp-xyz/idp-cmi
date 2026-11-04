@@ -1,6 +1,7 @@
 // Package eval measures the resolver on a labelled set (ADR-0001 D27): Recall@k, Precision@k and
 // nDCG@k of lexical retrieval alone and of the hybrid retriever, plus the counts that matter for
-// governance - forbidden items (revoked, expired, flagged) returned, and duplicates. It runs against
+// governance - forbidden items (revoked, expired, flagged) returned, duplicates, and the share of
+// returned items that trace back to an accessible source at the version served (D31). It runs against
 // a real PostgreSQL (make test-eval) and keeps its results under docs/eval; -update regenerates them,
 // a plain run fails when the committed results no longer match the measurement.
 package eval
@@ -68,6 +69,9 @@ type Metrics struct {
 	ForbiddenReturns int      `json:"forbiddenReturned"`
 	Duplicates       int      `json:"duplicateItems"`
 	EmptyPackages    int      `json:"emptyPackages"`
+	ItemsReturned    int      `json:"itemsReturned"`
+	Traceable        int      `json:"traceableItems"`
+	TraceabilityRate float64  `json:"traceabilityRate"`
 	Misses           []string `json:"misses"`
 }
 
@@ -219,6 +223,14 @@ func TestResolverOnTheLabelledSet(t *testing.T) {
 			for _, f := range q.Forbidden {
 				forbidden[f] = true
 			}
+			for _, it := range pkg.Items {
+				m.ItemsReturned++
+				if why := trace(ctx, store, tenant, v, it); why != "" {
+					t.Errorf("%s %s: item %s (%s) is not traceable: %s", cfg.name, q.ID, it.ID, refOf[it.ID], why)
+				} else {
+					m.Traceable++
+				}
+			}
 			seen := map[string]bool{}
 			hits, dcg := 0, 0.0
 			for i, it := range pkg.Items {
@@ -264,6 +276,9 @@ func TestResolverOnTheLabelledSet(t *testing.T) {
 			}
 		}
 		m.RecallAtK, m.PrecisionAtK, m.NDCGAtK = round(recall/float64(scored)), round(precision/float64(scored)), round(ndcg/float64(scored))
+		if m.ItemsReturned > 0 {
+			m.TraceabilityRate = round(float64(m.Traceable) / float64(m.ItemsReturned))
+		}
 		out.Baselines = append(out.Baselines, m)
 	}
 	// governance properties hold in every configuration; the hybrid retriever must not be worse
@@ -273,6 +288,9 @@ func TestResolverOnTheLabelledSet(t *testing.T) {
 		}
 		if m.Duplicates != 0 {
 			t.Errorf("%s: %d duplicate items", m.Configuration, m.Duplicates)
+		}
+		if m.TraceabilityRate != 1 {
+			t.Errorf("%s: traceability %.4f, want 1 (D31)", m.Configuration, m.TraceabilityRate)
 		}
 	}
 	lex, hyb := out.Baselines[0], out.Baselines[1]
@@ -302,13 +320,56 @@ func TestResolverOnTheLabelledSet(t *testing.T) {
 
 func round(f float64) float64 { return math.Round(f*10000) / 10000 }
 
+// trace follows a returned item back to its origin as its reader could (D31): a memory item to the
+// record (same source and reference, still active, readable by the same principal) and a registered
+// source; a knowledge item to the active document of that URI and an existing chunk of it. It returns
+// why the item does not trace, or "".
+func trace(ctx context.Context, store *postgres.Store, tenant string, v postgres.Visibility, it cmi.Item) string {
+	if _, err := store.GetSource(ctx, tenant, it.Source); err != nil {
+		return "source " + it.Source + " is not registered: " + err.Error()
+	}
+	switch it.Kind {
+	case cmi.ItemMemory:
+		rec, err := store.GetMemory(ctx, tenant, it.ID, v)
+		switch {
+		case err != nil:
+			return "record not readable: " + err.Error()
+		case rec.Provenance.Source != it.Source || rec.Provenance.Ref != it.Ref:
+			return fmt.Sprintf("provenance %s/%s, item says %s/%s", rec.Provenance.Source, rec.Provenance.Ref, it.Source, it.Ref)
+		case rec.Status != cmi.StatusActive:
+			return "record is " + rec.Status
+		}
+	case cmi.ItemKnowledge:
+		doc, err := store.GetDocument(ctx, tenant, it.ID)
+		if err != nil {
+			return "document not found: " + err.Error()
+		}
+		uri, seq, ok := strings.Cut(it.Ref, "#")
+		n := -1
+		if ok {
+			_, _ = fmt.Sscan(seq, &n)
+		}
+		switch {
+		case doc.Source != it.Source || doc.URI != uri:
+			return fmt.Sprintf("document %s/%s, item says %s/%s", doc.Source, doc.URI, it.Source, uri)
+		case n < 0 || n >= doc.ChunkCount:
+			return fmt.Sprintf("chunk %q outside the document's %d chunks", seq, doc.ChunkCount)
+		case doc.Status != cmi.StatusActive:
+			return "document is " + doc.Status
+		}
+	default:
+		return "unknown kind " + it.Kind
+	}
+	return ""
+}
+
 func report(r results) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# 检索评估（ADR-0001 D27）\n\n数据集 `tests/eval/dataset.json` 版本 %s；k = %d；由 `make test-eval UPDATE=1` 生成，`make test-eval` 校验结果未变。\n\n", r.Dataset, r.K)
 	sb.WriteString("三条对照：**无 CMI**（模型只看请求，召回恒为 0，不单列）、**只全文**（lexical）、**全文 + 向量**（hybrid，测试用确定性假嵌入器与数据集同义词表；真实嵌入模型的数字需在有端点的环境重跑）。\n\n")
-	sb.WriteString("| 配置 | Recall@5 | Precision@5 | nDCG@5 | 全部命中的查询 | 返回禁止项 | 重复项 | 空包 |\n|---|---|---|---|---|---|---|---|\n")
+	sb.WriteString("| 配置 | Recall@5 | Precision@5 | nDCG@5 | 全部命中的查询 | 返回禁止项 | 重复项 | 空包 | 来源可追溯率 |\n|---|---|---|---|---|---|---|---|---|\n")
 	for _, m := range r.Baselines {
-		fmt.Fprintf(&sb, "| %s | %.4f | %.4f | %.4f | %d / %d | %d | %d | %d |\n", m.Configuration, m.RecallAtK, m.PrecisionAtK, m.NDCGAtK, m.QueriesFullyMet, m.Queries, m.ForbiddenReturns, m.Duplicates, m.EmptyPackages)
+		fmt.Fprintf(&sb, "| %s | %.4f | %.4f | %.4f | %d / %d | %d | %d | %d | %.4f（%d / %d） |\n", m.Configuration, m.RecallAtK, m.PrecisionAtK, m.NDCGAtK, m.QueriesFullyMet, m.Queries, m.ForbiddenReturns, m.Duplicates, m.EmptyPackages, m.TraceabilityRate, m.Traceable, m.ItemsReturned)
 	}
 	sb.WriteString("\n未全部命中的查询（配置: 查询 → 缺失项）：\n\n")
 	for _, m := range r.Baselines {
@@ -316,6 +377,7 @@ func report(r results) string {
 			fmt.Fprintf(&sb, "- %s: %s\n", m.Configuration, miss)
 		}
 	}
+	sb.WriteString("\n来源可追溯率（D31）：每个返回条目以同一读者身份反查来源——记忆回到记录本身（来源名与引用一致、仍为 active、来源已登记），知识回到该 URI 的现行文档与存在的 chunk 序号；目标 1.0，低于即失败。\n")
 	sb.WriteString("\n禁止项为 0 是门禁：被撤销、过期或被标记的内容在任何配置下都不进包。Precision@5 偏低是因为预算固定为 5 而多数查询只有 1–2 个相关项。\n")
 	return sb.String()
 }

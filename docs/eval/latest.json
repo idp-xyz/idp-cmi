@@ -12,6 +12,9 @@
       "forbiddenReturned": 0,
       "duplicateItems": 0,
       "emptyPackages": 0,
+      "itemsReturned": 65,
+      "traceableItems": 65,
+      "traceabilityRate": 1,
       "misses": [
         "q03: hb-returns",
         "q16: hb-pickup"
@@ -27,6 +30,9 @@
       "forbiddenReturned": 0,
       "duplicateItems": 0,
       "emptyPackages": 0,
+      "itemsReturned": 68,
+      "traceableItems": 68,
+      "traceabilityRate": 1,
       "misses": [
         "q03: hb-returns"
       ]
