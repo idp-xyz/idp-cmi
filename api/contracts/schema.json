@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:idp:telos:cmi:1.3.0",
-  "title": "idp.telos.cmi 1.3.0",
-  "description": "idp-cmi（Context, Memory & Knowledge Infrastructure）对外发布的契约：ContextPackage（解析上下文得到的不可变、内容寻址的包，ADR-0001 D5）、ContextItem、MemoryRecord（记忆记录，D3）、Source（来源，D2）、KnowledgeDocument（知识文档的元数据，D4）、Envelope（包加摘要）、Entity（显式的业务对象引用，D13）。1.1.0 相对 1.0.0 只做新增：MemoryRecord 与 KnowledgeDocument 的 entities 与 flags（D12 写入时扫描的标记）、ContextItem 的 entities / match（D11 混合检索的命中方式）/ flags。生产者是 idp-cmi，权威副本在 idp-cmi/api/contracts/，由 go test ./internal/cmi -run TestContract 保证与实现一致；idp-contracts 中的副本只能与之逐字节相同。JSON Schema 只描述形状与可本地判定的规则；摘要是否匹配由 cmi.Open 判定，可见性与时效由 CMI 的查询判定。 1.2.0 相对 1.1.0 只做新增（M5）：MemoryRecord 的 version 与 KnowledgeDocument 的 revision（D19 预期版本）；MemoryRecord 的 status 增 candidate / disputed 与 disputedBy（D21）；Scope kind 增 organization / team / project、MemoryRecord 增 sharedFrom、ContextItem 增 scope（D22）；新定义 Verification 与 ItemStatus（D24 消费时复验）。 1.3.0 相对 1.2.0 只做新增：ContextPackage 的 asOf 与定义 AsOf（D25）、ContextPackage 的 projectionLag（D26）。",
+  "$id": "urn:idp:telos:cmi:1.4.0",
+  "title": "idp.telos.cmi 1.4.0",
+  "description": "idp-cmi（Context, Memory & Knowledge Infrastructure）对外发布的契约：ContextPackage（解析上下文得到的不可变、内容寻址的包，ADR-0001 D5）、ContextItem、MemoryRecord（记忆记录，D3）、Source（来源，D2）、KnowledgeDocument（知识文档的元数据，D4）、Envelope（包加摘要）、Entity（显式的业务对象引用，D13）。1.1.0 相对 1.0.0 只做新增：MemoryRecord 与 KnowledgeDocument 的 entities 与 flags（D12 写入时扫描的标记）、ContextItem 的 entities / match（D11 混合检索的命中方式）/ flags。生产者是 idp-cmi，权威副本在 idp-cmi/api/contracts/，由 go test ./internal/cmi -run TestContract 保证与实现一致；idp-contracts 中的副本只能与之逐字节相同。JSON Schema 只描述形状与可本地判定的规则；摘要是否匹配由 cmi.Open 判定，可见性与时效由 CMI 的查询判定。 1.2.0 相对 1.1.0 只做新增（M5）：MemoryRecord 的 version 与 KnowledgeDocument 的 revision（D19 预期版本）；MemoryRecord 的 status 增 candidate / disputed 与 disputedBy（D21）；Scope kind 增 organization / team / project、MemoryRecord 增 sharedFrom、ContextItem 增 scope（D22）；新定义 Verification 与 ItemStatus（D24 消费时复验）。 1.3.0 相对 1.2.0 只做新增：ContextPackage 的 asOf 与定义 AsOf（D25）、ContextPackage 的 projectionLag（D26）。 1.4.0 相对 1.3.0 只做新增：ContextPackage 的 omitted 与定义 Omitted（D28）。",
   "oneOf": [
     {
       "$ref": "#/$defs/ContextPackage"
@@ -96,6 +96,10 @@
           "type": "number",
           "minimum": 0,
           "description": "组装时向量投影落后规范行的秒数（D26）；没有 = 不落后"
+        },
+        "omitted": {
+          "$ref": "#/$defs/Omitted",
+          "description": "命中但未进包的候选（D28）；没有 = 没有遗漏"
         }
       }
     },
@@ -797,6 +801,47 @@
         "recorded": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "Omitted": {
+      "title": "Omitted",
+      "description": "解析命中但未进包的候选数，按原因（D28）：budget 预算不够、flagged 被写入时扫描标记、candidate 候选、disputed 存疑、forbidden 被策略义务排除来源、lowSimilarity 仅向量命中且低于相似度下限。可见性排除（ACL、敏感上限、他租户）不计。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "budget",
+        "flagged",
+        "candidate",
+        "disputed",
+        "forbidden",
+        "lowSimilarity"
+      ],
+      "properties": {
+        "budget": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "flagged": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "candidate": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "disputed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "forbidden": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lowSimilarity": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

@@ -152,7 +152,7 @@ paths:
     post:
       summary: Assemble, seal and store a ContextPackage for the caller (ADR-0001 D5)
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ResolveRequest'}}}}
-      responses: {'200': {description: the package (contract idp.telos.cmi ContextPackage) with its id and digest}, '422': {$ref: '#/components/responses/Problem'}}
+      responses: {'200': {description: 'the package (contract idp.telos.cmi ContextPackage) with its id and digest; package.omitted counts what matched but was not packed (budget, flagged, candidate, disputed, forbidden, lowSimilarity; ADR-0001 D28)'}, '422': {$ref: '#/components/responses/Problem'}}
   /v1/context/packages/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:

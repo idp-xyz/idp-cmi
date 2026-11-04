@@ -185,6 +185,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 		}
 	}
 	var cands []candidate
+	var memoryScopes []cmi.Scope
 	if q.TSQuery != "" || len(q.Vector) > 0 {
 		if wantMemory {
 			// D22: tenant, the caller, the caller's units, and what the request names (unit scopes it names
@@ -212,6 +213,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 				}
 				scopes = append(scopes, sc)
 			}
+			memoryScopes = scopes
 			hits, err := r.Store.SearchMemory(ctx, tenant, q, scopes, v)
 			if err != nil {
 				return nil, nil, err
@@ -257,10 +259,21 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 			}
 		}
 	}
+	// what was matched but is not usable: counted for the package (D28)
+	omitted := cmi.Omitted{}
+	{
+		if ex, err := r.Store.Excluded(ctx, tenant, q, memoryScopes, req.Sources, v); err == nil {
+			omitted = ex
+			if policy.IncludeFlagged {
+				omitted.Flagged = 0
+			}
+		}
+	}
 	// semantic-only candidates below the floor are noise
 	kept := cands[:0]
 	for _, c := range cands {
 		if c.lexical == 0 && c.semantic < SemanticFloor {
+			omitted.LowSimilarity++
 			continue
 		}
 		kept = append(kept, c)
@@ -297,15 +310,19 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 	seen := map[string]bool{}
 	pkg := &cmi.Package{ID: r.newID(), TenantID: tenant, RequestedBy: v.Subject, Purpose: req.Purpose, Query: req.Query, Scope: req.Scope, AsOf: req.AsOf, Items: []cmi.Item{}, Budget: budget, AssembledAt: now.UTC().Truncate(time.Second)}
 	for _, c := range cands {
-		if seen[c.dedupe] || len(pkg.Items) >= budget.MaxItems {
-			continue
-		}
-		if pkg.Budget.UsedTokens+c.item.Tokens > budget.MaxTokens {
+		if seen[c.dedupe] {
 			continue
 		}
 		seen[c.dedupe] = true
+		if len(pkg.Items) >= budget.MaxItems || pkg.Budget.UsedTokens+c.item.Tokens > budget.MaxTokens {
+			omitted.Budget++
+			continue
+		}
 		pkg.Budget.UsedTokens += c.item.Tokens
 		pkg.Items = append(pkg.Items, c.item)
+	}
+	if omitted != (cmi.Omitted{}) {
+		pkg.Omitted = &omitted
 	}
 	if lag, err := r.Store.ProjectionLag(ctx, tenant); err == nil && lag > 0 {
 		pkg.ProjectionLag = round4(lag) // D26: the consumer knows the vector index may be behind

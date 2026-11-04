@@ -582,6 +582,18 @@ const (
 	MatchBoth     = "both"
 )
 
+// Omitted counts what a resolve matched but did not pack, by reason (D28), so a consumer knows
+// the package is not "everything there is". Visibility exclusions (ACL, ceiling, other tenants) are
+// not counted: they are not the caller's to know about.
+type Omitted struct {
+	Budget        int `json:"budget"`        // matched and usable, but over the token or item budget
+	Flagged       int `json:"flagged"`       // quarantined by the write-time scan (D12)
+	Candidate     int `json:"candidate"`     // awaiting admission (D21)
+	Disputed      int `json:"disputed"`      // contradicted and unresolved (D21)
+	Forbidden     int `json:"forbidden"`     // excluded by a policy obligation on their source (D23)
+	LowSimilarity int `json:"lowSimilarity"` // vector-only hits under the similarity floor (D11)
+}
+
 // Budget is what the package may contain.
 type Budget struct {
 	MaxTokens  int `json:"maxTokens"`
@@ -600,6 +612,7 @@ type Package struct {
 	Scope         *Scope    `json:"scope,omitempty"`
 	AsOf          *AsOf     `json:"asOf,omitempty"`          // the bitemporal view the package was assembled for (D25)
 	ProjectionLag float64   `json:"projectionLag,omitempty"` // seconds the vector projection was behind the canonical rows when assembled (D26); 0 = none
+	Omitted       *Omitted  `json:"omitted,omitempty"`       // what matched but was not packed, by reason (D28); absent when nothing was left out
 	Items         []Item    `json:"items"`
 	Budget        Budget    `json:"budget"`
 	AssembledAt   time.Time `json:"assembledAt"`

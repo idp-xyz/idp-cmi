@@ -127,3 +127,16 @@ Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到�
 - PDP 只验证了假 PDP；对真实 OPA 的策略包未写。
 - 评估集是合成的、小规模的；真实嵌入模型的数字需在有端点的环境重跑。
 
+## 10. M6：文档对照后的补齐（2026-11-04 决策）
+
+白皮书 V1.1 与统一入口逐条对照实现后，决策人选择补齐其中四项属于 CMI 本体的缺口；其余（委派在 CMI 内判定、精确标识独立路由、包内 tokenizer 配置、成本度量）不做，理由记在对照记录（统一入口第 15.4 节）。密钥轮换、运行手册、备份内擦除、真实 OPA 策略包属于部署与运营，不在本仓库范围。
+
+| # | 决策 | 理由 |
+|---|---|---|
+| D28 | **包报告它没放进去的东西**：ContextPackage 增 `omitted: {budget, flagged, candidate, disputed, forbidden, lowSimilarity}`——解析时分别统计因预算（token 或条目数）、写入时标记、候选、存疑、PDP 义务排除来源、低于相似度下限而未进入包的候选数（去重后的候选为单位，不含 ACL / 敏感上限 / 状态过滤——那些在 SQL 内发生且对调用者本就不可见，不报告以免泄露存在性）。契约 1.4.0 只加字段 | 白皮书 8.2：必要信息放不下时应明确报告预算不足，而非静默删除 |
+| D29 | **按敏感级别决定什么可以送外部模型**：租户策略增 `externalModelCeiling`（缺省 `internal`）。敏感级别高于它的记忆与 chunk 不取向量（写入时不嵌入、投影事件直接标 processed、回填跳过），不进入整合分组；它们仍可被全文检索到。策略下调时已存向量由 Worker 清除；策略上调不回填（由回填 Worker 按 `embedding IS NULL` 自然补齐） | 白皮书 9.2、统一入口 7.2：敏感数据能否发给外部模型须先满足企业政策 |
+| D30 | **审批引用可以被核验**：配置 `authorization.approvals`（HTTP）：带 `approvalRef` 的转换先向审批系统 `POST {approvalRef, tenant, recordId, to, principal}`，期望 `{valid: true, approvedBy, expiresAt}`；无效、过期、对象不符或服务不可达均 409 `APPROVAL_INVALID` / 503 `APPROVAL_UNAVAILABLE`（不以缓存放行）；通过的审批人与时效写入审计。未配置时保持只记审计，审计里标 `approvalVerified: false`。对候选的 `active` 转换可由策略 `requireApproval` 强制要求审批引用 | 统一入口 10.4：审批应由可信审批系统返回可校验决定并绑定对象、范围、时效 |
+| D31 | **来源可追溯率进入评估**：D27 的评估对每个返回条目反查其来源（记忆 → `GET /v1/memory/records/{id}` 的 provenance 与来源名；知识 → 文档 URI 与 chunk 序号可定位），报告可追溯比例；目标 1.0，低于 1.0 失败 | 统一入口 15.2：返回记忆中具有可访问来源和正确版本的比例 |
+
+**契约**：D28 进入 `idp.telos.cmi` 1.4.0（ContextPackage 的 `omitted`，新定义 Omitted），只做新增。
+
