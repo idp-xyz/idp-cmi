@@ -50,6 +50,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: idp-eer
+        - namespaceSelector:            # idp-workspace: a member's own memory (idp-workspace D21)
+            matchLabels:
+              kubernetes.io/metadata.name: idp-workspace
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: ingress
