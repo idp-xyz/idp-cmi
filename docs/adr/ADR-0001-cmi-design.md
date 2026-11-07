@@ -159,3 +159,13 @@ Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到�
 ## 12. 补充：整合的跨副本互斥（2026-11-04）
 
 §9 的局限"整合仍无跨副本互斥"已解决：`Consolidator.RunTenant` 先取该租户的 PostgreSQL 会话级咨询锁（`Store.TryWorkLock`，键为 `idp-cmi:consolidate:<tenant>` 的哈希，持锁连接专用、崩溃即释放）。取不到时本副本不做任何事：定时任务跳过该租户，管理员手动触发得到 409 `CONSOLIDATION_RUNNING`。集成测试 consolidation 场景：另一会话持锁时调用返回 409 且模型未被调用；同一锁不能取两次；其他租户不受影响；释放后正常整合。
+
+## 15. 成员擦除自己的记忆（2026-11-06）
+
+起因：idp-host 开始把对话写成 subject 作用域的情景记忆（HOST ADR D33），成员应当能看到并删除"关于自己的记忆"，而他们不是写入者（`recordedBy` 是 idp-host），也没有 cmi-writer 角色。
+
+| # | 决策 | 理由 |
+|---|---|---|
+| D26 | **`POST /v1/memory/revoke` 允许 cmi-reader 撤销自己 subject 作用域里的记录**：只能按 `recordId`（按 `ref` 撤销仍要 cmi-writer，否则 403），只限 `scope = {subject, 调用者}`，不论谁写的；别人的记录或不存在的 id 一律 404（不泄露存在性）；不带 If-Match；审计动作 `memory.revoke_own`。存储层是单独的 `RevokeOwnMemory`，不改原有 `RevokeMemory` 的规则（写入者撤销自己写的、管理员撤销任何） | 一个人有权让系统忘记关于他的事；范围限定到他自己的 subject 作用域，不给读者任何别的撤销能力。测试：`tests/integration` 的 `memory` 子测试（按引用 403、他人记录 404、自己的 200、重复 404、列表里消失、他人的记录没动） |
+
+契约 `idp.telos.cmi` 不变（请求体不是契约文档）。

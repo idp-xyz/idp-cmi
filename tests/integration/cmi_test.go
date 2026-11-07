@@ -410,6 +410,29 @@ func TestCMIEndToEnd(t *testing.T) {
 		if st != 200 {
 			t.Fatalf("writer revoking its own source's record: %d", st)
 		}
+		// D26: a reader (carol) may erase what is remembered about HER, one record at a time, whoever wrote it - and nothing else
+		mine := e.must(201, "POST", "/v1/memory/records", "bob", memory("assistant", "run:11", "subject", "carol", "carol likes teal", "internal", now))["recordId"].(string)
+		theirs := e.must(201, "POST", "/v1/memory/records", "bob", memory("assistant", "run:12", "subject", "alice", "alice likes green", "internal", now))["recordId"].(string)
+		if st, _ := e.call("POST", "/v1/memory/revoke", "carol", map[string]any{"ref": "run:11", "reason": "mine"}); st != 403 {
+			t.Fatalf("a reader revoking by reference: %d", st)
+		}
+		if st, _ := e.call("POST", "/v1/memory/revoke", "carol", map[string]any{"recordId": theirs, "reason": "not mine"}); st != 404 {
+			t.Fatalf("a reader revoking a record of another subject: %d", st)
+		}
+		if st, _ := e.call("POST", "/v1/memory/revoke", "carol", map[string]any{"recordId": mine, "reason": "I do not want this remembered"}); st != 200 {
+			t.Fatalf("a reader revoking her own record: %d", st)
+		}
+		if st, _ := e.call("POST", "/v1/memory/revoke", "carol", map[string]any{"recordId": mine}); st != 404 {
+			t.Fatalf("revoking twice: %d", st)
+		}
+		for _, r := range e.must(200, "GET", "/v1/memory/records", "carol", nil)["records"].([]any) {
+			if r.(map[string]any)["recordId"] == mine {
+				t.Fatal("the erased record is still listed")
+			}
+		}
+		if rec := e.must(200, "GET", "/v1/memory/records?scopeKind=subject&scopeId=alice", "alice", nil)["records"].([]any); len(rec) == 0 {
+			t.Fatal("another subject's record was touched")
+		}
 	})
 
 	t.Run("hybrid-flags-entities", func(t *testing.T) {

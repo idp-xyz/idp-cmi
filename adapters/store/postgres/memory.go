@@ -264,6 +264,24 @@ func (s *Store) listMemory(ctx context.Context, tenant string, scope cmi.Scope, 
 	return out, err
 }
 
+// RevokeOwnMemory withdraws one record of the principal's own subject scope, whoever wrote it (ADR-0001 D26: a
+// person may erase what is remembered about them). It never touches another scope.
+func (s *Store) RevokeOwnMemory(ctx context.Context, tenant, id, subject, reason string) (int, error) {
+	n := 0
+	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE memory_records SET status = 'revoked', revoked_at = now(), revoked_by = $1, revoked_reason = $2, version = version + 1
+			WHERE id = $3 AND status <> 'revoked' AND scope_kind = 'subject' AND scope_id = $1`, subject, reason, id)
+		if err != nil {
+			return err
+		}
+		if n = int(tag.RowsAffected()); n == 0 {
+			return fail("NOT_FOUND", "no revocable record %s in your own scope", id)
+		}
+		return Audit(ctx, tx, tenant, subject, "memory.revoke_own", id, map[string]any{"reason": reason})
+	})
+	return n, err
+}
+
 // RevokeMemory withdraws records by id or by provenance reference (D6). It returns how many were
 // revoked. A writer may revoke what it recorded itself; an administrator anything.
 func (s *Store) RevokeMemory(ctx context.Context, tenant, id, ref, by, reason string, admin bool, ifMatch int) (int, error) {

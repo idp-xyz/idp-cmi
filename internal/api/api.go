@@ -686,9 +686,18 @@ func (a *API) Handler() http.Handler {
 		if _, err := a.authorize(r, p, "memory.revoke", pdp.Resource{Kind: "memory", ID: in.RecordID}, in.Reason); err != nil {
 			return 0, nil, err
 		}
+		if !p.Has(writer) && !p.Has(admin) {
+			// a reader who is neither writer nor administrator may erase what is remembered about themselves, one record
+			// at a time (D26): their own subject scope only, never by provenance reference, no version precondition
+			if in.RecordID == "" || in.Ref != "" {
+				return 0, nil, transport.Fail(http.StatusForbidden, "FORBIDDEN", "role cmi-writer required to revoke by reference; a reader may revoke their own records by recordId")
+			}
+			n, err := a.Store.RevokeOwnMemory(r.Context(), p.Tenant, in.RecordID, p.Subject, in.Reason)
+			return 200, map[string]any{"revoked": n}, err
+		}
 		n, err := a.Store.RevokeMemory(r.Context(), p.Tenant, in.RecordID, in.Ref, p.Subject, in.Reason, p.Has(admin), expected)
 		return 200, map[string]any{"revoked": n}, err
-	}, writer))
+	}, writer, reader))
 
 	// ---- entities (D13) ----
 	mux.Handle("GET /v1/entities/{type}/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {

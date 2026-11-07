@@ -138,7 +138,7 @@ paths:
       responses: {'200': {description: the record after the transition}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
   /v1/memory/revoke:
     post:
-      summary: Revoke records by id or by provenance reference (ADR-0001 D6); a writer revokes what it recorded, an administrator anything. If-Match (D19) names the expected version of the single record
+      summary: Revoke records by id or by provenance reference (ADR-0001 D6); a writer revokes what it recorded, an administrator anything; a reader (cmi-reader) may revoke records of their OWN subject scope, one recordId at a time, whoever wrote them (D26). If-Match (D19) names the expected version of the single record
       parameters: [{$ref: '#/components/parameters/ifMatch'}]
       requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {recordId: {type: string}, ref: {type: string}, reason: {type: string}}}}}}
       responses: {'200': {description: how many records were revoked}, '404': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
