@@ -57,3 +57,18 @@ func TestEmbeddingCalibration(t *testing.T) {
 		}
 	}
 }
+
+func TestRerank(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cmi.yaml")
+	_ = os.WriteFile(p, []byte("rerank:\n  url: http://127.0.0.1:18095\n  model: bge-reranker-v2-m3\n  top: 20\n  floor: 0.3\n"), 0o600)
+	f, err := Load(p)
+	if err != nil || f.Rerank.Top != 20 || f.Rerank.Floor != 0.3 || f.Rerank.Timeout == 0 {
+		t.Fatalf("%+v %v", f.Rerank, err)
+	}
+	for _, bad := range []string{"url: ftp://x", "url: http://x\n  style: other", "url: http://x\n  floor: 1", "url: http://x\n  top: 500"} {
+		_ = os.WriteFile(p, []byte("rerank:\n  "+bad+"\n"), 0o600)
+		if _, err := Load(p); err == nil {
+			t.Fatalf("%q must be refused", bad)
+		}
+	}
+}

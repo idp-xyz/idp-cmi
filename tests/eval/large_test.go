@@ -28,6 +28,7 @@ import (
 	"idp-cmi/internal/cmi"
 	cmictx "idp-cmi/internal/context"
 	"idp-cmi/internal/embedding"
+	"idp-cmi/internal/rerank"
 )
 
 const largeK = 10
@@ -109,6 +110,9 @@ func TestRetrievalOnTheLargeSet(t *testing.T) {
 		for _, vr := range variantsFor(cfg.doc != nil) {
 			name := cfg.name + vr.suffix
 			resolver := &cmictx.Resolver{Store: store, Embedder: cfg.query, Now: func() time.Time { return now }, SemanticFloor: vr.floor, Blend: vr.blend}
+			if vr.rerank {
+				resolver.Reranker, resolver.RerankFloor, resolver.RerankTop = rerankClient(t), vr.rerankFloor, 30
+			}
 			var dump []map[string]any
 			if os.Getenv("IDP_EVAL_DUMP") != "" && cfg.doc != nil {
 				resolver.OnCandidates = func(query string, c []cmictx.CandidateScore) {
@@ -304,10 +308,22 @@ func largeReport(version string) string {
 type variant struct {
 	suffix       string
 	floor, blend float64
+	rerank       bool
+	rerankFloor  float64
+}
+
+// rerankClient is the cross-encoder named by IDP_EVAL_RERANK_URL (+ _MODEL, _STYLE tei|cohere).
+func rerankClient(t *testing.T) rerank.Reranker {
+	t.Helper()
+	u := os.Getenv("IDP_EVAL_RERANK_URL")
+	if u == "" {
+		t.Fatal("a variant with a rerank floor needs IDP_EVAL_RERANK_URL")
+	}
+	return &rerank.Client{URL: u, Style: os.Getenv("IDP_EVAL_RERANK_STYLE"), ModelName: os.Getenv("IDP_EVAL_RERANK_MODEL"), Timeout: 120 * time.Second, HTTP: &http.Client{Transport: &http.Transport{Proxy: nil}}}
 }
 
 // variantsFor lists the resolver settings to measure on one seeded store: IDP_EVAL_VARIANTS="floor:blend,..."
-// (e.g. "0.45:0.15,0.5:0.15"); without it, one run with the resolver's defaults.
+// (e.g. "0.45:0.05,0.45:0.05:0.3": a third field adds the reranker with that score floor); without it, one run with the resolver's defaults.
 func variantsFor(embedded bool) []variant {
 	spec := os.Getenv("IDP_EVAL_VARIANTS")
 	if spec == "" || !embedded {
@@ -315,10 +331,16 @@ func variantsFor(embedded bool) []variant {
 	}
 	var out []variant
 	for _, p := range strings.Split(spec, ",") {
-		f, b, _ := strings.Cut(strings.TrimSpace(p), ":")
+		f, rest, _ := strings.Cut(strings.TrimSpace(p), ":")
+		b, rr, hasRerank := strings.Cut(rest, ":")
 		fl, _ := strconv.ParseFloat(f, 64)
 		bl, _ := strconv.ParseFloat(b, 64)
-		out = append(out, variant{suffix: fmt.Sprintf("-f%s-b%s", f, b), floor: fl, blend: bl})
+		v := variant{suffix: fmt.Sprintf("-f%s-b%s", f, b), floor: fl, blend: bl}
+		if hasRerank {
+			v.rerank, v.suffix = true, v.suffix+"-r"+rr
+			v.rerankFloor, _ = strconv.ParseFloat(rr, 64)
+		}
+		out = append(out, v)
 	}
 	return out
 }

@@ -17,6 +17,7 @@ import (
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/cmi"
 	"idp-cmi/internal/embedding"
+	"idp-cmi/internal/rerank"
 )
 
 // Request is a resolve call.
@@ -107,6 +108,13 @@ type Resolver struct {
 	// (this is what lets a query with no answer return nothing), and a candidate without a vector yet (the
 	// projection is behind) keeps its lexical standing at half weight.
 	Blend float64
+	// Reranker, when set, rescores the best RerankTop candidates with a cross-encoder (ADR-0001 D39): the
+	// relevance becomes the reranker's score, a candidate below RerankFloor is dropped (that is what decides
+	// "nothing here answers it" - a cross-encoder's score means the same for every query), and the rest
+	// are ordered by it. When the reranker fails the order computed before is kept and a warning logged.
+	Reranker    rerank.Reranker
+	RerankTop   int     // default 30
+	RerankFloor float64 // 0 = no floor
 	// OnCandidates, when set, is called with every candidate's raw scores before filtering (tuning only).
 	OnCandidates func(query string, c []CandidateScore)
 }
@@ -156,6 +164,43 @@ type candidate struct {
 	semantic float64
 	dedupe   string
 	created  time.Time
+}
+
+// rerank rescores the strongest candidates with the cross-encoder. Candidates beyond RerankTop are not
+// scored and are left out (counted as omitted by budget): they were already the weakest.
+func (r *Resolver) rerank(ctx context.Context, query string, cands []candidate, omitted *cmi.Omitted) []candidate {
+	top := r.RerankTop
+	if top <= 0 {
+		top = 30
+	}
+	sort.SliceStable(cands, func(a, b int) bool { return cands[a].item.Score > cands[b].item.Score })
+	n := len(cands)
+	if n > top {
+		n = top
+	}
+	texts := make([]string, n)
+	for i := 0; i < n; i++ {
+		texts[i] = cands[i].item.Excerpt
+	}
+	scores, err := r.Reranker.Rerank(ctx, query, texts)
+	if err != nil || len(scores) != n {
+		if r.Log != nil {
+			r.Log.Warn("reranking failed; keeping the retrieval order", "error", err)
+		}
+		return cands
+	}
+	kept := make([]candidate, 0, n)
+	for i := 0; i < n; i++ {
+		if scores[i] < r.RerankFloor {
+			omitted.LowSimilarity++
+			continue
+		}
+		c := cands[i]
+		c.item.Score = round4(scores[i] * (0.5 + 0.5*c.fresh))
+		kept = append(kept, c)
+	}
+	omitted.Budget += len(cands) - n
+	return kept
 }
 
 // Resolve assembles, seals and stores a package for the principal.
@@ -346,6 +391,9 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 		}
 		cands[i].item.Score = round4(rel * (0.5 + 0.5*cands[i].fresh))
 		cands[i].item.Tokens = cmi.Tokens(cands[i].item.Excerpt)
+	}
+	if r.Reranker != nil && len(cands) > 0 {
+		cands = r.rerank(ctx, req.Query, cands, &omitted)
 	}
 	sort.SliceStable(cands, func(a, b int) bool {
 		if cands[a].trust != cands[b].trust {

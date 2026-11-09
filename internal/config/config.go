@@ -18,6 +18,20 @@ type File struct {
 	Consolidation *Consolidation `yaml:"consolidation"`
 	Authorization *Authorization `yaml:"authorization"`
 	Limits        *Limits        `yaml:"limits"`
+	Rerank        *Rerank        `yaml:"rerank"`
+}
+
+// Rerank is a cross-encoder endpoint that rescores the best candidates (ADR-0001 D39).
+type Rerank struct {
+	URL        string        `yaml:"url"`   // base URL; /rerank is appended
+	Style      string        `yaml:"style"` // tei (default) | cohere (Cohere, Jina, vLLM)
+	Model      string        `yaml:"model"`
+	APIKey     string        `yaml:"apiKey"`
+	APIKeyFile string        `yaml:"apiKeyFile"`
+	CAFile     string        `yaml:"caFile"`
+	Timeout    time.Duration `yaml:"timeout"`
+	Top        int           `yaml:"top"`   // candidates sent to the reranker (default 30)
+	Floor      float64       `yaml:"floor"` // reranker score below which a candidate is dropped (0 = keep all); calibrate per model
 }
 
 // Limits bounds what one writer can put into the store (all 0 = unlimited). The counts are checked
@@ -93,6 +107,23 @@ func Load(path string) (*File, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(f); err != nil && !errors.Is(err, os.ErrNotExist) && err.Error() != "EOF" {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if r := f.Rerank; r != nil {
+		if !strings.HasPrefix(r.URL, "http://") && !strings.HasPrefix(r.URL, "https://") {
+			return nil, errors.New("rerank: url (http(s)) is required")
+		}
+		if r.Style != "" && r.Style != "tei" && r.Style != "cohere" {
+			return nil, errors.New("rerank: style must be tei or cohere")
+		}
+		if r.Top < 0 || r.Top > 200 || r.Floor < 0 || r.Floor >= 1 {
+			return nil, errors.New("rerank: top must be within [0, 200] and floor within [0, 1)")
+		}
+		if r.APIKey, err = secret(r.APIKey, r.APIKeyFile); err != nil {
+			return nil, fmt.Errorf("rerank: %w", err)
+		}
+		if r.Timeout == 0 {
+			r.Timeout = 10 * time.Second
+		}
 	}
 	if l := f.Limits; l != nil && (l.MaxRecordsPerScope < 0 || l.MaxRecordsPerTenant < 0 || l.WritesPerMinute < 0) {
 		return nil, errors.New("limits: values must not be negative")

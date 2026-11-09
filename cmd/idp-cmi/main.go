@@ -52,6 +52,7 @@ import (
 	"idp-cmi/internal/ingest"
 	"idp-cmi/internal/observability"
 	"idp-cmi/internal/pdp"
+	"idp-cmi/internal/rerank"
 	"idp-cmi/internal/transport"
 )
 
@@ -245,6 +246,15 @@ func serve(log *slog.Logger) error {
 	resolver := &cmictx.Resolver{Store: store, Embedder: embedder, Log: log}
 	if e := cfg.Embedding; e != nil {
 		resolver.SemanticFloor, resolver.Blend = e.Floor, e.LexicalBlend
+	}
+	if rr := cfg.Rerank; rr != nil { // ADR-0001 D39
+		tlsCfg, err := transport.ClientTLS(rr.CAFile, "", "")
+		if err != nil {
+			return fmt.Errorf("rerank: %w", err)
+		}
+		resolver.Reranker = &rerank.Client{URL: rr.URL, Style: rr.Style, ModelName: rr.Model, APIKey: rr.APIKey, Timeout: rr.Timeout,
+			HTTP: &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsCfg}}}
+		resolver.RerankTop, resolver.RerankFloor = rr.Top, rr.Floor
 	}
 	var pdpClient *pdp.Client
 	pdpOnError := "deny"
