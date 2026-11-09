@@ -52,9 +52,9 @@ type dataset struct {
 		Revoked                           bool         `json:"revoked"`
 	} `json:"memories"`
 	Queries []struct {
-		ID, Text, Subject, Thread string
-		Entities                  []cmi.Entity `json:"entities"`
-		Relevant, Forbidden       []string
+		ID, Text, Subject, Thread, Category string
+		Entities                            []cmi.Entity `json:"entities"`
+		Relevant, Forbidden                 []string
 	} `json:"queries"`
 }
 
@@ -150,56 +150,7 @@ func TestResolverOnTheLabelledSet(t *testing.T) {
 		store.Now = func() time.Time { return now }
 		store.Embedder = cfg.emb
 		ctx := context.Background()
-		for _, s := range ds.Sources {
-			if _, err := store.CreateSource(ctx, tenant, s, "eval"); err != nil {
-				t.Fatal(err)
-			}
-		}
-		refOf := map[string]string{} // item id -> dataset ref
-		for _, d := range ds.Documents {
-			doc := cmi.Document{Source: "handbook", URI: d.URI, Title: d.Title, Sensitivity: cmi.SensitivityInternal}
-			if d.ValidUntilDaysAgo > 0 {
-				doc.ValidUntil = now.Add(-time.Duration(d.ValidUntilDaysAgo) * 24 * time.Hour)
-			}
-			created, err := store.CreateDocument(ctx, tenant, doc, d.Text, "eval")
-			if err != nil {
-				t.Fatal(d.Ref, err)
-			}
-			refOf[created.ID] = d.Ref
-			if d.Revoked {
-				if _, err := store.RevokeDocument(ctx, tenant, created.ID, "eval", "dataset", 0); err != nil {
-					t.Fatal(err)
-				}
-			}
-		}
-		// documents are dated by the database clock; pin them to the evaluation's clock, or their
-		// freshness (and so the ranking) would depend on the time of day the evaluation runs
-		pin, err := pgx.Connect(ctx, owner)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := pin.Exec(ctx, `UPDATE knowledge_documents SET created_at = $1`, now.Add(-48*time.Hour)); err != nil {
-			t.Fatal(err)
-		}
-		pin.Close(ctx)
-		for _, m := range ds.Memories {
-			kind, id, _ := strings.Cut(m.Scope, ":")
-			rec := cmi.MemoryRecord{Scope: cmi.Scope{Kind: kind, ID: id}, Kind: m.Kind, Content: m.Content, Entities: m.Entities, Sensitivity: cmi.SensitivityInternal,
-				Provenance: cmi.Provenance{Source: m.Source, Ref: m.Ref, ObservedAt: now.Add(-time.Hour), RecordedBy: "eval"}, Validity: cmi.Validity{ValidFrom: now.Add(-48 * time.Hour)}}
-			if m.ValidUntilDaysAgo > 0 {
-				rec.Validity.ValidUntil = now.Add(-time.Duration(m.ValidUntilDaysAgo) * 24 * time.Hour)
-			}
-			created, err := store.CreateMemory(ctx, tenant, rec, "eval", cmi.SensitivityRestricted)
-			if err != nil {
-				t.Fatal(m.Ref, err)
-			}
-			refOf[created.ID] = m.Ref
-			if m.Revoked {
-				if _, err := store.RevokeMemory(ctx, tenant, created.ID, "", "eval", "dataset", true, 0); err != nil {
-					t.Fatal(err)
-				}
-			}
-		}
+		refOf := seed(t, ds, store, tenant, owner, now)
 		resolver := &cmictx.Resolver{Store: store, Embedder: cfg.emb, Now: func() time.Time { return now }}
 		m := Metrics{Configuration: cfg.name, Queries: len(ds.Queries), Misses: []string{}}
 		var recall, precision, ndcg float64
@@ -326,6 +277,63 @@ func TestResolverOnTheLabelledSet(t *testing.T) {
 	if err != nil || string(committed) != string(raw) {
 		t.Fatalf("docs/eval/latest.json is out of date; run: make test-eval UPDATE=1\n%s", raw)
 	}
+}
+
+// seed loads a dataset into a fresh store and returns item id -> dataset ref.
+func seed(t *testing.T, ds dataset, store *postgres.Store, tenant, owner string, now time.Time) map[string]string {
+	t.Helper()
+	ctx := context.Background()
+	for _, s := range ds.Sources {
+		if _, err := store.CreateSource(ctx, tenant, s, "eval"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refOf := map[string]string{} // item id -> dataset ref
+	for _, d := range ds.Documents {
+		doc := cmi.Document{Source: "handbook", URI: d.URI, Title: d.Title, Sensitivity: cmi.SensitivityInternal}
+		if d.ValidUntilDaysAgo > 0 {
+			doc.ValidUntil = now.Add(-time.Duration(d.ValidUntilDaysAgo) * 24 * time.Hour)
+		}
+		created, err := store.CreateDocument(ctx, tenant, doc, d.Text, "eval")
+		if err != nil {
+			t.Fatal(d.Ref, err)
+		}
+		refOf[created.ID] = d.Ref
+		if d.Revoked {
+			if _, err := store.RevokeDocument(ctx, tenant, created.ID, "eval", "dataset", 0); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// documents are dated by the database clock; pin them to the evaluation's clock, or their
+	// freshness (and so the ranking) would depend on the time of day the evaluation runs
+	pin, err := pgx.Connect(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pin.Exec(ctx, `UPDATE knowledge_documents SET created_at = $1`, now.Add(-48*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	pin.Close(ctx)
+	for _, m := range ds.Memories {
+		kind, id, _ := strings.Cut(m.Scope, ":")
+		rec := cmi.MemoryRecord{Scope: cmi.Scope{Kind: kind, ID: id}, Kind: m.Kind, Content: m.Content, Entities: m.Entities, Sensitivity: cmi.SensitivityInternal,
+			Provenance: cmi.Provenance{Source: m.Source, Ref: m.Ref, ObservedAt: now.Add(-time.Hour), RecordedBy: "eval"}, Validity: cmi.Validity{ValidFrom: now.Add(-48 * time.Hour)}}
+		if m.ValidUntilDaysAgo > 0 {
+			rec.Validity.ValidUntil = now.Add(-time.Duration(m.ValidUntilDaysAgo) * 24 * time.Hour)
+		}
+		created, err := store.CreateMemory(ctx, tenant, rec, "eval", cmi.SensitivityRestricted)
+		if err != nil {
+			t.Fatal(m.Ref, err)
+		}
+		refOf[created.ID] = m.Ref
+		if m.Revoked {
+			if _, err := store.RevokeMemory(ctx, tenant, created.ID, "", "eval", "dataset", true, 0); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return refOf
 }
 
 func round(f float64) float64 { return math.Round(f*10000) / 10000 }

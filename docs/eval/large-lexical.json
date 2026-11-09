@@ -1,0 +1,93 @@
+{
+  "configuration": "lexical",
+  "queries": 88,
+  "scoredQueries": 78,
+  "recallAt1": 0.5641,
+  "recallAt3": 0.609,
+  "recallAt5": 0.6346,
+  "recallAt10": 0.6603,
+  "mrr": 0.6239,
+  "ndcgAt10": 0.6226,
+  "noAnswerQueries": 10,
+  "noAnswerReturnedNothing": 4,
+  "forbiddenReturned": 0,
+  "byCategory": {
+    "cross_lingual": {
+      "queries": 14,
+      "recallAt5": 0.1429,
+      "mrr": 0.1429
+    },
+    "distractor": {
+      "queries": 6,
+      "recallAt5": 1,
+      "mrr": 1
+    },
+    "exact_id": {
+      "queries": 10,
+      "recallAt5": 1,
+      "mrr": 1
+    },
+    "keyword": {
+      "queries": 10,
+      "recallAt5": 1,
+      "mrr": 1
+    },
+    "multi": {
+      "queries": 6,
+      "recallAt5": 0.8333,
+      "mrr": 1
+    },
+    "paraphrase": {
+      "queries": 20,
+      "recallAt5": 0.375,
+      "mrr": 0.3292
+    },
+    "personal": {
+      "queries": 8,
+      "recallAt5": 0.75,
+      "mrr": 0.6146
+    },
+    "tenant": {
+      "queries": 2,
+      "recallAt5": 1,
+      "mrr": 1
+    },
+    "thread": {
+      "queries": 2,
+      "recallAt5": 0.5,
+      "mrr": 0.5833
+    }
+  },
+  "missesAt5": [
+    "L01 [paraphrase]: zh-returns",
+    "L04 [paraphrase]: zh-pickup",
+    "L06 [paraphrase]: zh-customs",
+    "L07 [paraphrase]: zh-damage",
+    "L08 [paraphrase]: zh-damage",
+    "L10 [paraphrase]: zh-battery",
+    "L11 [paraphrase]: zh-locker",
+    "L13 [paraphrase]: zh-invoice",
+    "L15 [paraphrase]: zh-signoff",
+    "L16 [paraphrase]: zh-holiday",
+    "L17 [paraphrase]: zh-escalation",
+    "L18 [paraphrase]: zh-privacy",
+    "L19 [paraphrase]: zh-oversize",
+    "L31 [cross_lingual]: zh-returns",
+    "L32 [cross_lingual]: zh-customs",
+    "L33 [cross_lingual]: zh-pickup",
+    "L34 [cross_lingual]: zh-damage",
+    "L35 [cross_lingual]: zh-battery",
+    "L36 [cross_lingual]: zh-locker",
+    "L37 [cross_lingual]: zh-invoice",
+    "L40 [cross_lingual]: en-sla",
+    "L41 [cross_lingual]: en-weekend",
+    "L42 [cross_lingual]: en-packaging",
+    "L43 [cross_lingual]: en-dpa",
+    "L44 [cross_lingual]: en-tracking,en-customs-hold",
+    "L56 [multi]: en-customs-hold",
+    "L57 [multi]: zh-sop2057",
+    "L71 [personal]: m-dan-cold",
+    "L73 [personal]: m-erin-proxy",
+    "L78 [thread]: m-thread-2"
+  ]
+}
