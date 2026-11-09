@@ -1,0 +1,68 @@
+{
+  "configuration": "hybrid-qwen3-0.6b-instruct-f0.45-b0.05-r0.05",
+  "queries": 88,
+  "scoredQueries": 78,
+  "recallAt1": 0.8397,
+  "recallAt3": 0.9295,
+  "recallAt5": 0.9423,
+  "recallAt10": 0.9423,
+  "mrr": 0.9167,
+  "ndcgAt10": 0.9188,
+  "noAnswerQueries": 10,
+  "noAnswerReturnedNothing": 10,
+  "forbiddenReturned": 0,
+  "byCategory": {
+    "cross_lingual": {
+      "queries": 14,
+      "recallAt5": 0.9643,
+      "mrr": 0.9643
+    },
+    "distractor": {
+      "queries": 6,
+      "recallAt5": 1,
+      "mrr": 1
+    },
+    "exact_id": {
+      "queries": 10,
+      "recallAt5": 0.9,
+      "mrr": 0.9
+    },
+    "keyword": {
+      "queries": 10,
+      "recallAt5": 1,
+      "mrr": 1
+    },
+    "multi": {
+      "queries": 6,
+      "recallAt5": 1,
+      "mrr": 0.9167
+    },
+    "paraphrase": {
+      "queries": 20,
+      "recallAt5": 0.85,
+      "mrr": 0.85
+    },
+    "personal": {
+      "queries": 8,
+      "recallAt5": 1,
+      "mrr": 0.875
+    },
+    "tenant": {
+      "queries": 2,
+      "recallAt5": 1,
+      "mrr": 1
+    },
+    "thread": {
+      "queries": 2,
+      "recallAt5": 1,
+      "mrr": 0.75
+    }
+  },
+  "missesAt5": [
+    "L05 [paraphrase]: zh-pickup",
+    "L10 [paraphrase]: zh-battery",
+    "L11 [paraphrase]: zh-locker",
+    "L44 [cross_lingual]: en-customs-hold",
+    "L48 [exact_id]: zh-hs"
+  ]
+}

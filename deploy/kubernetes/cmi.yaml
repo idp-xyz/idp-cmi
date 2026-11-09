@@ -48,6 +48,13 @@ data:
       #   queryPrefix: "Instruct: Given a user question, retrieve the passages that answer it\nQuery: "
       #   floor: 0.45
       #   lexicalBlend: 0.05
+    # Optional cross-encoder rerank (ADR-0001 D39); measured with bge-reranker-v2-m3: top 10, floor 0.05
+    # rerank:
+    #   url: https://rerank.example.com
+    #   style: tei            # tei | cohere (Cohere, Jina, vLLM)
+    #   model: bge-reranker-v2-m3
+    #   top: 10
+    #   floor: 0.05
     consolidation:
       baseUrl: https://models.example.com/v1
       model: claude-sonnet-5-5

@@ -67,8 +67,12 @@ start() {
 
 status() {
   docker ps --filter "name=^$NAME\$" --format '{{.Names}} {{.Image}} {{.Status}}' | grep . || { echo "not running"; return 1; }
+  # an embedding model answers /v1/embeddings, a reranker /rerank
   curl -s -m 60 "http://127.0.0.1:$PORT/v1/embeddings" -H 'Content-Type: application/json' -d '{"model":"m","input":["health check"]}' \
-    | python3 -c "import json,sys; print('answers on :$PORT, dimensions', len(json.load(sys.stdin)['data'][0]['embedding']))"
+    | python3 -c "import json,sys; print('embeddings on :$PORT, dimensions', len(json.load(sys.stdin)['data'][0]['embedding']))" 2>/dev/null \
+  || curl -s -m 60 "http://127.0.0.1:$PORT/rerank" -H 'Content-Type: application/json' -d '{"query":"q","texts":["a"]}' \
+    | python3 -c "import json,sys; json.load(sys.stdin)[0]['score']; print('reranker on :$PORT')" 2>/dev/null \
+  || echo "running, but neither /v1/embeddings nor /rerank answered"
 }
 
 case "${1:-}" in

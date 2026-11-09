@@ -111,7 +111,7 @@ func TestRetrievalOnTheLargeSet(t *testing.T) {
 			name := cfg.name + vr.suffix
 			resolver := &cmictx.Resolver{Store: store, Embedder: cfg.query, Now: func() time.Time { return now }, SemanticFloor: vr.floor, Blend: vr.blend}
 			if vr.rerank {
-				resolver.Reranker, resolver.RerankFloor, resolver.RerankTop = rerankClient(t), vr.rerankFloor, 30
+				resolver.Reranker, resolver.RerankFloor, resolver.RerankTop = rerankClient(t), vr.rerankFloor, rerankTop()
 			}
 			var dump []map[string]any
 			if os.Getenv("IDP_EVAL_DUMP") != "" && cfg.doc != nil {
@@ -343,4 +343,13 @@ func variantsFor(embedded bool) []variant {
 		out = append(out, v)
 	}
 	return out
+}
+
+// rerankTop is how many candidates go to the reranker (IDP_EVAL_RERANK_TOP, default 30).
+func rerankTop() int {
+	n, _ := strconv.Atoi(os.Getenv("IDP_EVAL_RERANK_TOP"))
+	if n <= 0 {
+		return 30
+	}
+	return n
 }
