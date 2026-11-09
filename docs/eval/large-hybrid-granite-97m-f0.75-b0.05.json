@@ -1,21 +1,21 @@
 {
-  "configuration": "hybrid-qwen3-0.6b-instruct",
+  "configuration": "hybrid-granite-97m-f0.75-b0.05",
   "queries": 88,
   "scoredQueries": 78,
-  "recallAt1": 0.6154,
-  "recallAt3": 0.8013,
+  "recallAt1": 0.7051,
+  "recallAt3": 0.859,
   "recallAt5": 0.891,
-  "recallAt10": 0.9679,
-  "mrr": 0.7596,
-  "ndcgAt10": 0.8054,
+  "recallAt10": 0.9103,
+  "mrr": 0.8082,
+  "ndcgAt10": 0.8285,
   "noAnswerQueries": 10,
-  "noAnswerReturnedNothing": 3,
+  "noAnswerReturnedNothing": 1,
   "forbiddenReturned": 0,
   "byCategory": {
     "cross_lingual": {
       "queries": 14,
-      "recallAt5": 0.7143,
-      "mrr": 0.4382
+      "recallAt5": 0.7857,
+      "mrr": 0.6571
     },
     "distractor": {
       "queries": 6,
@@ -34,18 +34,18 @@
     },
     "multi": {
       "queries": 6,
-      "recallAt5": 1,
-      "mrr": 1
+      "recallAt5": 0.9167,
+      "mrr": 0.9167
     },
     "paraphrase": {
       "queries": 20,
-      "recallAt5": 0.825,
-      "mrr": 0.6558
+      "recallAt5": 0.85,
+      "mrr": 0.6671
     },
     "personal": {
       "queries": 8,
-      "recallAt5": 1,
-      "mrr": 0.6875
+      "recallAt5": 0.875,
+      "mrr": 0.8125
     },
     "tenant": {
       "queries": 2,
@@ -60,13 +60,13 @@
   },
   "missesAt5": [
     "L04 [paraphrase]: zh-pickup",
-    "L08 [paraphrase]: zh-damage",
-    "L10 [paraphrase]: zh-battery",
-    "L13 [paraphrase]: zh-invoice",
-    "L31 [cross_lingual]: zh-returns",
+    "L07 [paraphrase]: zh-damage",
+    "L11 [paraphrase]: zh-locker",
     "L33 [cross_lingual]: zh-pickup",
     "L40 [cross_lingual]: en-sla",
-    "L42 [cross_lingual]: en-packaging",
+    "L44 [cross_lingual]: en-tracking,en-customs-hold",
+    "L56 [multi]: en-customs-hold",
+    "L73 [personal]: m-erin-proxy",
     "L78 [thread]: m-thread-2"
   ]
 }

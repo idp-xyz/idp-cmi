@@ -43,6 +43,11 @@ data:
       model: text-embedding-3-small
       apiKeyFile: /etc/idp/model-keys/embedding
       caFile: /etc/idp/model-ca/ca.crt
+      # Calibration is per model (ADR-0001 D37, docs/eval/LARGE.md): cosine scales differ, so measure on your own
+      # labelled queries before trusting these. Measured for Qwen3-Embedding-0.6B (1024 dims):
+      #   queryPrefix: "Instruct: Given a user question, retrieve the passages that answer it\nQuery: "
+      #   floor: 0.45
+      #   lexicalBlend: 0.05
     consolidation:
       baseUrl: https://models.example.com/v1
       model: claude-sonnet-5-5

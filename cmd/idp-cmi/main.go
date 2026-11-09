@@ -2,6 +2,7 @@
 //
 //	idp-cmi [serve]                          run the API and the expiry sweeper
 //	idp-cmi migrate                          apply schema migrations (owner connection)
+//	idp-cmi vector-index DIMS                HNSW indexes for vectors of that size (pgvector; owner connection, concurrent)
 //	idp-cmi ensure-login USER                create/update a login role in idp_cmi_app; password from IDP_APP_DB_PASSWORD[_FILE]
 //	idp-cmi seed-tenant SLUG [ID]            create a tenant, print TENANT_ID=<id>
 //	idp-cmi dev-token TENANT SUBJECT ROLE..  print a development token (dev mode only)
@@ -34,6 +35,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -95,6 +97,17 @@ func main() {
 		for _, a := range applied {
 			fmt.Println("applied", a)
 		}
+	case "vector-index":
+		if len(os.Args) < 3 {
+			err = errors.New("usage: idp-cmi vector-index DIMS   (HNSW indexes for vectors of that size; IDP_VECTOR_INDEX_MEM, default 1GB)")
+			break
+		}
+		dims, convErr := strconv.Atoi(os.Args[2])
+		if convErr != nil {
+			err = fmt.Errorf("DIMS: %w", convErr)
+			break
+		}
+		err = postgres.CreateVectorIndex(context.Background(), env("IDP_MIGRATION_DATABASE_URL", ""), dims, env("IDP_VECTOR_INDEX_MEM", "1GB"), 0, 0)
 	case "ensure-login":
 		if len(os.Args) < 3 {
 			err = errors.New("usage: idp-cmi ensure-login USER")
@@ -204,7 +217,9 @@ func serve(log *slog.Logger) error {
 		}
 		embedder = &embedding.OpenAI{BaseURL: e.BaseURL, ModelName: e.Model, APIKey: e.APIKey, Dimensions: e.Dimensions, Timeout: e.Timeout,
 			HTTP: &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsCfg}}}
-		store.Embedder = embedder
+		asym := embedding.Asymmetric{Base: embedder, QueryPrefix: e.QueryPrefix, DocumentPrefix: e.DocumentPrefix} // D37
+		embedder = asym.Queries()
+		store.Embedder = asym
 		go func() {
 			t := time.NewTicker(e.Backfill)
 			defer t.Stop()
@@ -228,6 +243,9 @@ func serve(log *slog.Logger) error {
 		}()
 	}
 	resolver := &cmictx.Resolver{Store: store, Embedder: embedder, Log: log}
+	if e := cfg.Embedding; e != nil {
+		resolver.SemanticFloor, resolver.Blend = e.Floor, e.LexicalBlend
+	}
 	var pdpClient *pdp.Client
 	pdpOnError := "deny"
 	if au := cfg.Authorization; au != nil && au.PDP != nil { // ADR-0001 D23

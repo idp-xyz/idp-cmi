@@ -42,3 +42,18 @@ func TestLimits(t *testing.T) {
 		t.Fatal("a negative limit is refused")
 	}
 }
+
+func TestEmbeddingCalibration(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cmi.yaml")
+	_ = os.WriteFile(p, []byte("embedding:\n  baseUrl: http://127.0.0.1:8080/v1\n  model: m\n  queryPrefix: \"Query: \"\n  documentPrefix: \"Passage: \"\n  floor: 0.45\n  lexicalBlend: 0.05\n"), 0o600)
+	f, err := Load(p)
+	if err != nil || f.Embedding.QueryPrefix != "Query: " || f.Embedding.DocumentPrefix != "Passage: " || f.Embedding.Floor != 0.45 || f.Embedding.LexicalBlend != 0.05 {
+		t.Fatalf("%+v %v", f.Embedding, err)
+	}
+	for _, bad := range []string{"floor: 1.5", "floor: -0.1", "lexicalBlend: 2"} {
+		_ = os.WriteFile(p, []byte("embedding:\n  baseUrl: http://127.0.0.1:8080/v1\n  model: m\n  "+bad+"\n"), 0o600)
+		if _, err := Load(p); err == nil {
+			t.Fatalf("%s must be refused", bad)
+		}
+	}
+}

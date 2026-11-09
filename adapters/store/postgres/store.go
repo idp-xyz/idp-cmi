@@ -48,6 +48,8 @@ type Store struct {
 	Now      func() time.Time   // injectable clock (tests)
 	Embedder embedding.Embedder // optional second retriever (D11); nil = lexical only
 	Log      *slog.Logger       // optional
+
+	vec vectorState
 }
 
 // Open connects as the service role and verifies that RLS applies to it.
@@ -160,6 +162,9 @@ func Migrate(ctx context.Context, ownerURL string) (applied []string, err error)
 			return applied, err
 		}
 		applied = append(applied, m.name)
+	}
+	if err := ensureVectors(ctx, conn); err != nil { // optional and idempotent: the extension may arrive after the migrations ran
+		return applied, fmt.Errorf("pgvector setup: %w", err)
 	}
 	return applied, nil
 }

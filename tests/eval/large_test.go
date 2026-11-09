@@ -59,21 +59,6 @@ type CategoryStat struct {
 	MRR     float64 `json:"mrr"`
 }
 
-// prefixed embeds queries with an instruction prefix (asymmetric models such as Qwen3-Embedding, e5 and bge
-// expect one for queries and none for documents) and leaves documents untouched.
-type prefixed struct {
-	embedding.Embedder
-	prefix string
-}
-
-func (p prefixed) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	out := make([]string, len(texts))
-	for i, t := range texts {
-		out[i] = p.prefix + t
-	}
-	return p.Embedder.Embed(ctx, out)
-}
-
 func TestRetrievalOnTheLargeSet(t *testing.T) {
 	raw, err := os.ReadFile("dataset_large.json")
 	if err != nil {
@@ -99,12 +84,9 @@ func TestRetrievalOnTheLargeSet(t *testing.T) {
 		}
 		dims, _ := strconv.Atoi(os.Getenv("IDP_EVAL_EMBEDDING_DIMS"))
 		base := &embedding.OpenAI{BaseURL: u, ModelName: model, APIKey: os.Getenv("IDP_EVAL_EMBEDDING_KEY"), Dimensions: dims, Timeout: 120 * time.Second, HTTP: &http.Client{Transport: &http.Transport{Proxy: nil}}}
-		var q embedding.Embedder = base
-		prefix := strings.ReplaceAll(os.Getenv("IDP_EVAL_QUERY_PREFIX"), `\n`, "\n")
-		if prefix != "" {
-			q = prefixed{Embedder: base, prefix: prefix}
-		}
-		configs = append(configs, config{name: "hybrid-" + name, doc: base, query: q, queryPrefixSet: prefix != ""})
+		asym := embedding.Asymmetric{Base: base, QueryPrefix: strings.ReplaceAll(os.Getenv("IDP_EVAL_QUERY_PREFIX"), `\n`, "\n"), DocumentPrefix: strings.ReplaceAll(os.Getenv("IDP_EVAL_DOC_PREFIX"), `\n`, "\n")}
+		prefix := asym.QueryPrefix + asym.DocumentPrefix
+		configs = append(configs, config{name: "hybrid-" + name, doc: asym, query: asym.Queries(), queryPrefixSet: prefix != ""})
 	}
 	var results []LargeMetrics
 	for _, cfg := range configs {
@@ -124,130 +106,145 @@ func TestRetrievalOnTheLargeSet(t *testing.T) {
 				}
 			}
 		}
-		resolver := &cmictx.Resolver{Store: store, Embedder: cfg.query, Now: func() time.Time { return now }}
-		m := LargeMetrics{Configuration: cfg.name, Queries: len(ds.Queries), ByCategory: map[string]CategoryStat{}, Misses: []string{}}
-		type acc struct {
-			n       int
-			r5, mrr float64
-		}
-		cats := map[string]*acc{}
-		var lat []float64
-		var r1, r3, r5, r10, mrr, ndcg float64
-		for _, q := range ds.Queries {
-			subject := q.Subject
-			if subject == "" {
-				subject = "eval-reader"
-			}
-			v := postgres.Visibility{Subject: subject, Roles: []string{authorization.RoleReader}, Ceiling: cmi.SensitivityInternal}
-			req := cmictx.Request{Query: q.Text, Purpose: "evaluation", Budget: &cmi.Budget{MaxItems: largeK, MaxTokens: 8000}, Entities: q.Entities}
-			if q.Thread != "" {
-				req.Scope = &cmi.Scope{Kind: cmi.ScopeThread, ID: q.Thread}
-			}
-			start := time.Now()
-			pkg, _, err := resolver.Resolve(ctx, tenant, v, req)
-			lat = append(lat, float64(time.Since(start).Microseconds())/1000)
-			if err != nil {
-				t.Fatal(q.ID, err)
-			}
-			var ranked []string // distinct refs in rank order
-			seen := map[string]bool{}
-			for _, it := range pkg.Items {
-				if ref := refOf[it.ID]; !seen[ref] {
-					seen[ref] = true
-					ranked = append(ranked, ref)
-				}
-			}
-			t.Logf("%s %s [%s] %s -> %s", cfg.name, q.ID, q.Category, q.Text, strings.Join(ranked, " "))
-			forbidden := map[string]bool{}
-			for _, f := range q.Forbidden {
-				forbidden[f] = true
-			}
-			for _, ref := range ranked {
-				if forbidden[ref] {
-					m.ForbiddenReturns++
-				}
-			}
-			if len(q.Relevant) == 0 {
-				m.NoAnswer++
-				if len(ranked) == 0 {
-					m.NoAnswerEmpty++
-				}
-				continue
-			}
-			relevant := map[string]bool{}
-			for _, r := range q.Relevant {
-				relevant[r] = true
-			}
-			recallAt := func(n int) float64 {
-				hits := 0
-				for i, ref := range ranked {
-					if i < n && relevant[ref] {
-						hits++
+		for _, vr := range variantsFor(cfg.doc != nil) {
+			name := cfg.name + vr.suffix
+			resolver := &cmictx.Resolver{Store: store, Embedder: cfg.query, Now: func() time.Time { return now }, SemanticFloor: vr.floor, Blend: vr.blend}
+			var dump []map[string]any
+			if os.Getenv("IDP_EVAL_DUMP") != "" && cfg.doc != nil {
+				resolver.OnCandidates = func(query string, c []cmictx.CandidateScore) {
+					for _, x := range c {
+						dump = append(dump, map[string]any{"q": query, "ref": refOf[x.ID], "lex": x.Lexical, "sem": x.Semantic})
 					}
 				}
-				return float64(hits) / float64(len(relevant))
 			}
-			first, dcg := 0.0, 0.0
-			for i, ref := range ranked {
-				if relevant[ref] {
-					if first == 0 {
-						first = 1 / float64(i+1)
-					}
-					dcg += 1 / math.Log2(float64(i+2))
+			m := LargeMetrics{Configuration: name, Queries: len(ds.Queries), ByCategory: map[string]CategoryStat{}, Misses: []string{}}
+			type acc struct {
+				n       int
+				r5, mrr float64
+			}
+			cats := map[string]*acc{}
+			var lat []float64
+			var r1, r3, r5, r10, mrr, ndcg float64
+			for _, q := range ds.Queries {
+				subject := q.Subject
+				if subject == "" {
+					subject = "eval-reader"
 				}
-			}
-			ideal := 0.0
-			for i := 0; i < len(relevant) && i < largeK; i++ {
-				ideal += 1 / math.Log2(float64(i+2))
-			}
-			m.Scored++
-			r1, r3, r5, r10, mrr, ndcg = r1+recallAt(1), r3+recallAt(3), r5+recallAt(5), r10+recallAt(10), mrr+first, ndcg+dcg/ideal
-			c := cats[q.Category]
-			if c == nil {
-				c = &acc{}
-				cats[q.Category] = c
-			}
-			c.n++
-			c.r5 += recallAt(5)
-			c.mrr += first
-			if recallAt(5) < 1 {
-				var missing []string
+				v := postgres.Visibility{Subject: subject, Roles: []string{authorization.RoleReader}, Ceiling: cmi.SensitivityInternal}
+				req := cmictx.Request{Query: q.Text, Purpose: "evaluation", Budget: &cmi.Budget{MaxItems: largeK, MaxTokens: 8000}, Entities: q.Entities}
+				if q.Thread != "" {
+					req.Scope = &cmi.Scope{Kind: cmi.ScopeThread, ID: q.Thread}
+				}
+				start := time.Now()
+				pkg, _, err := resolver.Resolve(ctx, tenant, v, req)
+				lat = append(lat, float64(time.Since(start).Microseconds())/1000)
+				if err != nil {
+					t.Fatal(q.ID, err)
+				}
+				var ranked []string // distinct refs in rank order
+				seen := map[string]bool{}
+				for _, it := range pkg.Items {
+					if ref := refOf[it.ID]; !seen[ref] {
+						seen[ref] = true
+						ranked = append(ranked, ref)
+					}
+				}
+				t.Logf("%s %s [%s] %s -> %s", name, q.ID, q.Category, q.Text, strings.Join(ranked, " "))
+				forbidden := map[string]bool{}
+				for _, f := range q.Forbidden {
+					forbidden[f] = true
+				}
+				for _, ref := range ranked {
+					if forbidden[ref] {
+						m.ForbiddenReturns++
+					}
+				}
+				if len(q.Relevant) == 0 {
+					m.NoAnswer++
+					if len(ranked) == 0 {
+						m.NoAnswerEmpty++
+					}
+					continue
+				}
+				relevant := map[string]bool{}
 				for _, r := range q.Relevant {
-					found := false
+					relevant[r] = true
+				}
+				recallAt := func(n int) float64 {
+					hits := 0
 					for i, ref := range ranked {
-						found = found || (i < 5 && ref == r)
+						if i < n && relevant[ref] {
+							hits++
+						}
 					}
-					if !found {
-						missing = append(missing, r)
+					return float64(hits) / float64(len(relevant))
+				}
+				first, dcg := 0.0, 0.0
+				for i, ref := range ranked {
+					if relevant[ref] {
+						if first == 0 {
+							first = 1 / float64(i+1)
+						}
+						dcg += 1 / math.Log2(float64(i+2))
 					}
 				}
-				m.Misses = append(m.Misses, q.ID+" ["+q.Category+"]: "+strings.Join(missing, ","))
+				ideal := 0.0
+				for i := 0; i < len(relevant) && i < largeK; i++ {
+					ideal += 1 / math.Log2(float64(i+2))
+				}
+				m.Scored++
+				r1, r3, r5, r10, mrr, ndcg = r1+recallAt(1), r3+recallAt(3), r5+recallAt(5), r10+recallAt(10), mrr+first, ndcg+dcg/ideal
+				c := cats[q.Category]
+				if c == nil {
+					c = &acc{}
+					cats[q.Category] = c
+				}
+				c.n++
+				c.r5 += recallAt(5)
+				c.mrr += first
+				if recallAt(5) < 1 {
+					var missing []string
+					for _, r := range q.Relevant {
+						found := false
+						for i, ref := range ranked {
+							found = found || (i < 5 && ref == r)
+						}
+						if !found {
+							missing = append(missing, r)
+						}
+					}
+					m.Misses = append(m.Misses, q.ID+" ["+q.Category+"]: "+strings.Join(missing, ","))
+				}
 			}
-		}
-		n := float64(m.Scored)
-		m.Recall1, m.Recall3, m.Recall5, m.Recall10, m.MRR, m.NDCG10 = round(r1/n), round(r3/n), round(r5/n), round(r10/n), round(mrr/n), round(ndcg/n)
-		for name, c := range cats {
-			m.ByCategory[name] = CategoryStat{Queries: c.n, Recall5: round(c.r5 / float64(c.n)), MRR: round(c.mrr / float64(c.n))}
-		}
-		sort.Float64s(lat)
-		m.LatencyP50ms, m.LatencyP95ms = lat[len(lat)/2], lat[int(float64(len(lat))*0.95)]
-		t.Logf("%s: recall@1 %.3f @3 %.3f @5 %.3f @10 %.3f MRR %.3f nDCG@10 %.3f; no-answer empty %d/%d; forbidden %d; latency p50 %.1f ms p95 %.1f ms",
-			cfg.name, m.Recall1, m.Recall3, m.Recall5, m.Recall10, m.MRR, m.NDCG10, m.NoAnswerEmpty, m.NoAnswer, m.ForbiddenReturns, m.LatencyP50ms, m.LatencyP95ms)
-		if m.ForbiddenReturns != 0 {
-			t.Errorf("%s: %d forbidden (revoked, expired, flagged or foreign) items returned", cfg.name, m.ForbiddenReturns)
-		}
-		results = append(results, m)
-		out, _ := json.MarshalIndent(m, "", "  ")
-		out = append(out, '\n')
-		path := filepath.Join("..", "..", "docs", "eval", "large-"+cfg.name+".json")
-		switch {
-		case *update:
-			if err := os.WriteFile(path, out, 0o644); err != nil {
-				t.Fatal(err)
+			n := float64(m.Scored)
+			m.Recall1, m.Recall3, m.Recall5, m.Recall10, m.MRR, m.NDCG10 = round(r1/n), round(r3/n), round(r5/n), round(r10/n), round(mrr/n), round(ndcg/n)
+			for name, c := range cats {
+				m.ByCategory[name] = CategoryStat{Queries: c.n, Recall5: round(c.r5 / float64(c.n)), MRR: round(c.mrr / float64(c.n))}
 			}
-		case cfg.committed:
-			if committed, err := os.ReadFile(path); err != nil || string(committed) != string(out) {
-				t.Fatalf("%s is out of date; run: make test-eval UPDATE=1\n%s", path, out)
+			sort.Float64s(lat)
+			m.LatencyP50ms, m.LatencyP95ms = lat[len(lat)/2], lat[int(float64(len(lat))*0.95)]
+			t.Logf("%s: recall@1 %.3f @3 %.3f @5 %.3f @10 %.3f MRR %.3f nDCG@10 %.3f; no-answer empty %d/%d; forbidden %d; latency p50 %.1f ms p95 %.1f ms",
+				name, m.Recall1, m.Recall3, m.Recall5, m.Recall10, m.MRR, m.NDCG10, m.NoAnswerEmpty, m.NoAnswer, m.ForbiddenReturns, m.LatencyP50ms, m.LatencyP95ms)
+			if m.ForbiddenReturns != 0 {
+				t.Errorf("%s: %d forbidden (revoked, expired, flagged or foreign) items returned", name, m.ForbiddenReturns)
+			}
+			results = append(results, m)
+			if dump != nil {
+				b, _ := json.Marshal(dump)
+				_ = os.WriteFile(os.Getenv("IDP_EVAL_DUMP"), b, 0o644)
+			}
+			out, _ := json.MarshalIndent(m, "", "  ")
+			out = append(out, '\n')
+			path := filepath.Join("..", "..", "docs", "eval", "large-"+name+".json")
+			switch {
+			case *update:
+				if err := os.WriteFile(path, out, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			case cfg.committed && vr.suffix == "":
+				if committed, err := os.ReadFile(path); err != nil || string(committed) != string(out) {
+					t.Fatalf("%s is out of date; run: make test-eval UPDATE=1\n%s", path, out)
+				}
 			}
 		}
 	}
@@ -302,4 +299,26 @@ func largeReport(version string) string {
 	}
 	sb.WriteString("\n延迟随机器而变，不入库；运行时日志里有 p50 / p95。\n")
 	return sb.String()
+}
+
+type variant struct {
+	suffix       string
+	floor, blend float64
+}
+
+// variantsFor lists the resolver settings to measure on one seeded store: IDP_EVAL_VARIANTS="floor:blend,..."
+// (e.g. "0.45:0.15,0.5:0.15"); without it, one run with the resolver's defaults.
+func variantsFor(embedded bool) []variant {
+	spec := os.Getenv("IDP_EVAL_VARIANTS")
+	if spec == "" || !embedded {
+		return []variant{{}}
+	}
+	var out []variant
+	for _, p := range strings.Split(spec, ",") {
+		f, b, _ := strings.Cut(strings.TrimSpace(p), ":")
+		fl, _ := strconv.ParseFloat(f, 64)
+		bl, _ := strconv.ParseFloat(b, 64)
+		out = append(out, variant{suffix: fmt.Sprintf("-f%s-b%s", f, b), floor: fl, blend: bl})
+	}
+	return out
 }

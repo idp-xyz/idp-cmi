@@ -410,8 +410,14 @@ func (s *Store) SearchMemory(ctx context.Context, tenant string, q Query, scopes
 			}
 		}
 		if len(q.Vector) > 0 && q.Model != "" {
-			rows, err := tx.Query(ctx, `SELECT `+memoryCols+`, cosine_similarity(m.embedding, $4::real[])::float8 AS r, s.trust`+from+`
-				WHERE m.embedding IS NOT NULL AND m.embedding_model = $11`+vecPred+` ORDER BY r DESC NULLS LAST LIMIT $9`, append([]any{v.Subject, v.Roles, rank(v.Ceiling), q.Vector, kinds, ids, q.IncludeFlagged, entities, limit, excluded(v), q.Model}, asOfArgs...)...)
+			score, vfilter, order, ef := s.semanticSQL(ctx, "memory_records", "m", len(q.Vector))
+			if ef > 0 {
+				if err := tuneHNSW(ctx, tx, limit); err != nil {
+					return err
+				}
+			}
+			rows, err := tx.Query(ctx, `SELECT `+memoryCols+`, `+score+` AS r, s.trust`+from+`
+				WHERE m.embedding IS NOT NULL AND m.embedding_model = $11`+vfilter+vecPred+` ORDER BY `+order+` LIMIT $9`, append([]any{v.Subject, v.Roles, rank(v.Ceiling), q.Vector, kinds, ids, q.IncludeFlagged, entities, limit, excluded(v), q.Model}, asOfArgs...)...)
 			if err != nil {
 				return err
 			}

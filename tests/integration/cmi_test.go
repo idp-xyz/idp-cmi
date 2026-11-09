@@ -84,6 +84,7 @@ type env struct {
 	tenantA  string
 	tenantB  string
 	now      time.Time
+	ownerURL string
 }
 
 var profile = identity.Profile{Issuer: "idp-cmi-it", Audience: "idp-cmi", TenantClaim: "tenant_id", RolesClaim: "roles"}
@@ -107,7 +108,7 @@ func newEnv(t *testing.T) *env {
 	if _, err := postgres.Open(ctx, ownerURL); err == nil {
 		t.Fatal("the superuser connection must be refused")
 	}
-	e := &env{t: t, store: store, tenantA: tenantA, tenantB: tenantB, now: time.Now()}
+	e := &env{t: t, store: store, tenantA: tenantA, tenantB: tenantB, now: time.Now(), ownerURL: ownerURL}
 	store.Now = func() time.Time { return e.now }
 	// the deterministic bag-of-words embedder (D11): "collection(s)" means "pickup" to it
 	e.embedder = &embedding.Fake{Dims: 64, Synonyms: map[string]string{"collection": "pickup", "collections": "pickup"}}

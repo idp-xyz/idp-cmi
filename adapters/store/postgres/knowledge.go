@@ -281,8 +281,14 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 			}
 		}
 		if len(q.Vector) > 0 && q.Model != "" {
-			rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, c.flags, cosine_similarity(c.embedding, $4::real[])::float8 AS r, s.trust`+from+`
-				WHERE c.embedding IS NOT NULL AND c.embedding_model = $10`+vecPred+` ORDER BY r DESC NULLS LAST LIMIT $8`, append([]any{v.Subject, v.Roles, rank(v.Ceiling), q.Vector, sources, q.IncludeFlagged, entities, limit, excluded(v), q.Model}, asOfArgs...)...)
+			score, vfilter, order, ef := s.semanticSQL(ctx, "knowledge_chunks", "c", len(q.Vector))
+			if ef > 0 {
+				if err := tuneHNSW(ctx, tx, limit); err != nil {
+					return err
+				}
+			}
+			rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, c.flags, `+score+` AS r, s.trust`+from+`
+				WHERE c.embedding IS NOT NULL AND c.embedding_model = $10`+vfilter+vecPred+` ORDER BY `+order+` LIMIT $8`, append([]any{v.Subject, v.Roles, rank(v.Ceiling), q.Vector, sources, q.IncludeFlagged, entities, limit, excluded(v), q.Model}, asOfArgs...)...)
 			if err != nil {
 				return err
 			}

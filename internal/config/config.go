@@ -60,6 +60,11 @@ type Embedding struct {
 	CAFile     string        `yaml:"caFile"`
 	Timeout    time.Duration `yaml:"timeout"`
 	Backfill   time.Duration `yaml:"backfill"` // how often rows without a vector are embedded (default 30s)
+	// Retrieval calibration (ADR-0001 D37), per model and measured on the labelled set (tests/eval, docs/eval/LARGE.md):
+	QueryPrefix    string  `yaml:"queryPrefix"`    // instruction in front of every query, e.g. "Instruct: Given a user question, retrieve the passages that answer it\nQuery: "
+	DocumentPrefix string  `yaml:"documentPrefix"` // in front of every stored text (E5 models: "passage: "); changing it re-embeds everything
+	Floor          float64 `yaml:"floor"`          // cosine below which a candidate is dropped (0 = the built-in 0.35)
+	LexicalBlend   float64 `yaml:"lexicalBlend"`   // > 0: semantic-led relevance, cosine + blend x normalized lexical score (0 = the legacy max of the two)
 }
 
 // Consolidation is the chat model that distills episodic memory into semantic statements (D15).
@@ -101,6 +106,9 @@ func Load(path string) (*File, error) {
 		}
 		if e.APIKey, err = secret(e.APIKey, e.APIKeyFile); err != nil {
 			return nil, fmt.Errorf("embedding: %w", err)
+		}
+		if e.Floor < 0 || e.Floor >= 1 || e.LexicalBlend < 0 || e.LexicalBlend > 1 {
+			return nil, errors.New("embedding: floor must be within [0, 1) and lexicalBlend within [0, 1]")
 		}
 		if e.Backfill == 0 {
 			e.Backfill = 30 * time.Second

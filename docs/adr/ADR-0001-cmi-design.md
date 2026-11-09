@@ -179,3 +179,23 @@ Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到�
 | D36 | **成员导出自己的记忆**：`GET /v1/memory/export`（cmi-reader 或 cmi-writer）返回调用者 subject 作用域里 CMI 当前视为有效的记录，信封 `idp-cmi.memory-export.v1`，`Content-Disposition: attachment`，超过 500 条时 `truncated: true`；永不包含别人的记录 | 数据主体访问权；与 D26（成员删除）配套 |
 
 契约 `idp.telos.cmi` 不变（导出信封与 429 不是契约文档）。局限：限额计数不是原子的；速率限制按副本；导出只含有效记录，不含已过期、已撤销或待审的记录。
+
+## 17. 检索质量：评测、真实嵌入模型、pgvector（2026-11-09）
+
+起因：生产就绪盘点里"检索质量"一项。先建评测，再按数据决定，而不是凭感觉。
+
+**评测集**（`tests/eval/dataset_large.json`，`docs/eval/LARGE.md`）：虚构的包裹承运商手册（中英文）、客户与订单记忆，88 条查询分 10 类（同义改写、关键词、跨语言、标识符、多答案、近似干扰、个人、线程、租户、无答案）。指标：Recall@1/3/5/10、MRR、nDCG@10、"无答案时返回空"的比例、禁止项（撤销、过期、被标记、他人）。`make test-eval` 校验全文基线逐字节不变；真实嵌入端点用 `IDP_EVAL_EMBEDDING_*` 环境变量接入（TEI 在本机 CPU 上跑通）。
+
+| 配置 | R@5 | MRR | 无答案返回空 |
+|---|---|---|---|
+| 只全文 | 0.635 | 0.624 | 4 / 10 |
+| Qwen3-Embedding-0.6B，原融合（取较大者，下限 0.35） | 0.891 | 0.760 | 3 / 10 |
+| Qwen3-Embedding-0.6B，校准后（下限 0.45，混合 0.05） | 0.936 | 0.849 | 8 / 10 |
+| granite-embedding-97m-multilingual-r2（下限 0.75） | 0.891 | 0.808 | 1 / 10 |
+
+| # | 决策 | 理由 |
+|---|---|---|
+| D37 | **嵌入要按模型校准**：配置 `embedding.queryPrefix` / `documentPrefix`（非对称模型的指令前缀；文档前缀的哈希进入 `embedding_model`，改了就重算，查询前缀不影响存量向量）、`floor`（余弦下限）、`lexicalBlend`（> 0 时相关度改为"余弦 + blend × 归一化全文分"，有向量的候选低于下限一律丢弃，没有向量的候选按全文半权保留）。默认值不变（0.35、旧融合），所以旧部署的行为不变 | 原融合里最佳全文命中归一化后恒为 1，垃圾查询也会返回东西（无答案返回空 3/10）；不同模型余弦分布差很多（Qwen3 在 0.45 附近分界，granite 要 0.75 以上），常数 0.35 对谁都不对。查询指令前缀对 Qwen3 有小幅收益（R@5 0.878 → 0.891） |
+| D38 | **可选 pgvector**：`Migrate` 在扩展可用时（幂等，晚装也行）加 `embedding_v vector` 列，用触发器与 `real[]` 保持同步（擦除、撤销清空数组时副本同步清空，写入路径一行不改）；语义检索改用原生 `<=>`；`idp-cmi vector-index DIMS` 为每种向量维度建部分表达式 HNSW 索引（`CONCURRENTLY`，`maintenance_work_mem` 可设，默认 1GB），查询自动识别并设置 `hnsw.ef_search ≥ LIMIT` 与迭代扫描。没有扩展时仍用 SQL 函数，行为不变；两条路径在评测集上给出同样的指标 | 实测（本机，1024 维）：SQL 函数逐行扫描 5 000 行 0.8 s（十万行按线性外推约 16 s，未实测）；原生精确扫描 50 000 行 22 ms；HNSW 在 5% 选择度过滤下 10–22 ms。HNSW 构建 50 000 × 1024 在默认内存下 233 s，所以构建要给内存。`LIMIT 200` 而 `ef_search` 默认 40 会静默只返回 40 行，查询侧必须设置 |
+
+局限与待办：评测集是自建的、规模小（88 条），既用来选又用来评，阈值取的是平台期中段而不是最优点，换成真实语料要重测；只测了 granite 和 Qwen3-0.6B（e5、bge-m3、EmbeddingGemma、jina v5 待测）；标识符类查询在语义主导模式下有一例（`HS 9503.00`）掉到下限以下，实体（`entities`）仍按精确匹配；重排（cross-encoder）、RRF 对比、多模态均未做；pgvector 对每种维度需单独建索引，换模型要重建；Kubernetes 与 compose 里的 PostgreSQL 镜像尚未换成带 pgvector 的。

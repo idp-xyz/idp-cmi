@@ -1,8 +1,9 @@
 # idp-cmi build and test entry points.
 PG_IMAGE ?= public.ecr.aws/docker/library/postgres:17-alpine
 PG_NAME  ?= idp-cmi-test-pg
+PGVECTOR_IMAGE ?= pgvector/pgvector:0.8.7-pg17
 
-.PHONY: build test vet test-integration test-eval e2e test-live pg-up pg-down
+.PHONY: build test vet test-integration test-integration-pgvector test-eval e2e test-live pg-up pg-down
 
 # Retrieval evaluation on the labelled set (ADR-0001 D27); UPDATE=1 regenerates docs/eval
 test-eval: pg-up
@@ -33,6 +34,10 @@ test-integration: pg-up
 	IDP_TEST_PG_OWNER_URL="postgres://postgres:test@127.0.0.1:$$PORT/postgres?sslmode=disable" \
 	go test -count=1 -race -v -timeout 10m ./tests/integration/ ; status=$$?; \
 	$(MAKE) --no-print-directory pg-down; exit $$status
+
+# the same suite on PostgreSQL with pgvector (ADR-0001 D38): the semantic retriever's native path and the HNSW test run
+test-integration-pgvector:
+	@$(MAKE) --no-print-directory test-integration PG_IMAGE=$(PGVECTOR_IMAGE)
 
 pg-up:
 	@docker rm -f $(PG_NAME) >/dev/null 2>&1 || true

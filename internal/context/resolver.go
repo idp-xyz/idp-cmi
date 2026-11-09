@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -81,6 +82,14 @@ func (r *Request) Validate() error {
 // would crowd out lexical hits within the budget.
 const SemanticFloor = 0.35
 
+// CandidateScore is what the two retrievers gave one candidate, before any floor or fusion. It exists
+// for tuning on a labelled set (tests/eval), not for consumers.
+type CandidateScore struct {
+	ID       string
+	Lexical  float64 // ts_rank, absolute
+	Semantic float64 // cosine, 0 when there is no vector
+}
+
 // Resolver assembles packages. With an Embedder the query is also matched semantically (D11).
 type Resolver struct {
 	Store    *postgres.Store
@@ -88,6 +97,18 @@ type Resolver struct {
 	Now      func() time.Time
 	NewID    func() string
 	Log      *slog.Logger
+	// SemanticFloor overrides the package constant of the same name when positive: the cosine below which a
+	// vector-only candidate (or, with Blend > 0, any candidate that has a vector) is dropped. Cosine scales
+	// differ between embedding models, so this is calibrated per model on the labelled set (tests/eval).
+	SemanticFloor float64
+	// Blend > 0 switches the relevance from "the larger of lexical and semantic" to semantic-led: relevance is
+	// the cosine plus Blend times the lexical score normalized to the best lexical hit (so exact identifiers
+	// still lift a candidate), a candidate whose cosine is under the floor is dropped even if a word matched
+	// (this is what lets a query with no answer return nothing), and a candidate without a vector yet (the
+	// projection is behind) keeps its lexical standing at half weight.
+	Blend float64
+	// OnCandidates, when set, is called with every candidate's raw scores before filtering (tuning only).
+	OnCandidates func(query string, c []CandidateScore)
 }
 
 var tokenRE = regexp.MustCompile(`[\p{L}\p{N}_]+`)
@@ -269,10 +290,26 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 			}
 		}
 	}
-	// semantic-only candidates below the floor are noise
+	if r.OnCandidates != nil {
+		raw := make([]CandidateScore, 0, len(cands))
+		for _, c := range cands {
+			raw = append(raw, CandidateScore{ID: c.item.ID, Lexical: c.lexical, Semantic: c.semantic})
+		}
+		r.OnCandidates(req.Query, raw)
+	}
+	floor := SemanticFloor
+	if r.SemanticFloor > 0 {
+		floor = r.SemanticFloor
+	}
+	// candidates below the floor are noise
 	kept := cands[:0]
 	for _, c := range cands {
-		if c.lexical == 0 && c.semantic < SemanticFloor {
+		if r.Blend > 0 && len(q.Vector) > 0 {
+			if c.semantic != 0 && c.semantic < floor { // has a vector and is not close enough, whatever words matched
+				omitted.LowSimilarity++
+				continue
+			}
+		} else if c.lexical == 0 && c.semantic < floor {
 			omitted.LowSimilarity++
 			continue
 		}
@@ -280,7 +317,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 	}
 	cands = kept
 	// relevance: lexical ranks normalized to the best lexical hit, semantic cosine as is, the larger
-	// wins; then trust, then freshness-weighted relevance; ties by recency
+	// wins (or, with Blend, the semantic-led sum); then trust, then freshness-weighted relevance; ties by recency
 	var maxLex float64
 	for _, c := range cands {
 		if c.lexical > maxLex {
@@ -288,9 +325,21 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 		}
 	}
 	for i := range cands {
-		rel := cands[i].semantic
-		if maxLex > 0 && cands[i].lexical/maxLex > rel {
-			rel = cands[i].lexical / maxLex
+		var rel float64
+		lexNorm := 0.0
+		if maxLex > 0 {
+			lexNorm = cands[i].lexical / maxLex
+		}
+		switch {
+		case r.Blend > 0 && len(q.Vector) > 0 && cands[i].semantic == 0:
+			rel = 0.5 * lexNorm // not embedded yet: found by words only
+		case r.Blend > 0 && len(q.Vector) > 0:
+			rel = math.Min(1, cands[i].semantic+r.Blend*lexNorm)
+		default:
+			rel = cands[i].semantic
+			if lexNorm > rel {
+				rel = lexNorm
+			}
 		}
 		if rel < 0 {
 			rel = 0
