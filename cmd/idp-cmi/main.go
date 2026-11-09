@@ -218,6 +218,10 @@ func serve(log *slog.Logger) error {
 		}
 		embedder = &embedding.OpenAI{BaseURL: e.BaseURL, ModelName: e.Model, APIKey: e.APIKey, Dimensions: e.Dimensions, Timeout: e.Timeout,
 			HTTP: &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsCfg}}}
+		if e.Floor == 0 || e.LexicalBlend == 0 { // D37: the built-in values are the legacy ones, right for no model in particular
+			log.Warn("embedding.floor or embedding.lexicalBlend is not set: using the legacy relevance (floor 0.35, the larger of lexical and semantic); the cosine scale differs between models, so calibrate yours (tests/eval, ADR-0001 D37)",
+				"floor", e.Floor, "lexicalBlend", e.LexicalBlend, "model", e.Model)
+		}
 		asym := embedding.Asymmetric{Base: embedder, QueryPrefix: e.QueryPrefix, DocumentPrefix: e.DocumentPrefix} // D37
 		embedder = asym.Queries()
 		store.Embedder = asym

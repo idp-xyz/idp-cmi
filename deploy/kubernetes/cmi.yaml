@@ -38,16 +38,17 @@ metadata:
   namespace: idp-cmi
 data:
   cmi.yaml: |
+    # A self-hosted Qwen3-Embedding-0.6B (text-embeddings-inference, 1024 dimensions): restricted data never leaves the
+    # cluster (ADR-0001 D29). The three calibration lines below belong to THIS model: cosine scales differ between models,
+    # so another model needs its own, measured with tests/eval (ADR-0001 D37, docs/eval/LARGE.md and HELDOUT.md).
     embedding:
-      baseUrl: https://models.example.com/v1
-      model: text-embedding-3-small
+      baseUrl: https://embeddings.example.com/v1
+      model: Qwen3-Embedding-0.6B
       apiKeyFile: /etc/idp/model-keys/embedding
       caFile: /etc/idp/model-ca/ca.crt
-      # Calibration is per model (ADR-0001 D37, docs/eval/LARGE.md): cosine scales differ, so measure on your own
-      # labelled queries before trusting these. Measured for Qwen3-Embedding-0.6B (1024 dims), see docs/eval:
-      #   queryPrefix: "Instruct: Given a user question, retrieve the passages that answer it\nQuery: "
-      #   floor: 0.40          # recall falls steeply above ~0.45 on both evaluation sets; re-measure on your own documents
-      #   lexicalBlend: 0.05
+      queryPrefix: "Instruct: Given a user question, retrieve the passages that answer it\nQuery: "
+      floor: 0.40          # cosine below which a candidate is dropped; recall falls steeply above ~0.45 on both evaluation sets
+      lexicalBlend: 0.05   # relevance = cosine + 0.05 x lexical score, so an exact identifier still lifts a candidate
     # Optional cross-encoder rerank (ADR-0001 D39), OFF by default: it trades 3-7 points of recall for refusing to answer when
     # nothing fits (bge-reranker-v2-m3, top 10, floor 0.01-0.05). Enable only where "better silent than wrong" holds.
     # rerank:

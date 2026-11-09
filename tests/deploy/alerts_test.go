@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"idp-cmi/internal/config"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -43,5 +44,42 @@ func TestAlertRulesUseExportedMetrics(t *testing.T) {
 	}
 	if seen == 0 {
 		t.Fatal("no idp_cmi_ metric found in alerts.yaml")
+	}
+}
+
+// The CMI's shipped configuration (the ConfigMap in cmi.yaml) must load with the service's own loader, and carry the
+// calibrated retrieval settings of ADR-0001 D37: a typo in a key would otherwise be found at the first rollout.
+func TestShippedConfigLoads(t *testing.T) {
+	var cfg string
+	for _, d := range load(t, "cmi.yaml") {
+		if str(d, "kind") == "ConfigMap" && str(d, "metadata", "name") == "idp-cmi-config" {
+			cfg = str(d, "data", "cmi.yaml")
+		}
+	}
+	if cfg == "" {
+		t.Fatal("no idp-cmi-config ConfigMap")
+	}
+	p := filepath.Join(t.TempDir(), "cmi.yaml")
+	if err := os.WriteFile(p, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// apiKeyFile entries point at files that exist only in the Pod
+	cfg = strings.ReplaceAll(cfg, "apiKeyFile:", "# apiKeyFile:")
+	if err := os.WriteFile(p, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := config.Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := f.Embedding
+	if e == nil || e.Floor != 0.40 || e.LexicalBlend != 0.05 || !strings.HasPrefix(e.QueryPrefix, "Instruct:") || !strings.HasSuffix(e.QueryPrefix, "\nQuery: ") {
+		t.Fatalf("embedding calibration: %+v", e)
+	}
+	if f.Rerank != nil {
+		t.Fatal("the reranker is off by default (ADR-0001 D39)")
+	}
+	if f.Limits == nil || f.Limits.MaxRecordsPerScope == 0 {
+		t.Fatalf("limits: %+v", f.Limits)
 	}
 }
