@@ -60,8 +60,18 @@ type CategoryStat struct {
 	MRR     float64 `json:"mrr"`
 }
 
-func TestRetrievalOnTheLargeSet(t *testing.T) {
-	raw, err := os.ReadFile("dataset_large.json")
+func TestRetrievalOnTheLargeSet(t *testing.T) { runSet(t, "large") }
+
+// TestRetrievalOnTheHeldOutSet runs the same measurement on dataset_heldout.json, simulated with a chat model
+// (gen_heldout.py) and never used to choose a threshold: it shows whether the calibration holds on documents
+// nobody tuned against.
+func TestRetrievalOnTheHeldOutSet(t *testing.T) { runSet(t, "heldout") }
+
+func runSet(t *testing.T, set string) {
+	raw, err := os.ReadFile("dataset_" + set + ".json")
+	if os.IsNotExist(err) {
+		t.Skip("no dataset_" + set + ".json")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +249,7 @@ func TestRetrievalOnTheLargeSet(t *testing.T) {
 			}
 			out, _ := json.MarshalIndent(m, "", "  ")
 			out = append(out, '\n')
-			path := filepath.Join("..", "..", "docs", "eval", "large-"+name+".json")
+			path := filepath.Join("..", "..", "docs", "eval", set+"-"+name+".json")
 			switch {
 			case *update:
 				if err := os.WriteFile(path, out, 0o644); err != nil {
@@ -253,16 +263,16 @@ func TestRetrievalOnTheLargeSet(t *testing.T) {
 		}
 	}
 	if *update {
-		if err := os.WriteFile(filepath.Join("..", "..", "docs", "eval", "LARGE.md"), []byte(largeReport(ds.Version)), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join("..", "..", "docs", "eval", strings.ToUpper(set)+".md"), []byte(largeReport(set, ds.Version)), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	_ = fmt.Sprint
 }
 
-// largeReport renders every docs/eval/large-*.json present.
-func largeReport(version string) string {
-	files, _ := filepath.Glob(filepath.Join("..", "..", "docs", "eval", "large-*.json"))
+// largeReport renders every docs/eval/<set>-*.json present.
+func largeReport(set, version string) string {
+	files, _ := filepath.Glob(filepath.Join("..", "..", "docs", "eval", set+"-*.json"))
 	sort.Strings(files)
 	var all []LargeMetrics
 	for _, f := range files {
@@ -273,7 +283,7 @@ func largeReport(version string) string {
 		}
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "# 大评测集上的检索结果（%s）\n\n数据集 `tests/eval/dataset_large.json`；由 `make test-eval UPDATE=1`（可加 `IDP_EVAL_EMBEDDING_*`）生成。k 最大为 %d。\n\n", version, largeK)
+	fmt.Fprintf(&sb, "# 大评测集上的检索结果（%s）\n\n数据集 `tests/eval/dataset_%s.json`；由 `make test-eval UPDATE=1`（可加 `IDP_EVAL_EMBEDDING_*`）生成。k 最大为 %d。\n\n", version, set, largeK)
 	sb.WriteString("| 配置 | R@1 | R@3 | R@5 | R@10 | MRR | nDCG@10 | 无答案时返回空 | 返回禁止项 |\n|---|---|---|---|---|---|---|---|---|\n")
 	for _, m := range all {
 		fmt.Fprintf(&sb, "| %s | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %d / %d | %d |\n", m.Configuration, m.Recall1, m.Recall3, m.Recall5, m.Recall10, m.MRR, m.NDCG10, m.NoAnswerEmpty, m.NoAnswer, m.ForbiddenReturns)
