@@ -361,49 +361,67 @@
     {
      "ref": "p01-f-commute-0",
      "day": 13,
+     "key": "commute",
+     "value": "开车",
      "content": "用户通勤方式：开车（way of commuting: 开车）",
      "validUntilDay": 27
     },
     {
      "ref": "p01-f-commute-1",
      "day": 27,
+     "key": "commute",
+     "value": "地铁",
      "content": "用户通勤方式：地铁（way of commuting: 地铁）",
      "validUntilDay": 64
     },
     {
      "ref": "p01-f-commute-2",
      "day": 64,
+     "key": "commute",
+     "value": "公交车",
      "content": "用户通勤方式：公交车（way of commuting: 公交车）"
     },
     {
      "ref": "p01-f-city-0",
      "day": 39,
+     "key": "city",
+     "value": "成都",
      "content": "用户现在住的城市：成都（city I live in: 成都）"
     },
     {
      "ref": "p01-f-hotel-0",
      "day": 75,
+     "key": "hotel",
+     "value": "亚朵",
      "content": "用户出差住的酒店品牌：亚朵（hotel chain for trips: 亚朵）"
     },
     {
      "ref": "p01-f-team-0",
      "day": 33,
+     "key": "team",
+     "value": "数据平台组",
      "content": "用户所在的团队：数据平台组（team: 数据平台组）"
     },
     {
      "ref": "p01-f-meeting-0",
      "day": 41,
+     "key": "meeting",
+     "value": "下午三点",
      "content": "用户喜欢的会议时间：下午三点（preferred meeting time: 下午三点）"
     },
     {
      "ref": "p01-f-phone-0",
      "day": 18,
+     "key": "phone",
+     "value": "小米 14",
      "content": "用户用的手机：小米 14（phone: 小米 14）",
      "validUntilDay": 60
     },
     {
      "ref": "p01-f-phone-1",
      "day": 60,
+     "key": "phone",
+     "value": "Pixel 8",
      "content": "用户用的手机：Pixel 8（phone: Pixel 8）"
     }
    ],
@@ -964,43 +982,59 @@
     {
      "ref": "p02-f-budget-0",
      "day": 20,
+     "key": "budget",
+     "value": "800元",
      "content": "用户出差每晚住宿预算：800元（hotel budget per night: 800元）"
     },
     {
      "ref": "p02-f-floor-0",
      "day": 40,
+     "key": "floor",
+     "value": "7楼",
      "content": "用户办公室所在楼层：7楼（office floor: 7楼）"
     },
     {
      "ref": "p02-f-channel-0",
      "day": 29,
+     "key": "channel",
+     "value": "电话",
      "content": "用户接收通知的方式：电话（notification channel: 电话）"
     },
     {
      "ref": "p02-f-lang_code-0",
      "day": 17,
+     "key": "lang_code",
+     "value": "Go",
      "content": "用户最常用的编程语言：Go（main programming language: Go）",
      "validUntilDay": 21
     },
     {
      "ref": "p02-f-lang_code-1",
      "day": 21,
+     "key": "lang_code",
+     "value": "TypeScript",
      "content": "用户最常用的编程语言：TypeScript（main programming language: TypeScript）"
     },
     {
      "ref": "p02-f-colour-0",
      "day": 32,
+     "key": "colour",
+     "value": "青色",
      "content": "用户最喜欢的颜色：青色（favourite colour: 青色）",
      "validUntilDay": 66
     },
     {
      "ref": "p02-f-colour-1",
      "day": 66,
+     "key": "colour",
+     "value": "米白色",
      "content": "用户最喜欢的颜色：米白色（favourite colour: 米白色）"
     },
     {
      "ref": "p02-f-hotel-0",
      "day": 20,
+     "key": "hotel",
+     "value": "希尔顿",
      "content": "用户出差住的酒店品牌：希尔顿（hotel chain for trips: 希尔顿）"
     }
    ],
@@ -1559,49 +1593,67 @@
     {
      "ref": "p03-f-os-0",
      "day": 81,
+     "key": "os",
+     "value": "Windows",
      "content": "用户电脑系统：Windows（laptop operating system: Windows）"
     },
     {
      "ref": "p03-f-team-0",
      "day": 48,
+     "key": "team",
+     "value": "支付组",
      "content": "用户所在的团队：支付组（team: 支付组）",
      "validUntilDay": 78
     },
     {
      "ref": "p03-f-team-1",
      "day": 78,
+     "key": "team",
+     "value": "搜索组",
      "content": "用户所在的团队：搜索组（team: 搜索组）"
     },
     {
      "ref": "p03-f-colour-0",
      "day": 26,
+     "key": "colour",
+     "value": "青色",
      "content": "用户最喜欢的颜色：青色（favourite colour: 青色）"
     },
     {
      "ref": "p03-f-budget-0",
      "day": 35,
+     "key": "budget",
+     "value": "500元",
      "content": "用户出差每晚住宿预算：500元（hotel budget per night: 500元）"
     },
     {
      "ref": "p03-f-city-0",
      "day": 10,
+     "key": "city",
+     "value": "厦门",
      "content": "用户现在住的城市：厦门（city I live in: 厦门）",
      "validUntilDay": 33
     },
     {
      "ref": "p03-f-city-1",
      "day": 33,
+     "key": "city",
+     "value": "成都",
      "content": "用户现在住的城市：成都（city I live in: 成都）"
     },
     {
      "ref": "p03-f-allergy-0",
      "day": 36,
+     "key": "allergy",
+     "value": "芒果",
      "content": "用户过敏源：芒果（allergy: 芒果）",
      "validUntilDay": 49
     },
     {
      "ref": "p03-f-allergy-1",
      "day": 49,
+     "key": "allergy",
+     "value": "花粉",
      "content": "用户过敏源：花粉（allergy: 花粉）"
     }
    ],
@@ -2164,55 +2216,75 @@
     {
      "ref": "p04-f-manager-0",
      "day": 29,
+     "key": "manager",
+     "value": "陈浩",
      "content": "用户直属经理：陈浩（line manager: 陈浩）"
     },
     {
      "ref": "p04-f-phone-0",
      "day": 46,
+     "key": "phone",
+     "value": "iPhone 15",
      "content": "用户用的手机：iPhone 15（phone: iPhone 15）"
     },
     {
      "ref": "p04-f-budget-0",
      "day": 6,
+     "key": "budget",
+     "value": "2000元",
      "content": "用户出差每晚住宿预算：2000元（hotel budget per night: 2000元）"
     },
     {
      "ref": "p04-f-commute-0",
      "day": 29,
+     "key": "commute",
+     "value": "骑自行车",
      "content": "用户通勤方式：骑自行车（way of commuting: 骑自行车）"
     },
     {
      "ref": "p04-f-hotel-0",
      "day": 24,
+     "key": "hotel",
+     "value": "如家",
      "content": "用户出差住的酒店品牌：如家（hotel chain for trips: 如家）",
      "validUntilDay": 40
     },
     {
      "ref": "p04-f-hotel-1",
      "day": 40,
+     "key": "hotel",
+     "value": "亚朵",
      "content": "用户出差住的酒店品牌：亚朵（hotel chain for trips: 亚朵）",
      "validUntilDay": 80
     },
     {
      "ref": "p04-f-hotel-2",
      "day": 80,
+     "key": "hotel",
+     "value": "全季",
      "content": "用户出差住的酒店品牌：全季（hotel chain for trips: 全季）"
     },
     {
      "ref": "p04-f-allergy-0",
      "day": 18,
+     "key": "allergy",
+     "value": "花生",
      "content": "用户过敏源：花生（allergy: 花生）",
      "validUntilDay": 49
     },
     {
      "ref": "p04-f-allergy-1",
      "day": 49,
+     "key": "allergy",
+     "value": "花粉",
      "content": "用户过敏源：花粉（allergy: 花粉）",
      "validUntilDay": 60
     },
     {
      "ref": "p04-f-allergy-2",
      "day": 60,
+     "key": "allergy",
+     "value": "海鲜",
      "content": "用户过敏源：海鲜（allergy: 海鲜）"
     }
    ],
@@ -2777,73 +2849,99 @@
     {
      "ref": "p05-f-commute-0",
      "day": 40,
+     "key": "commute",
+     "value": "骑自行车",
      "content": "用户通勤方式：骑自行车（way of commuting: 骑自行车）",
      "validUntilDay": 54
     },
     {
      "ref": "p05-f-commute-1",
      "day": 54,
+     "key": "commute",
+     "value": "公交车",
      "content": "用户通勤方式：公交车（way of commuting: 公交车）"
     },
     {
      "ref": "p05-f-os-0",
      "day": 11,
+     "key": "os",
+     "value": "Windows",
      "content": "用户电脑系统：Windows（laptop operating system: Windows）",
      "validUntilDay": 86
     },
     {
      "ref": "p05-f-os-1",
      "day": 86,
+     "key": "os",
+     "value": "macOS",
      "content": "用户电脑系统：macOS（laptop operating system: macOS）"
     },
     {
      "ref": "p05-f-team-0",
      "day": 23,
+     "key": "team",
+     "value": "支付组",
      "content": "用户所在的团队：支付组（team: 支付组）",
      "validUntilDay": 49
     },
     {
      "ref": "p05-f-team-1",
      "day": 49,
+     "key": "team",
+     "value": "搜索组",
      "content": "用户所在的团队：搜索组（team: 搜索组）",
      "validUntilDay": 88
     },
     {
      "ref": "p05-f-team-2",
      "day": 88,
+     "key": "team",
+     "value": "基础设施组",
      "content": "用户所在的团队：基础设施组（team: 基础设施组）"
     },
     {
      "ref": "p05-f-colour-0",
      "day": 54,
+     "key": "colour",
+     "value": "墨绿色",
      "content": "用户最喜欢的颜色：墨绿色（favourite colour: 墨绿色）",
      "validUntilDay": 59
     },
     {
      "ref": "p05-f-colour-1",
      "day": 59,
+     "key": "colour",
+     "value": "青色",
      "content": "用户最喜欢的颜色：青色（favourite colour: 青色）",
      "validUntilDay": 70
     },
     {
      "ref": "p05-f-colour-2",
      "day": 70,
+     "key": "colour",
+     "value": "朱红色",
      "content": "用户最喜欢的颜色：朱红色（favourite colour: 朱红色）"
     },
     {
      "ref": "p05-f-report-0",
      "day": 77,
+     "key": "report",
+     "value": "Markdown",
      "content": "用户报告格式：Markdown（report format: Markdown）"
     },
     {
      "ref": "p05-f-manager-0",
      "day": 21,
+     "key": "manager",
+     "value": "陈浩",
      "content": "用户直属经理：陈浩（line manager: 陈浩）",
      "validUntilDay": 89
     },
     {
      "ref": "p05-f-manager-1",
      "day": 89,
+     "key": "manager",
+     "value": "周婷",
      "content": "用户直属经理：周婷（line manager: 周婷）"
     }
    ],
@@ -3428,79 +3526,107 @@
     {
      "ref": "p06-f-diet-0",
      "day": 9,
+     "key": "diet",
+     "value": "无麸质",
      "content": "用户饮食习惯：无麸质（diet: 无麸质）",
      "validUntilDay": 28
     },
     {
      "ref": "p06-f-diet-1",
      "day": 28,
+     "key": "diet",
+     "value": "素食",
      "content": "用户饮食习惯：素食（diet: 素食）",
      "validUntilDay": 84
     },
     {
      "ref": "p06-f-diet-2",
      "day": 84,
+     "key": "diet",
+     "value": "不吃辣",
      "content": "用户饮食习惯：不吃辣（diet: 不吃辣）"
     },
     {
      "ref": "p06-f-os-0",
      "day": 52,
+     "key": "os",
+     "value": "macOS",
      "content": "用户电脑系统：macOS（laptop operating system: macOS）"
     },
     {
      "ref": "p06-f-lang_code-0",
      "day": 24,
+     "key": "lang_code",
+     "value": "Go",
      "content": "用户最常用的编程语言：Go（main programming language: Go）",
      "validUntilDay": 61
     },
     {
      "ref": "p06-f-lang_code-1",
      "day": 61,
+     "key": "lang_code",
+     "value": "Rust",
      "content": "用户最常用的编程语言：Rust（main programming language: Rust）",
      "validUntilDay": 66
     },
     {
      "ref": "p06-f-lang_code-2",
      "day": 66,
+     "key": "lang_code",
+     "value": "Python",
      "content": "用户最常用的编程语言：Python（main programming language: Python）"
     },
     {
      "ref": "p06-f-channel-0",
      "day": 9,
+     "key": "channel",
+     "value": "邮件",
      "content": "用户接收通知的方式：邮件（notification channel: 邮件）",
      "validUntilDay": 41
     },
     {
      "ref": "p06-f-channel-1",
      "day": 41,
+     "key": "channel",
+     "value": "电话",
      "content": "用户接收通知的方式：电话（notification channel: 电话）"
     },
     {
      "ref": "p06-f-language-0",
      "day": 50,
+     "key": "language",
+     "value": "德语",
      "content": "用户首选工作语言：德语（preferred working language: 德语）",
      "validUntilDay": 54
     },
     {
      "ref": "p06-f-language-1",
      "day": 54,
+     "key": "language",
+     "value": "中文",
      "content": "用户首选工作语言：中文（preferred working language: 中文）",
      "validUntilDay": 78
     },
     {
      "ref": "p06-f-language-2",
      "day": 78,
+     "key": "language",
+     "value": "英语",
      "content": "用户首选工作语言：英语（preferred working language: 英语）"
     },
     {
      "ref": "p06-f-report-0",
      "day": 11,
+     "key": "report",
+     "value": "幻灯片",
      "content": "用户报告格式：幻灯片（report format: 幻灯片）",
      "validUntilDay": 86
     },
     {
      "ref": "p06-f-report-1",
      "day": 86,
+     "key": "report",
+     "value": "Word",
      "content": "用户报告格式：Word（report format: Word）"
     }
    ],
@@ -4091,61 +4217,83 @@
     {
      "ref": "p07-f-manager-0",
      "day": 15,
+     "key": "manager",
+     "value": "王磊",
      "content": "用户直属经理：王磊（line manager: 王磊）",
      "validUntilDay": 34
     },
     {
      "ref": "p07-f-manager-1",
      "day": 34,
+     "key": "manager",
+     "value": "陈浩",
      "content": "用户直属经理：陈浩（line manager: 陈浩）"
     },
     {
      "ref": "p07-f-report-0",
      "day": 2,
+     "key": "report",
+     "value": "Word",
      "content": "用户报告格式：Word（report format: Word）"
     },
     {
      "ref": "p07-f-seat-0",
      "day": 39,
+     "key": "seat",
+     "value": "紧急出口",
      "content": "用户飞机上喜欢的座位：紧急出口（preferred flight seat: 紧急出口）",
      "validUntilDay": 56
     },
     {
      "ref": "p07-f-seat-1",
      "day": 56,
+     "key": "seat",
+     "value": "前排",
      "content": "用户飞机上喜欢的座位：前排（preferred flight seat: 前排）"
     },
     {
      "ref": "p07-f-allergy-0",
      "day": 2,
+     "key": "allergy",
+     "value": "海鲜",
      "content": "用户过敏源：海鲜（allergy: 海鲜）",
      "validUntilDay": 73
     },
     {
      "ref": "p07-f-allergy-1",
      "day": 73,
+     "key": "allergy",
+     "value": "花生",
      "content": "用户过敏源：花生（allergy: 花生）"
     },
     {
      "ref": "p07-f-team-0",
      "day": 24,
+     "key": "team",
+     "value": "数据平台组",
      "content": "用户所在的团队：数据平台组（team: 数据平台组）",
      "validUntilDay": 48
     },
     {
      "ref": "p07-f-team-1",
      "day": 48,
+     "key": "team",
+     "value": "搜索组",
      "content": "用户所在的团队：搜索组（team: 搜索组）"
     },
     {
      "ref": "p07-f-city-0",
      "day": 57,
+     "key": "city",
+     "value": "厦门",
      "content": "用户现在住的城市：厦门（city I live in: 厦门）",
      "validUntilDay": 86
     },
     {
      "ref": "p07-f-city-1",
      "day": 86,
+     "key": "city",
+     "value": "西安",
      "content": "用户现在住的城市：西安（city I live in: 西安）"
     }
    ],
@@ -4724,61 +4872,83 @@
     {
      "ref": "p08-f-seat-0",
      "day": 20,
+     "key": "seat",
+     "value": "前排",
      "content": "用户飞机上喜欢的座位：前排（preferred flight seat: 前排）",
      "validUntilDay": 60
     },
     {
      "ref": "p08-f-seat-1",
      "day": 60,
+     "key": "seat",
+     "value": "靠窗",
      "content": "用户飞机上喜欢的座位：靠窗（preferred flight seat: 靠窗）",
      "validUntilDay": 64
     },
     {
      "ref": "p08-f-seat-2",
      "day": 64,
+     "key": "seat",
+     "value": "紧急出口",
      "content": "用户飞机上喜欢的座位：紧急出口（preferred flight seat: 紧急出口）"
     },
     {
      "ref": "p08-f-phone-0",
      "day": 68,
+     "key": "phone",
+     "value": "华为 Mate 60",
      "content": "用户用的手机：华为 Mate 60（phone: 华为 Mate 60）",
      "validUntilDay": 82
     },
     {
      "ref": "p08-f-phone-1",
      "day": 82,
+     "key": "phone",
+     "value": "Pixel 8",
      "content": "用户用的手机：Pixel 8（phone: Pixel 8）"
     },
     {
      "ref": "p08-f-city-0",
      "day": 25,
+     "key": "city",
+     "value": "厦门",
      "content": "用户现在住的城市：厦门（city I live in: 厦门）"
     },
     {
      "ref": "p08-f-commute-0",
      "day": 53,
+     "key": "commute",
+     "value": "公交车",
      "content": "用户通勤方式：公交车（way of commuting: 公交车）",
      "validUntilDay": 57
     },
     {
      "ref": "p08-f-commute-1",
      "day": 57,
+     "key": "commute",
+     "value": "地铁",
      "content": "用户通勤方式：地铁（way of commuting: 地铁）"
     },
     {
      "ref": "p08-f-os-0",
      "day": 2,
+     "key": "os",
+     "value": "ChromeOS",
      "content": "用户电脑系统：ChromeOS（laptop operating system: ChromeOS）"
     },
     {
      "ref": "p08-f-report-0",
      "day": 23,
+     "key": "report",
+     "value": "Markdown",
      "content": "用户报告格式：Markdown（report format: Markdown）",
      "validUntilDay": 81
     },
     {
      "ref": "p08-f-report-1",
      "day": 81,
+     "key": "report",
+     "value": "幻灯片",
      "content": "用户报告格式：幻灯片（report format: 幻灯片）"
     }
    ],
@@ -5353,37 +5523,51 @@
     {
      "ref": "p09-f-report-0",
      "day": 46,
+     "key": "report",
+     "value": "Word",
      "content": "用户报告格式：Word（report format: Word）"
     },
     {
      "ref": "p09-f-lang_code-0",
      "day": 50,
+     "key": "lang_code",
+     "value": "TypeScript",
      "content": "用户最常用的编程语言：TypeScript（main programming language: TypeScript）"
     },
     {
      "ref": "p09-f-colour-0",
      "day": 68,
+     "key": "colour",
+     "value": "朱红色",
      "content": "用户最喜欢的颜色：朱红色（favourite colour: 朱红色）"
     },
     {
      "ref": "p09-f-diet-0",
      "day": 5,
+     "key": "diet",
+     "value": "不吃辣",
      "content": "用户饮食习惯：不吃辣（diet: 不吃辣）"
     },
     {
      "ref": "p09-f-allergy-0",
      "day": 16,
+     "key": "allergy",
+     "value": "芒果",
      "content": "用户过敏源：芒果（allergy: 芒果）",
      "validUntilDay": 21
     },
     {
      "ref": "p09-f-allergy-1",
      "day": 21,
+     "key": "allergy",
+     "value": "海鲜",
      "content": "用户过敏源：海鲜（allergy: 海鲜）"
     },
     {
      "ref": "p09-f-hobby-0",
      "day": 41,
+     "key": "hobby",
+     "value": "摄影",
      "content": "用户业余爱好：摄影（hobby: 摄影）"
     }
    ],
@@ -5934,91 +6118,123 @@
     {
      "ref": "p10-f-coffee-0",
      "day": 1,
+     "key": "coffee",
+     "value": "美式",
      "content": "用户常点的咖啡：美式（usual coffee order: 美式）",
      "validUntilDay": 46
     },
     {
      "ref": "p10-f-coffee-1",
      "day": 46,
+     "key": "coffee",
+     "value": "不喝咖啡",
      "content": "用户常点的咖啡：不喝咖啡（usual coffee order: 不喝咖啡）",
      "validUntilDay": 64
     },
     {
      "ref": "p10-f-coffee-2",
      "day": 64,
+     "key": "coffee",
+     "value": "拿铁",
      "content": "用户常点的咖啡：拿铁（usual coffee order: 拿铁）"
     },
     {
      "ref": "p10-f-seat-0",
      "day": 37,
+     "key": "seat",
+     "value": "紧急出口",
      "content": "用户飞机上喜欢的座位：紧急出口（preferred flight seat: 紧急出口）",
      "validUntilDay": 75
     },
     {
      "ref": "p10-f-seat-1",
      "day": 75,
+     "key": "seat",
+     "value": "前排",
      "content": "用户飞机上喜欢的座位：前排（preferred flight seat: 前排）"
     },
     {
      "ref": "p10-f-commute-0",
      "day": 61,
+     "key": "commute",
+     "value": "公交车",
      "content": "用户通勤方式：公交车（way of commuting: 公交车）",
      "validUntilDay": 62
     },
     {
      "ref": "p10-f-commute-1",
      "day": 62,
+     "key": "commute",
+     "value": "地铁",
      "content": "用户通勤方式：地铁（way of commuting: 地铁）"
     },
     {
      "ref": "p10-f-team-0",
      "day": 26,
+     "key": "team",
+     "value": "搜索组",
      "content": "用户所在的团队：搜索组（team: 搜索组）",
      "validUntilDay": 69
     },
     {
      "ref": "p10-f-team-1",
      "day": 69,
+     "key": "team",
+     "value": "基础设施组",
      "content": "用户所在的团队：基础设施组（team: 基础设施组）",
      "validUntilDay": 79
     },
     {
      "ref": "p10-f-team-2",
      "day": 79,
+     "key": "team",
+     "value": "支付组",
      "content": "用户所在的团队：支付组（team: 支付组）"
     },
     {
      "ref": "p10-f-phone-0",
      "day": 11,
+     "key": "phone",
+     "value": "Pixel 8",
      "content": "用户用的手机：Pixel 8（phone: Pixel 8）",
      "validUntilDay": 64
     },
     {
      "ref": "p10-f-phone-1",
      "day": 64,
+     "key": "phone",
+     "value": "华为 Mate 60",
      "content": "用户用的手机：华为 Mate 60（phone: 华为 Mate 60）",
      "validUntilDay": 85
     },
     {
      "ref": "p10-f-phone-2",
      "day": 85,
+     "key": "phone",
+     "value": "小米 14",
      "content": "用户用的手机：小米 14（phone: 小米 14）"
     },
     {
      "ref": "p10-f-hobby-0",
      "day": 9,
+     "key": "hobby",
+     "value": "长跑",
      "content": "用户业余爱好：长跑（hobby: 长跑）",
      "validUntilDay": 63
     },
     {
      "ref": "p10-f-hobby-1",
      "day": 63,
+     "key": "hobby",
+     "value": "摄影",
      "content": "用户业余爱好：摄影（hobby: 摄影）",
      "validUntilDay": 66
     },
     {
      "ref": "p10-f-hobby-2",
      "day": 66,
+     "key": "hobby",
+     "value": "攀岩",
      "content": "用户业余爱好：攀岩（hobby: 攀岩）"
     }
    ],
@@ -6619,67 +6835,91 @@
     {
      "ref": "p11-f-budget-0",
      "day": 14,
+     "key": "budget",
+     "value": "1200元",
      "content": "用户出差每晚住宿预算：1200元（hotel budget per night: 1200元）"
     },
     {
      "ref": "p11-f-colour-0",
      "day": 25,
+     "key": "colour",
+     "value": "青色",
      "content": "用户最喜欢的颜色：青色（favourite colour: 青色）",
      "validUntilDay": 56
     },
     {
      "ref": "p11-f-colour-1",
      "day": 56,
+     "key": "colour",
+     "value": "朱红色",
      "content": "用户最喜欢的颜色：朱红色（favourite colour: 朱红色）",
      "validUntilDay": 81
     },
     {
      "ref": "p11-f-colour-2",
      "day": 81,
+     "key": "colour",
+     "value": "墨绿色",
      "content": "用户最喜欢的颜色：墨绿色（favourite colour: 墨绿色）"
     },
     {
      "ref": "p11-f-lang_code-0",
      "day": 20,
+     "key": "lang_code",
+     "value": "Python",
      "content": "用户最常用的编程语言：Python（main programming language: Python）",
      "validUntilDay": 54
     },
     {
      "ref": "p11-f-lang_code-1",
      "day": 54,
+     "key": "lang_code",
+     "value": "Go",
      "content": "用户最常用的编程语言：Go（main programming language: Go）"
     },
     {
      "ref": "p11-f-coffee-0",
      "day": 67,
+     "key": "coffee",
+     "value": "燕麦拿铁",
      "content": "用户常点的咖啡：燕麦拿铁（usual coffee order: 燕麦拿铁）",
      "validUntilDay": 74
     },
     {
      "ref": "p11-f-coffee-1",
      "day": 74,
+     "key": "coffee",
+     "value": "拿铁",
      "content": "用户常点的咖啡：拿铁（usual coffee order: 拿铁）"
     },
     {
      "ref": "p11-f-hotel-0",
      "day": 60,
+     "key": "hotel",
+     "value": "全季",
      "content": "用户出差住的酒店品牌：全季（hotel chain for trips: 全季）"
     },
     {
      "ref": "p11-f-diet-0",
      "day": 18,
+     "key": "diet",
+     "value": "不吃辣",
      "content": "用户饮食习惯：不吃辣（diet: 不吃辣）",
      "validUntilDay": 20
     },
     {
      "ref": "p11-f-diet-1",
      "day": 20,
+     "key": "diet",
+     "value": "素食",
      "content": "用户饮食习惯：素食（diet: 素食）",
      "validUntilDay": 80
     },
     {
      "ref": "p11-f-diet-2",
      "day": 80,
+     "key": "diet",
+     "value": "低碳水",
      "content": "用户饮食习惯：低碳水（diet: 低碳水）"
     }
    ],
@@ -7260,55 +7500,75 @@
     {
      "ref": "p12-f-report-0",
      "day": 55,
+     "key": "report",
+     "value": "幻灯片",
      "content": "用户报告格式：幻灯片（report format: 幻灯片）"
     },
     {
      "ref": "p12-f-hotel-0",
      "day": 34,
+     "key": "hotel",
+     "value": "全季",
      "content": "用户出差住的酒店品牌：全季（hotel chain for trips: 全季）",
      "validUntilDay": 46
     },
     {
      "ref": "p12-f-hotel-1",
      "day": 46,
+     "key": "hotel",
+     "value": "希尔顿",
      "content": "用户出差住的酒店品牌：希尔顿（hotel chain for trips: 希尔顿）",
      "validUntilDay": 81
     },
     {
      "ref": "p12-f-hotel-2",
      "day": 81,
+     "key": "hotel",
+     "value": "亚朵",
      "content": "用户出差住的酒店品牌：亚朵（hotel chain for trips: 亚朵）"
     },
     {
      "ref": "p12-f-commute-0",
      "day": 11,
+     "key": "commute",
+     "value": "公交车",
      "content": "用户通勤方式：公交车（way of commuting: 公交车）"
     },
     {
      "ref": "p12-f-budget-0",
      "day": 17,
+     "key": "budget",
+     "value": "500元",
      "content": "用户出差每晚住宿预算：500元（hotel budget per night: 500元）",
      "validUntilDay": 54
     },
     {
      "ref": "p12-f-budget-1",
      "day": 54,
+     "key": "budget",
+     "value": "2000元",
      "content": "用户出差每晚住宿预算：2000元（hotel budget per night: 2000元）"
     },
     {
      "ref": "p12-f-meeting-0",
      "day": 11,
+     "key": "meeting",
+     "value": "傍晚六点",
      "content": "用户喜欢的会议时间：傍晚六点（preferred meeting time: 傍晚六点）",
      "validUntilDay": 85
     },
     {
      "ref": "p12-f-meeting-1",
      "day": 85,
+     "key": "meeting",
+     "value": "下午三点",
      "content": "用户喜欢的会议时间：下午三点（preferred meeting time: 下午三点）"
     },
     {
      "ref": "p12-f-floor-0",
      "day": 61,
+     "key": "floor",
+     "value": "7楼",
      "content": "用户办公室所在楼层：7楼（office floor: 7楼）"
     }
    ],
@@ -7877,61 +8137,83 @@
     {
      "ref": "p13-f-manager-0",
      "day": 12,
+     "key": "manager",
+     "value": "王磊",
      "content": "用户直属经理：王磊（line manager: 王磊）",
      "validUntilDay": 42
     },
     {
      "ref": "p13-f-manager-1",
      "day": 42,
+     "key": "manager",
+     "value": "周婷",
      "content": "用户直属经理：周婷（line manager: 周婷）"
     },
     {
      "ref": "p13-f-lang_code-0",
      "day": 55,
+     "key": "lang_code",
+     "value": "Python",
      "content": "用户最常用的编程语言：Python（main programming language: Python）",
      "validUntilDay": 83
     },
     {
      "ref": "p13-f-lang_code-1",
      "day": 83,
+     "key": "lang_code",
+     "value": "Rust",
      "content": "用户最常用的编程语言：Rust（main programming language: Rust）"
     },
     {
      "ref": "p13-f-seat-0",
      "day": 20,
+     "key": "seat",
+     "value": "紧急出口",
      "content": "用户飞机上喜欢的座位：紧急出口（preferred flight seat: 紧急出口）",
      "validUntilDay": 49
     },
     {
      "ref": "p13-f-seat-1",
      "day": 49,
+     "key": "seat",
+     "value": "靠窗",
      "content": "用户飞机上喜欢的座位：靠窗（preferred flight seat: 靠窗）",
      "validUntilDay": 63
     },
     {
      "ref": "p13-f-seat-2",
      "day": 63,
+     "key": "seat",
+     "value": "靠过道",
      "content": "用户飞机上喜欢的座位：靠过道（preferred flight seat: 靠过道）"
     },
     {
      "ref": "p13-f-hotel-0",
      "day": 16,
+     "key": "hotel",
+     "value": "希尔顿",
      "content": "用户出差住的酒店品牌：希尔顿（hotel chain for trips: 希尔顿）",
      "validUntilDay": 18
     },
     {
      "ref": "p13-f-hotel-1",
      "day": 18,
+     "key": "hotel",
+     "value": "全季",
      "content": "用户出差住的酒店品牌：全季（hotel chain for trips: 全季）"
     },
     {
      "ref": "p13-f-channel-0",
      "day": 32,
+     "key": "channel",
+     "value": "短信",
      "content": "用户接收通知的方式：短信（notification channel: 短信）"
     },
     {
      "ref": "p13-f-allergy-0",
      "day": 18,
+     "key": "allergy",
+     "value": "芒果",
      "content": "用户过敏源：芒果（allergy: 芒果）"
     }
    ],
@@ -8508,73 +8790,99 @@
     {
      "ref": "p14-f-report-0",
      "day": 11,
+     "key": "report",
+     "value": "幻灯片",
      "content": "用户报告格式：幻灯片（report format: 幻灯片）",
      "validUntilDay": 27
     },
     {
      "ref": "p14-f-report-1",
      "day": 27,
+     "key": "report",
+     "value": "PDF",
      "content": "用户报告格式：PDF（report format: PDF）",
      "validUntilDay": 45
     },
     {
      "ref": "p14-f-report-2",
      "day": 45,
+     "key": "report",
+     "value": "Markdown",
      "content": "用户报告格式：Markdown（report format: Markdown）"
     },
     {
      "ref": "p14-f-commute-0",
      "day": 26,
+     "key": "commute",
+     "value": "骑自行车",
      "content": "用户通勤方式：骑自行车（way of commuting: 骑自行车）",
      "validUntilDay": 47
     },
     {
      "ref": "p14-f-commute-1",
      "day": 47,
+     "key": "commute",
+     "value": "公交车",
      "content": "用户通勤方式：公交车（way of commuting: 公交车）",
      "validUntilDay": 79
     },
     {
      "ref": "p14-f-commute-2",
      "day": 79,
+     "key": "commute",
+     "value": "地铁",
      "content": "用户通勤方式：地铁（way of commuting: 地铁）"
     },
     {
      "ref": "p14-f-allergy-0",
      "day": 6,
+     "key": "allergy",
+     "value": "芒果",
      "content": "用户过敏源：芒果（allergy: 芒果）",
      "validUntilDay": 38
     },
     {
      "ref": "p14-f-allergy-1",
      "day": 38,
+     "key": "allergy",
+     "value": "海鲜",
      "content": "用户过敏源：海鲜（allergy: 海鲜）",
      "validUntilDay": 85
     },
     {
      "ref": "p14-f-allergy-2",
      "day": 85,
+     "key": "allergy",
+     "value": "花生",
      "content": "用户过敏源：花生（allergy: 花生）"
     },
     {
      "ref": "p14-f-manager-0",
      "day": 10,
+     "key": "manager",
+     "value": "李娜",
      "content": "用户直属经理：李娜（line manager: 李娜）"
     },
     {
      "ref": "p14-f-diet-0",
      "day": 49,
+     "key": "diet",
+     "value": "无麸质",
      "content": "用户饮食习惯：无麸质（diet: 无麸质）",
      "validUntilDay": 50
     },
     {
      "ref": "p14-f-diet-1",
      "day": 50,
+     "key": "diet",
+     "value": "素食",
      "content": "用户饮食习惯：素食（diet: 素食）"
     },
     {
      "ref": "p14-f-os-0",
      "day": 74,
+     "key": "os",
+     "value": "Windows",
      "content": "用户电脑系统：Windows（laptop operating system: Windows）"
     }
    ],
@@ -9157,61 +9465,83 @@
     {
      "ref": "p15-f-channel-0",
      "day": 29,
+     "key": "channel",
+     "value": "短信",
      "content": "用户接收通知的方式：短信（notification channel: 短信）",
      "validUntilDay": 48
     },
     {
      "ref": "p15-f-channel-1",
      "day": 48,
+     "key": "channel",
+     "value": "企业微信",
      "content": "用户接收通知的方式：企业微信（notification channel: 企业微信）",
      "validUntilDay": 66
     },
     {
      "ref": "p15-f-channel-2",
      "day": 66,
+     "key": "channel",
+     "value": "邮件",
      "content": "用户接收通知的方式：邮件（notification channel: 邮件）"
     },
     {
      "ref": "p15-f-language-0",
      "day": 6,
+     "key": "language",
+     "value": "德语",
      "content": "用户首选工作语言：德语（preferred working language: 德语）",
      "validUntilDay": 8
     },
     {
      "ref": "p15-f-language-1",
      "day": 8,
+     "key": "language",
+     "value": "中文",
      "content": "用户首选工作语言：中文（preferred working language: 中文）",
      "validUntilDay": 17
     },
     {
      "ref": "p15-f-language-2",
      "day": 17,
+     "key": "language",
+     "value": "英语",
      "content": "用户首选工作语言：英语（preferred working language: 英语）"
     },
     {
      "ref": "p15-f-hobby-0",
      "day": 16,
+     "key": "hobby",
+     "value": "围棋",
      "content": "用户业余爱好：围棋（hobby: 围棋）",
      "validUntilDay": 86
     },
     {
      "ref": "p15-f-hobby-1",
      "day": 86,
+     "key": "hobby",
+     "value": "长跑",
      "content": "用户业余爱好：长跑（hobby: 长跑）"
     },
     {
      "ref": "p15-f-os-0",
      "day": 32,
+     "key": "os",
+     "value": "Ubuntu",
      "content": "用户电脑系统：Ubuntu（laptop operating system: Ubuntu）"
     },
     {
      "ref": "p15-f-phone-0",
      "day": 45,
+     "key": "phone",
+     "value": "Pixel 8",
      "content": "用户用的手机：Pixel 8（phone: Pixel 8）"
     },
     {
      "ref": "p15-f-lang_code-0",
      "day": 44,
+     "key": "lang_code",
+     "value": "Rust",
      "content": "用户最常用的编程语言：Rust（main programming language: Rust）"
     }
    ],
@@ -9782,43 +10112,59 @@
     {
      "ref": "p16-f-coffee-0",
      "day": 9,
+     "key": "coffee",
+     "value": "拿铁",
      "content": "用户常点的咖啡：拿铁（usual coffee order: 拿铁）",
      "validUntilDay": 29
     },
     {
      "ref": "p16-f-coffee-1",
      "day": 29,
+     "key": "coffee",
+     "value": "燕麦拿铁",
      "content": "用户常点的咖啡：燕麦拿铁（usual coffee order: 燕麦拿铁）"
     },
     {
      "ref": "p16-f-budget-0",
      "day": 16,
+     "key": "budget",
+     "value": "2000元",
      "content": "用户出差每晚住宿预算：2000元（hotel budget per night: 2000元）",
      "validUntilDay": 33
     },
     {
      "ref": "p16-f-budget-1",
      "day": 33,
+     "key": "budget",
+     "value": "1200元",
      "content": "用户出差每晚住宿预算：1200元（hotel budget per night: 1200元）"
     },
     {
      "ref": "p16-f-diet-0",
      "day": 30,
+     "key": "diet",
+     "value": "不吃辣",
      "content": "用户饮食习惯：不吃辣（diet: 不吃辣）"
     },
     {
      "ref": "p16-f-hotel-0",
      "day": 9,
+     "key": "hotel",
+     "value": "希尔顿",
      "content": "用户出差住的酒店品牌：希尔顿（hotel chain for trips: 希尔顿）"
     },
     {
      "ref": "p16-f-os-0",
      "day": 32,
+     "key": "os",
+     "value": "ChromeOS",
      "content": "用户电脑系统：ChromeOS（laptop operating system: ChromeOS）"
     },
     {
      "ref": "p16-f-phone-0",
      "day": 19,
+     "key": "phone",
+     "value": "iPhone 15",
      "content": "用户用的手机：iPhone 15（phone: iPhone 15）"
     }
    ],
@@ -10375,61 +10721,83 @@
     {
      "ref": "p17-f-manager-0",
      "day": 46,
+     "key": "manager",
+     "value": "陈浩",
      "content": "用户直属经理：陈浩（line manager: 陈浩）",
      "validUntilDay": 81
     },
     {
      "ref": "p17-f-manager-1",
      "day": 81,
+     "key": "manager",
+     "value": "周婷",
      "content": "用户直属经理：周婷（line manager: 周婷）"
     },
     {
      "ref": "p17-f-phone-0",
      "day": 34,
+     "key": "phone",
+     "value": "iPhone 15",
      "content": "用户用的手机：iPhone 15（phone: iPhone 15）"
     },
     {
      "ref": "p17-f-commute-0",
      "day": 43,
+     "key": "commute",
+     "value": "骑自行车",
      "content": "用户通勤方式：骑自行车（way of commuting: 骑自行车）"
     },
     {
      "ref": "p17-f-floor-0",
      "day": 49,
+     "key": "floor",
+     "value": "18楼",
      "content": "用户办公室所在楼层：18楼（office floor: 18楼）",
      "validUntilDay": 71
     },
     {
      "ref": "p17-f-floor-1",
      "day": 71,
+     "key": "floor",
+     "value": "12楼",
      "content": "用户办公室所在楼层：12楼（office floor: 12楼）"
     },
     {
      "ref": "p17-f-language-0",
      "day": 63,
+     "key": "language",
+     "value": "英语",
      "content": "用户首选工作语言：英语（preferred working language: 英语）",
      "validUntilDay": 65
     },
     {
      "ref": "p17-f-language-1",
      "day": 65,
+     "key": "language",
+     "value": "日语",
      "content": "用户首选工作语言：日语（preferred working language: 日语）"
     },
     {
      "ref": "p17-f-channel-0",
      "day": 43,
+     "key": "channel",
+     "value": "邮件",
      "content": "用户接收通知的方式：邮件（notification channel: 邮件）",
      "validUntilDay": 53
     },
     {
      "ref": "p17-f-channel-1",
      "day": 53,
+     "key": "channel",
+     "value": "短信",
      "content": "用户接收通知的方式：短信（notification channel: 短信）",
      "validUntilDay": 84
     },
     {
      "ref": "p17-f-channel-2",
      "day": 84,
+     "key": "channel",
+     "value": "电话",
      "content": "用户接收通知的方式：电话（notification channel: 电话）"
     }
    ],
@@ -11002,43 +11370,59 @@
     {
      "ref": "p18-f-floor-0",
      "day": 15,
+     "key": "floor",
+     "value": "18楼",
      "content": "用户办公室所在楼层：18楼（office floor: 18楼）",
      "validUntilDay": 20
     },
     {
      "ref": "p18-f-floor-1",
      "day": 20,
+     "key": "floor",
+     "value": "3楼",
      "content": "用户办公室所在楼层：3楼（office floor: 3楼）"
     },
     {
      "ref": "p18-f-colour-0",
      "day": 47,
+     "key": "colour",
+     "value": "米白色",
      "content": "用户最喜欢的颜色：米白色（favourite colour: 米白色）"
     },
     {
      "ref": "p18-f-os-0",
      "day": 30,
+     "key": "os",
+     "value": "ChromeOS",
      "content": "用户电脑系统：ChromeOS（laptop operating system: ChromeOS）"
     },
     {
      "ref": "p18-f-budget-0",
      "day": 78,
+     "key": "budget",
+     "value": "800元",
      "content": "用户出差每晚住宿预算：800元（hotel budget per night: 800元）"
     },
     {
      "ref": "p18-f-seat-0",
      "day": 12,
+     "key": "seat",
+     "value": "紧急出口",
      "content": "用户飞机上喜欢的座位：紧急出口（preferred flight seat: 紧急出口）",
      "validUntilDay": 42
     },
     {
      "ref": "p18-f-seat-1",
      "day": 42,
+     "key": "seat",
+     "value": "靠过道",
      "content": "用户飞机上喜欢的座位：靠过道（preferred flight seat: 靠过道）"
     },
     {
      "ref": "p18-f-hobby-0",
      "day": 36,
+     "key": "hobby",
+     "value": "攀岩",
      "content": "用户业余爱好：攀岩（hobby: 攀岩）"
     }
    ],
@@ -11595,49 +11979,67 @@
     {
      "ref": "p19-f-seat-0",
      "day": 21,
+     "key": "seat",
+     "value": "靠过道",
      "content": "用户飞机上喜欢的座位：靠过道（preferred flight seat: 靠过道）"
     },
     {
      "ref": "p19-f-allergy-0",
      "day": 10,
+     "key": "allergy",
+     "value": "花粉",
      "content": "用户过敏源：花粉（allergy: 花粉）",
      "validUntilDay": 24
     },
     {
      "ref": "p19-f-allergy-1",
      "day": 24,
+     "key": "allergy",
+     "value": "海鲜",
      "content": "用户过敏源：海鲜（allergy: 海鲜）"
     },
     {
      "ref": "p19-f-team-0",
      "day": 57,
+     "key": "team",
+     "value": "搜索组",
      "content": "用户所在的团队：搜索组（team: 搜索组）"
     },
     {
      "ref": "p19-f-floor-0",
      "day": 51,
+     "key": "floor",
+     "value": "18楼",
      "content": "用户办公室所在楼层：18楼（office floor: 18楼）"
     },
     {
      "ref": "p19-f-city-0",
      "day": 9,
+     "key": "city",
+     "value": "厦门",
      "content": "用户现在住的城市：厦门（city I live in: 厦门）"
     },
     {
      "ref": "p19-f-coffee-0",
      "day": 19,
+     "key": "coffee",
+     "value": "燕麦拿铁",
      "content": "用户常点的咖啡：燕麦拿铁（usual coffee order: 燕麦拿铁）",
      "validUntilDay": 26
     },
     {
      "ref": "p19-f-coffee-1",
      "day": 26,
+     "key": "coffee",
+     "value": "拿铁",
      "content": "用户常点的咖啡：拿铁（usual coffee order: 拿铁）",
      "validUntilDay": 27
     },
     {
      "ref": "p19-f-coffee-2",
      "day": 27,
+     "key": "coffee",
+     "value": "不喝咖啡",
      "content": "用户常点的咖啡：不喝咖啡（usual coffee order: 不喝咖啡）"
     }
    ],
@@ -12198,49 +12600,67 @@
     {
      "ref": "p20-f-seat-0",
      "day": 19,
+     "key": "seat",
+     "value": "靠过道",
      "content": "用户飞机上喜欢的座位：靠过道（preferred flight seat: 靠过道）"
     },
     {
      "ref": "p20-f-manager-0",
      "day": 24,
+     "key": "manager",
+     "value": "周婷",
      "content": "用户直属经理：周婷（line manager: 周婷）"
     },
     {
      "ref": "p20-f-phone-0",
      "day": 13,
+     "key": "phone",
+     "value": "华为 Mate 60",
      "content": "用户用的手机：华为 Mate 60（phone: 华为 Mate 60）"
     },
     {
      "ref": "p20-f-budget-0",
      "day": 52,
+     "key": "budget",
+     "value": "2000元",
      "content": "用户出差每晚住宿预算：2000元（hotel budget per night: 2000元）",
      "validUntilDay": 58
     },
     {
      "ref": "p20-f-budget-1",
      "day": 58,
+     "key": "budget",
+     "value": "1200元",
      "content": "用户出差每晚住宿预算：1200元（hotel budget per night: 1200元）"
     },
     {
      "ref": "p20-f-city-0",
      "day": 62,
+     "key": "city",
+     "value": "厦门",
      "content": "用户现在住的城市：厦门（city I live in: 厦门）"
     },
     {
      "ref": "p20-f-lang_code-0",
      "day": 1,
+     "key": "lang_code",
+     "value": "Go",
      "content": "用户最常用的编程语言：Go（main programming language: Go）",
      "validUntilDay": 83
     },
     {
      "ref": "p20-f-lang_code-1",
      "day": 83,
+     "key": "lang_code",
+     "value": "TypeScript",
      "content": "用户最常用的编程语言：TypeScript（main programming language: TypeScript）",
      "validUntilDay": 86
     },
     {
      "ref": "p20-f-lang_code-2",
      "day": 86,
+     "key": "lang_code",
+     "value": "Python",
      "content": "用户最常用的编程语言：Python（main programming language: Python）"
     }
    ],
@@ -12801,67 +13221,91 @@
     {
      "ref": "p21-f-hobby-0",
      "day": 40,
+     "key": "hobby",
+     "value": "摄影",
      "content": "用户业余爱好：摄影（hobby: 摄影）",
      "validUntilDay": 44
     },
     {
      "ref": "p21-f-hobby-1",
      "day": 44,
+     "key": "hobby",
+     "value": "围棋",
      "content": "用户业余爱好：围棋（hobby: 围棋）",
      "validUntilDay": 55
     },
     {
      "ref": "p21-f-hobby-2",
      "day": 55,
+     "key": "hobby",
+     "value": "攀岩",
      "content": "用户业余爱好：攀岩（hobby: 攀岩）"
     },
     {
      "ref": "p21-f-allergy-0",
      "day": 72,
+     "key": "allergy",
+     "value": "花生",
      "content": "用户过敏源：花生（allergy: 花生）"
     },
     {
      "ref": "p21-f-budget-0",
      "day": 19,
+     "key": "budget",
+     "value": "500元",
      "content": "用户出差每晚住宿预算：500元（hotel budget per night: 500元）"
     },
     {
      "ref": "p21-f-meeting-0",
      "day": 8,
+     "key": "meeting",
+     "value": "下午三点",
      "content": "用户喜欢的会议时间：下午三点（preferred meeting time: 下午三点）",
      "validUntilDay": 11
     },
     {
      "ref": "p21-f-meeting-1",
      "day": 11,
+     "key": "meeting",
+     "value": "傍晚六点",
      "content": "用户喜欢的会议时间：傍晚六点（preferred meeting time: 傍晚六点）",
      "validUntilDay": 85
     },
     {
      "ref": "p21-f-meeting-2",
      "day": 85,
+     "key": "meeting",
+     "value": "早上八点半",
      "content": "用户喜欢的会议时间：早上八点半（preferred meeting time: 早上八点半）"
     },
     {
      "ref": "p21-f-hotel-0",
      "day": 34,
+     "key": "hotel",
+     "value": "全季",
      "content": "用户出差住的酒店品牌：全季（hotel chain for trips: 全季）",
      "validUntilDay": 62
     },
     {
      "ref": "p21-f-hotel-1",
      "day": 62,
+     "key": "hotel",
+     "value": "希尔顿",
      "content": "用户出差住的酒店品牌：希尔顿（hotel chain for trips: 希尔顿）"
     },
     {
      "ref": "p21-f-coffee-0",
      "day": 4,
+     "key": "coffee",
+     "value": "燕麦拿铁",
      "content": "用户常点的咖啡：燕麦拿铁（usual coffee order: 燕麦拿铁）",
      "validUntilDay": 20
     },
     {
      "ref": "p21-f-coffee-1",
      "day": 20,
+     "key": "coffee",
+     "value": "不喝咖啡",
      "content": "用户常点的咖啡：不喝咖啡（usual coffee order: 不喝咖啡）"
     }
    ],
@@ -13442,73 +13886,99 @@
     {
      "ref": "p22-f-manager-0",
      "day": 17,
+     "key": "manager",
+     "value": "陈浩",
      "content": "用户直属经理：陈浩（line manager: 陈浩）",
      "validUntilDay": 21
     },
     {
      "ref": "p22-f-manager-1",
      "day": 21,
+     "key": "manager",
+     "value": "周婷",
      "content": "用户直属经理：周婷（line manager: 周婷）"
     },
     {
      "ref": "p22-f-meeting-0",
      "day": 8,
+     "key": "meeting",
+     "value": "傍晚六点",
      "content": "用户喜欢的会议时间：傍晚六点（preferred meeting time: 傍晚六点）",
      "validUntilDay": 64
     },
     {
      "ref": "p22-f-meeting-1",
      "day": 64,
+     "key": "meeting",
+     "value": "早上八点半",
      "content": "用户喜欢的会议时间：早上八点半（preferred meeting time: 早上八点半）"
     },
     {
      "ref": "p22-f-diet-0",
      "day": 4,
+     "key": "diet",
+     "value": "低碳水",
      "content": "用户饮食习惯：低碳水（diet: 低碳水）",
      "validUntilDay": 34
     },
     {
      "ref": "p22-f-diet-1",
      "day": 34,
+     "key": "diet",
+     "value": "无麸质",
      "content": "用户饮食习惯：无麸质（diet: 无麸质）",
      "validUntilDay": 37
     },
     {
      "ref": "p22-f-diet-2",
      "day": 37,
+     "key": "diet",
+     "value": "不吃辣",
      "content": "用户饮食习惯：不吃辣（diet: 不吃辣）"
     },
     {
      "ref": "p22-f-team-0",
      "day": 5,
+     "key": "team",
+     "value": "搜索组",
      "content": "用户所在的团队：搜索组（team: 搜索组）"
     },
     {
      "ref": "p22-f-language-0",
      "day": 28,
+     "key": "language",
+     "value": "德语",
      "content": "用户首选工作语言：德语（preferred working language: 德语）",
      "validUntilDay": 32
     },
     {
      "ref": "p22-f-language-1",
      "day": 32,
+     "key": "language",
+     "value": "英语",
      "content": "用户首选工作语言：英语（preferred working language: 英语）",
      "validUntilDay": 33
     },
     {
      "ref": "p22-f-language-2",
      "day": 33,
+     "key": "language",
+     "value": "中文",
      "content": "用户首选工作语言：中文（preferred working language: 中文）"
     },
     {
      "ref": "p22-f-city-0",
      "day": 22,
+     "key": "city",
+     "value": "成都",
      "content": "用户现在住的城市：成都（city I live in: 成都）",
      "validUntilDay": 40
     },
     {
      "ref": "p22-f-city-1",
      "day": 40,
+     "key": "city",
+     "value": "西安",
      "content": "用户现在住的城市：西安（city I live in: 西安）"
     }
    ],
@@ -14093,67 +14563,91 @@
     {
      "ref": "p23-f-coffee-0",
      "day": 33,
+     "key": "coffee",
+     "value": "燕麦拿铁",
      "content": "用户常点的咖啡：燕麦拿铁（usual coffee order: 燕麦拿铁）"
     },
     {
      "ref": "p23-f-floor-0",
      "day": 3,
+     "key": "floor",
+     "value": "7楼",
      "content": "用户办公室所在楼层：7楼（office floor: 7楼）",
      "validUntilDay": 53
     },
     {
      "ref": "p23-f-floor-1",
      "day": 53,
+     "key": "floor",
+     "value": "3楼",
      "content": "用户办公室所在楼层：3楼（office floor: 3楼）"
     },
     {
      "ref": "p23-f-seat-0",
      "day": 16,
+     "key": "seat",
+     "value": "靠过道",
      "content": "用户飞机上喜欢的座位：靠过道（preferred flight seat: 靠过道）",
      "validUntilDay": 32
     },
     {
      "ref": "p23-f-seat-1",
      "day": 32,
+     "key": "seat",
+     "value": "紧急出口",
      "content": "用户飞机上喜欢的座位：紧急出口（preferred flight seat: 紧急出口）"
     },
     {
      "ref": "p23-f-lang_code-0",
      "day": 3,
+     "key": "lang_code",
+     "value": "Rust",
      "content": "用户最常用的编程语言：Rust（main programming language: Rust）",
      "validUntilDay": 68
     },
     {
      "ref": "p23-f-lang_code-1",
      "day": 68,
+     "key": "lang_code",
+     "value": "TypeScript",
      "content": "用户最常用的编程语言：TypeScript（main programming language: TypeScript）"
     },
     {
      "ref": "p23-f-allergy-0",
      "day": 53,
+     "key": "allergy",
+     "value": "花生",
      "content": "用户过敏源：花生（allergy: 花生）",
      "validUntilDay": 66
     },
     {
      "ref": "p23-f-allergy-1",
      "day": 66,
+     "key": "allergy",
+     "value": "花粉",
      "content": "用户过敏源：花粉（allergy: 花粉）"
     },
     {
      "ref": "p23-f-language-0",
      "day": 1,
+     "key": "language",
+     "value": "日语",
      "content": "用户首选工作语言：日语（preferred working language: 日语）",
      "validUntilDay": 34
     },
     {
      "ref": "p23-f-language-1",
      "day": 34,
+     "key": "language",
+     "value": "中文",
      "content": "用户首选工作语言：中文（preferred working language: 中文）",
      "validUntilDay": 37
     },
     {
      "ref": "p23-f-language-2",
      "day": 37,
+     "key": "language",
+     "value": "英语",
      "content": "用户首选工作语言：英语（preferred working language: 英语）"
     }
    ],
@@ -14736,73 +15230,99 @@
     {
      "ref": "p24-f-floor-0",
      "day": 37,
+     "key": "floor",
+     "value": "12楼",
      "content": "用户办公室所在楼层：12楼（office floor: 12楼）",
      "validUntilDay": 52
     },
     {
      "ref": "p24-f-floor-1",
      "day": 52,
+     "key": "floor",
+     "value": "7楼",
      "content": "用户办公室所在楼层：7楼（office floor: 7楼）"
     },
     {
      "ref": "p24-f-phone-0",
      "day": 28,
+     "key": "phone",
+     "value": "小米 14",
      "content": "用户用的手机：小米 14（phone: 小米 14）",
      "validUntilDay": 77
     },
     {
      "ref": "p24-f-phone-1",
      "day": 77,
+     "key": "phone",
+     "value": "Pixel 8",
      "content": "用户用的手机：Pixel 8（phone: Pixel 8）",
      "validUntilDay": 79
     },
     {
      "ref": "p24-f-phone-2",
      "day": 79,
+     "key": "phone",
+     "value": "iPhone 15",
      "content": "用户用的手机：iPhone 15（phone: iPhone 15）"
     },
     {
      "ref": "p24-f-colour-0",
      "day": 70,
+     "key": "colour",
+     "value": "米白色",
      "content": "用户最喜欢的颜色：米白色（favourite colour: 米白色）"
     },
     {
      "ref": "p24-f-commute-0",
      "day": 17,
+     "key": "commute",
+     "value": "公交车",
      "content": "用户通勤方式：公交车（way of commuting: 公交车）",
      "validUntilDay": 55
     },
     {
      "ref": "p24-f-commute-1",
      "day": 55,
+     "key": "commute",
+     "value": "地铁",
      "content": "用户通勤方式：地铁（way of commuting: 地铁）"
     },
     {
      "ref": "p24-f-allergy-0",
      "day": 26,
+     "key": "allergy",
+     "value": "花粉",
      "content": "用户过敏源：花粉（allergy: 花粉）",
      "validUntilDay": 53
     },
     {
      "ref": "p24-f-allergy-1",
      "day": 53,
+     "key": "allergy",
+     "value": "海鲜",
      "content": "用户过敏源：海鲜（allergy: 海鲜）"
     },
     {
      "ref": "p24-f-budget-0",
      "day": 17,
+     "key": "budget",
+     "value": "1200元",
      "content": "用户出差每晚住宿预算：1200元（hotel budget per night: 1200元）",
      "validUntilDay": 34
     },
     {
      "ref": "p24-f-budget-1",
      "day": 34,
+     "key": "budget",
+     "value": "500元",
      "content": "用户出差每晚住宿预算：500元（hotel budget per night: 500元）",
      "validUntilDay": 70
     },
     {
      "ref": "p24-f-budget-2",
      "day": 70,
+     "key": "budget",
+     "value": "2000元",
      "content": "用户出差每晚住宿预算：2000元（hotel budget per night: 2000元）"
     }
    ],
@@ -15389,43 +15909,59 @@
     {
      "ref": "p25-f-allergy-0",
      "day": 26,
+     "key": "allergy",
+     "value": "海鲜",
      "content": "用户过敏源：海鲜（allergy: 海鲜）",
      "validUntilDay": 31
     },
     {
      "ref": "p25-f-allergy-1",
      "day": 31,
+     "key": "allergy",
+     "value": "花粉",
      "content": "用户过敏源：花粉（allergy: 花粉）",
      "validUntilDay": 78
     },
     {
      "ref": "p25-f-allergy-2",
      "day": 78,
+     "key": "allergy",
+     "value": "芒果",
      "content": "用户过敏源：芒果（allergy: 芒果）"
     },
     {
      "ref": "p25-f-os-0",
      "day": 76,
+     "key": "os",
+     "value": "Windows",
      "content": "用户电脑系统：Windows（laptop operating system: Windows）"
     },
     {
      "ref": "p25-f-hobby-0",
      "day": 23,
+     "key": "hobby",
+     "value": "摄影",
      "content": "用户业余爱好：摄影（hobby: 摄影）"
     },
     {
      "ref": "p25-f-phone-0",
      "day": 39,
+     "key": "phone",
+     "value": "小米 14",
      "content": "用户用的手机：小米 14（phone: 小米 14）"
     },
     {
      "ref": "p25-f-report-0",
      "day": 54,
+     "key": "report",
+     "value": "Markdown",
      "content": "用户报告格式：Markdown（report format: Markdown）"
     },
     {
      "ref": "p25-f-seat-0",
      "day": 2,
+     "key": "seat",
+     "value": "前排",
      "content": "用户飞机上喜欢的座位：前排（preferred flight seat: 前排）"
     }
    ],

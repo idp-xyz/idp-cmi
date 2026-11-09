@@ -27,6 +27,16 @@ import (
 	"idp-cmi/internal/embedding"
 )
 
+// memFact is one extracted fact of the dataset.
+type memFact struct {
+	Ref        string `json:"ref"`
+	Day        int    `json:"day"`
+	ValidUntil int    `json:"validUntilDay"` // what the closing should produce; the harness lets the CMI do it
+	Key        string `json:"key"`
+	Value      string `json:"value"`
+	Content    string `json:"content"`
+}
+
 type memoryDataset struct {
 	Version  string `json:"version"`
 	Today    int    `json:"today"`
@@ -37,12 +47,7 @@ type memoryDataset struct {
 			Day     int    `json:"day"`
 			Content string `json:"content"`
 		} `json:"raw"`
-		Facts []struct {
-			Ref        string `json:"ref"`
-			Day        int    `json:"day"`
-			ValidUntil int    `json:"validUntilDay"`
-			Content    string `json:"content"`
-		} `json:"facts"`
+		Facts     []memFact `json:"facts"`
 		Questions []struct {
 			ID, Kind, Lang, Slot, Text, Value string
 			CurrentRaw, CurrentFact           string
@@ -118,8 +123,15 @@ func TestMemoryDialogues(t *testing.T) {
 			for _, r := range p.Raw {
 				write(p.ID+"-raw", r.Ref, cmi.KindEpisodic, r.Content, r.Day, 0)
 			}
-			for _, f := range p.Facts {
-				write(p.ID+"-facts", f.Ref, cmi.KindSemantic, f.Content, f.Day, f.ValidUntil)
+			// facts go through the CMI's own primitive (D41), oldest first: it closes the earlier value of a key itself
+			facts := append([]memFact{}, p.Facts...)
+			sort.SliceStable(facts, func(i, j int) bool { return facts[i].Day < facts[j].Day })
+			for _, f := range facts {
+				rec := cmi.MemoryRecord{Scope: cmi.Scope{Kind: cmi.ScopeSubject, ID: p.ID + "-facts"}, Content: f.Content, Sensitivity: cmi.SensitivityInternal,
+					Provenance: cmi.Provenance{Source: "idp-host", Ref: f.Ref, ObservedAt: at(f.Day), RecordedBy: "eval"}, Validity: cmi.Validity{ValidFrom: at(f.Day)}}
+				if _, err := store.UpsertFact(ctx, tenant, rec, f.Key, f.Value, "eval", cmi.SensitivityRestricted); err != nil {
+					t.Fatal(f.Ref, err)
+				}
 			}
 		}
 		// pin created_at to the evaluation's clock (freshness would otherwise follow the wall clock)

@@ -122,7 +122,7 @@ def main():
         for key, zh, en, values in chosen:
             for i, (day, val) in enumerate(plan[key]):
                 closed = plan[key][i + 1][0] if i + 1 < len(plan[key]) else None
-                f = {"ref": f"{pid}-f-{key}-{i}", "day": day, "content": f"用户{zh}：{val}（{en}: {val}）"}
+                f = {"ref": f"{pid}-f-{key}-{i}", "day": day, "key": key, "value": val, "content": f"用户{zh}：{val}（{en}: {val}）"}
                 if closed:
                     f["validUntilDay"] = closed
                 facts.append(f)

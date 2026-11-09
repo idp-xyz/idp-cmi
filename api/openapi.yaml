@@ -117,6 +117,11 @@ paths:
   /api/v1/evaluations/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
     get: {summary: One evaluation with its evidence, responses: {'200': {description: evaluation}, '404': {$ref: '#/components/responses/Problem'}}}
+  /v1/memory/facts:
+    post:
+      summary: 'Write a FACT (ADR-0001 D41): a memory record with a key and a value, of which one is current per (scope, key). A new value closes the validity of the current one (valid_until = the new valid_from) and inserts the new record in the same transaction; the same value again is "unchanged" (200, nothing written); a statement older than the current value is 409. Body: key (a-z0-9._-), value (1-500 chars), plus the record fields (scope, content, provenance, sensitivity, ...); no validUntil. Role cmi-writer; the same checks, quotas and idempotency as POST /v1/memory/records.'
+      parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
+      responses: {'201': {description: 'created or updated: {outcome, record, closed}'}, '200': {description: unchanged}, '403': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}, '429': {$ref: '#/components/responses/Problem'}}
   /v1/memory/export:
     get:
       summary: 'The caller''s own memory as a file (ADR-0001 D34): the records the CMI holds as live about their subject, envelope idp-cmi.memory-export.v1, Content-Disposition attachment; truncated is true when more than 500 records exist. Roles cmi-reader or cmi-writer; nobody else''s records are ever included.'

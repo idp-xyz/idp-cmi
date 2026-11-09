@@ -539,6 +539,53 @@ func (a *API) Handler() http.Handler {
 			return http.StatusCreated, out, err
 		})
 	}, writer))
+	// Facts (ADR-0001 D41): one current value per (scope, key); a new value closes the old one's validity.
+	mux.Handle("POST /v1/memory/facts", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		raw, err := readBody(r)
+		if err != nil {
+			return 0, nil, err
+		}
+		var in struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+			cmi.MemoryRecord
+		}
+		if err := decodeRaw(raw, &in); err != nil {
+			return 0, nil, err
+		}
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
+		if _, err := a.authorize(r, p, "memory.write", pdp.Resource{Kind: "memory", Scope: &in.Scope, Sensitivity: in.Sensitivity, Source: in.Provenance.Source, Entities: in.Entities}, ""); err != nil {
+			return 0, nil, err
+		}
+		if in.Scope.IsUnit() {
+			ok, err := a.Store.IsMember(r.Context(), p.Tenant, v, in.Scope, p.Has(admin))
+			if err != nil {
+				return 0, nil, err
+			}
+			if !ok {
+				return 0, nil, transport.Fail(http.StatusForbidden, "FORBIDDEN", "not a member of "+in.Scope.Kind+":"+in.Scope.ID)
+			}
+		}
+		if err := a.checkWriteLimits(r.Context(), p, in.Scope); err != nil {
+			return 0, nil, err
+		}
+		return a.idempotent(r, p, raw, func() (int, any, error) {
+			out, err := a.Store.UpsertFact(r.Context(), p.Tenant, in.MemoryRecord, in.Key, in.Value, p.Subject, v.Ceiling)
+			if err != nil {
+				a.countWrite(nil, err)
+				return 0, nil, err
+			}
+			a.countWrite(out.Record, nil)
+			status := http.StatusCreated
+			if out.Outcome == "unchanged" {
+				status = http.StatusOK
+			}
+			return status, out, nil
+		})
+	}, writer))
 	// The member's own memory as a file (access to one's data): the records the CMI holds as live about them.
 	mux.Handle("GET /v1/memory/export", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		v, err := a.visibility(r.Context(), p)
