@@ -1,0 +1,51 @@
+{
+  "configuration": "hybrid-qwen3-0.6b-instruct-f0.40-b0.05",
+  "results": {
+    "facts": {
+      "single": {
+        "questions": 130,
+        "currentFirst": 0.9308,
+        "currentInTop5": 0.9692,
+        "staleInTop5": 0,
+        "returnedNothing": 0
+      },
+      "unknown": {
+        "questions": 50,
+        "currentFirst": 0,
+        "currentInTop5": 0,
+        "staleInTop5": 0,
+        "returnedNothing": 0.34
+      },
+      "updated": {
+        "questions": 170,
+        "currentFirst": 0.9353,
+        "currentInTop5": 0.9647,
+        "staleInTop5": 0,
+        "returnedNothing": 0
+      }
+    },
+    "raw": {
+      "single": {
+        "questions": 130,
+        "currentFirst": 0.5231,
+        "currentInTop5": 0.9385,
+        "staleInTop5": 0.5,
+        "returnedNothing": 0
+      },
+      "unknown": {
+        "questions": 50,
+        "currentFirst": 0,
+        "currentInTop5": 0,
+        "staleInTop5": 0,
+        "returnedNothing": 0.04
+      },
+      "updated": {
+        "questions": 170,
+        "currentFirst": 0.4706,
+        "currentInTop5": 0.9294,
+        "staleInTop5": 0.9294,
+        "returnedNothing": 0
+      }
+    }
+  }
+}

@@ -108,7 +108,7 @@ func runSet(t *testing.T, set string) {
 		refOf := seed(t, ds, store, tenant, owner, now)
 		if cfg.doc != nil { // the projection is asynchronous in production; here every row is embedded before the first query
 			for {
-				n, err := store.BackfillEmbeddings(ctx, 100)
+				n, err := store.BackfillEmbeddings(ctx, 50)
 				if err != nil {
 					t.Fatal(err)
 				}

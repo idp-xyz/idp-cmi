@@ -1,0 +1,705 @@
+{
+ "slots": {
+  "colour": {
+   "statements": [
+    "我平时最偏爱{value}，看着特别舒服。",
+    "帮我记一下，我对{value}情有独钟。",
+    "说到颜色，{value}绝对是我的首选。",
+    "我发现自己越来越喜欢{value}这种色调了。",
+    "My all-time favourite colour is definitely {value}.",
+    "I've always been a big fan of {value}."
+   ],
+   "updates": [
+    "之前说错了，其实我现在更中意{value}。",
+    "最近审美变了，我现在的首选是{value}。",
+    "把喜好更新一下，我现在喜欢{value}。",
+    "Actually, my favourite colour has changed to {value}.",
+    "I've updated my preference to {value} recently."
+   ],
+   "questions": [
+    "你还记得我平时最爱什么颜色吗？",
+    "之前告诉过你的那个心头好色调是什么？",
+    "我跟你分享过我的色彩偏好，现在是什么？",
+    "帮我回忆一下，我指定的那个色调是啥？",
+    "关于我个人喜欢的色彩，你存的是哪个？",
+    "What was the colour preference I mentioned earlier?",
+    "Do you recall my favorite shade from our past chats?",
+    "Can you remind me which hue I said I liked best?"
+   ],
+   "colleague": [
+    "我同事小王说他只喜欢{value}。",
+    "隔壁组的那个新来的同事，他的偏好是{value}。",
+    "记得帮我备注一下，我搭档的个人喜好是{value}。"
+   ]
+  },
+  "city": {
+   "statements": [
+    "我现在住在{value}。",
+    "我的现居地是{value}。",
+    "日常都在{value}活动。",
+    "坐标{value}，目前在这边工作生活。",
+    "I currently reside in {value}.",
+    "My city of residence is {value}."
+   ],
+   "updates": [
+    "搬走了，现在住在{value}。",
+    "我最近换到{value}住了。",
+    "因为工作调动，我现在在{value}。",
+    "I have relocated and now live in {value}.",
+    "Actually, my current city is {value}."
+   ],
+   "questions": [
+    "你还记得我之前说的是哪个城市吗？",
+    "我现在住的地方是哪里？",
+    "助手，我目前的居住地是什么？",
+    "能查一下我最新的居住地点吗？",
+    "我的现居城市变了吗？",
+    "What city am I currently living in?",
+    "Do you remember my current residence location?",
+    "Which city is my latest address?"
+   ],
+   "colleague": [
+    "我同事最近也搬到{value}了。",
+    "另一个项目组的负责人住在{value}。",
+    "听说隔壁组的经理现在也在{value}办公。"
+   ]
+  },
+  "diet": {
+   "statements": [
+    "我平时基本上就是吃{value}的。",
+    "别给我推荐含肉的东西，我是{value}爱好者。",
+    "我的饮食原则很简单：坚持{value}。",
+    "以后帮我订餐记得按{value}来，不然我没法吃。",
+    "I strictly follow a {value} diet.",
+    "My eating habits are defined by being {value}."
+   ],
+   "updates": [
+    "我现在改吃{value}了，之前的习惯已经调整了。",
+    "最近我换了方案，现在坚持{value}。",
+    "经过一段时间尝试，我决定转向{value}。",
+    "I have actually switched to a {value} diet recently.",
+    "My current preference is now strictly {value}."
+   ],
+   "questions": [
+    "你还记得我现在的饮食习惯是什么吗？",
+    "帮我确认一下我目前遵循的饮食原则。",
+    "根据你记录的信息，我通常怎么吃？",
+    "我最近有没有改变吃饭的偏好？",
+    "对于我的用餐要求，你记得最准确的是什么？",
+    "What is my current dietary preference?",
+    "Can you remind me what I usually eat?",
+    "What have been my recent eating habits?"
+   ],
+   "colleague": [
+    "我同事老王坚持吃{value}。",
+    "记得帮我给小李留一份{value}的餐。",
+    "张三最近也开始尝试{value}了。"
+   ]
+  },
+  "manager": {
+   "statements": [
+    "我的直属经理是{value}。",
+    "平时汇报工作主要找{value}，他是我的line manager。",
+    "在咱们公司，我的直接上级叫{value}。",
+    "My line manager is {value}.",
+    "I report directly to {value}, who is my line manager.",
+    "我的直接主管就是{value}。"
+   ],
+   "updates": [
+    "对了，我的直属经理最近换成{value}了。",
+    "实际上，我的line manager现在其实是{value}。",
+    "之前记错了，我现在归{value}管。",
+    "My line manager has been updated to {value}.",
+    "Actually, it is now {value} who is my line manager."
+   ],
+   "questions": [
+    "你还记得我现在归谁管吗？",
+    "我现在的直接上级是谁？",
+    "我的汇报对象是谁？",
+    "Who is my direct supervisor?",
+    "Can you remind me who I report to?",
+    "Who is the person managing me directly?",
+    "我的顶头上司名字是什么？",
+    "Who is my immediate boss?"
+   ],
+   "colleague": [
+    "小李的直属经理是{value}。",
+    "隔壁组的张经理，他的line manager是{value}。",
+    "我同事的上级是{value}。"
+   ]
+  },
+  "meeting": {
+   "statements": [
+    "我一般比较喜欢在 {value} 开会，那时候脑子最清醒。",
+    "以后约会议的话，麻烦都安排在 {value} 吧。",
+    "对我来说，{value} 是最理想的会议时段，别的时间我效率低。",
+    "我习惯在 {value} 处理会议，这样能避开上午的邮件轰炸。",
+    "I prefer to have my meetings scheduled at {value}.",
+    "Please book all my future meetings for {value} if possible."
+   ],
+   "updates": [
+    "之前说的那个时间不对了，现在改成 {value} 了。",
+    "最近工作安排调整，我的会议时间换成 {value} 了。",
+    "记一下，我的首选会议时间现在是 {value}，之前的作废。",
+    "My preferred meeting time has actually changed to {value} now.",
+    "I've switched my meeting preference to {value} recently."
+   ],
+   "questions": [
+    "我通常希望把会议安排在什么时间？",
+    "你还记得我偏好的开会时段是几点吗？",
+    "我一般倾向于在哪个时间点进行会议？",
+    "帮我查一下，我默认的会议时间偏好是什么？",
+    "我以前说过喜欢什么时候开会来着？",
+    "What time do I usually prefer for meetings?",
+    "Can you remind me of my preferred slot for scheduling?",
+    "What was the time I mentioned for having my meetings?"
+   ],
+   "colleague": [
+    "小王喜欢把会议安排在 {value}，让他去订会议室吧。",
+    "我的同事李明习惯在 {value} 开会，记得配合他。",
+    "张伟的会议时间偏好是 {value}，别搞混了。"
+   ]
+  },
+  "commute": {
+   "statements": [
+    "我平时上班都是坐{value}去的。",
+    "我的通勤方式主要是{value}。",
+    "每天往返公司都靠{value}。",
+    "我习惯用{value}作为主要的交通工具。",
+    "I usually commute to work by {value}.",
+    "My daily commuting method is {value}."
+   ],
+   "updates": [
+    "我现在改成{value}了。",
+    "最近我把通勤方式换成{value}。",
+    "实际上我现在是{value}。",
+    "I have switched my commuting method to {value}.",
+    "Actually, I now commute via {value}."
+   ],
+   "questions": [
+    "我还记得我主要怎么上下班吗？",
+    "我之前告诉过你我的出行方式是什么？",
+    "我现在通勤主要用什么工具？",
+    "你还记得我上班是怎么去的吗？",
+    "我最近改成的通勤方式记得吗？",
+    "What is my current commuting method?",
+    "Do you recall how I usually get to work?",
+    "What means of transport do I use for commuting?"
+   ],
+   "colleague": [
+    "我同事老王平时是坐{value}上班的。",
+    "隔壁组的同事小李通勤方式是{value}。",
+    "听说我的经理喜欢用{value}来通勤。"
+   ]
+  },
+  "phone": {
+   "statements": [
+    "我现在用的手机是 {value}，平时工作主要靠它。",
+    "记一下，我的设备是 {value}。",
+    "手头的主力机是 {value}，记得帮我存好这个信息。",
+    "My current smartphone is the {value}.",
+    "I use a {value} for my daily tasks.",
+    "Keep in mind that my phone model is {value}."
+   ],
+   "updates": [
+    "我换手机了，现在是 {value}。",
+    "之前的设备不用了，改成 {value} 了。",
+    "My phone has been updated to the {value}.",
+    "Actually, I switched to a {value} recently.",
+    "最近把手机换成 {value} 了。"
+   ],
+   "questions": [
+    "我还记得我现在的移动设备是什么吗？",
+    "之前让你记的那个手持终端型号是什么？",
+    "我目前使用的智能设备是哪一款？",
+    "我的通信工具具体是什么型号？",
+    "What is the model of my current mobile device?",
+    "Do you remember which gadget I use for communication?",
+    "What brand and model am I currently carrying?"
+   ],
+   "colleague": [
+    "我同事用的手机是 {value}。",
+    "隔壁工位那个人的移动设备是 {value}。",
+    "听说我们部门经理的手机型号是 {value}。"
+   ]
+  },
+  "coffee": {
+   "statements": [
+    "我平时都点{value}。",
+    "记住哦，我的咖啡习惯是{value}。",
+    "以后给我订咖啡的话，就按{value}来。",
+    "我的标准配置就是{value}。",
+    "I usually order {value}.",
+    "Stick to {value} for my coffee order."
+   ],
+   "updates": [
+    "我现在改喝{value}了。",
+    "最近换成{value}了，别记错。",
+    "咖啡口味调整，现在是{value}。",
+    "Actually, I've switched to {value}.",
+    "My coffee preference has changed to {value}."
+   ],
+   "questions": [
+    "你还记得我平时喝什么咖啡吗？",
+    "我惯用的饮品是什么？",
+    "帮我查一下我的咖啡偏好。",
+    "之前说的我常点的那款是什么来着？",
+    "我的日常咖啡习惯有记录吗？",
+    "What is my usual coffee order?",
+    "Do you remember what I typically get?",
+    "What was my standard coffee choice?"
+   ],
+   "colleague": [
+    "我同事一般只喝{value}。",
+    "旁边那位同事总是点{value}。",
+    "听说是他常点{value}。"
+   ]
+  },
+  "language": {
+   "statements": [
+    "以后咱们交流都默认用{value}，这样最顺手。",
+    "我习惯用{value}处理工作邮件和文档。",
+    "请把回复调整为{value}，这是我日常办公的主要语言。",
+    "为了方便协作，我的首选沟通语言是{value}。",
+    "I prefer to work in {value}.",
+    "Please use {value} for all future interactions."
+   ],
+   "updates": [
+    "最近我把主要工作语言换成{value}了，之前是别的。",
+    "考虑到新的项目需求，我现在的常用语言改成了{value}。",
+    "实际上，我现在更倾向于使用{value}进行工作沟通。",
+    "I've switched my preferred working language to {value}.",
+    "Actually, it is now {value} for my daily tasks."
+   ],
+   "questions": [
+    "你记得我平时主要用什么语言办公吗？",
+    "我之前设过的工作沟通语言是哪个？",
+    "我现在的默认交互语言是什么来着？",
+    "帮我确认一下我指定用于工作的那个语言。",
+    "我设定的主要办公用语是哪一种？",
+    "What is my designated language for work communications?",
+    "Do you recall which language I prefer for professional tasks?",
+    "What is the primary language I requested for our interactions?"
+   ],
+   "colleague": [
+    "小李说他的首选工作语言是{value}。",
+    "记得告诉助手，王经理习惯用{value}交流。",
+    "我的搭档 prefers to communicate in {value} for work."
+   ]
+  },
+  "team": {
+   "statements": [
+    "我目前在{value}工作，主要负责后端开发。",
+    "记得帮我标注一下，我的所属团队是{value}。",
+    "为了协调工作方便，请记录我在{value}这个部门。",
+    "我是{value}的成员，以后关于该组的事项请优先关联到我。",
+    "I am currently part of the {value}.",
+    "Please note that my team affiliation is {value}."
+   ],
+   "updates": [
+    "由于组织架构调整，我现在被调到了{value}。",
+    "帮我把我的团队记录更新为{value}吧。",
+    "最近我转岗去{value}了，请同步一下信息。",
+    "Actually, my team has been changed to {value}.",
+    "I've moved to {value}, please update my profile."
+   ],
+   "questions": [
+    "你还记得我现在属于哪个组吗？",
+    "查一下我当前所在的部门名称。",
+    "我的团队归属最近有变动吗，具体是哪个？",
+    "帮我确认一下我现在归口哪个团队。",
+    "我现在的归属团队叫什么？",
+    "Can you tell me which team I belong to now?",
+    "What is my current team designation?",
+    "Which group am I currently assigned to?"
+   ],
+   "colleague": [
+    "我的同事张伟现在是{value}的成员。",
+    "听说李娜最近加入了{value}。",
+    "王强在{value}负责前端工作。"
+   ]
+  },
+  "allergy": {
+   "statements": [
+    "我之前查过体检报告，医生说我对{value}严重过敏。",
+    "帮我记一下，以后点外卖千万别带{value}成分，我过敏。",
+    "本人{value}过敏，任何含此成分的礼物都请拒收。",
+    "我对{value}反应很大，上次误食后直接送急诊了，所以务必避开。",
+    "Please note that I am allergic to {value}, so please avoid it in any catering arrangements.",
+    "Just to flag this early: {value} triggers an allergic reaction for me, so we must exclude it."
+   ],
+   "updates": [
+    "之前的记录有误，我其实对{value}过敏，不是之前说的那个。",
+    "更正一下，我的过敏源现在确认是{value}，请更新我的档案。",
+    "经过进一步测试，发现我真正过敏的是{value}，请以此为准。",
+    "Please update my profile: the correct allergy is actually {value}, not the previous entry.",
+    "I've re-evaluated my test results and it turns out my allergy is to {value}."
+   ],
+   "questions": [
+    "我刚才在食堂不小心吃了含有那种成分的东西，我应该怎么办？",
+    "我的那个禁忌成分具体是哪个？我有点记不清了。",
+    "帮我查一下，我之前登记的不能吃的东西是什么？",
+    "我最近身体状态不太好，是不是因为碰到了那个让我起疹子的东西？",
+    "我的档案里那个需要避开的物质记录正确吗？",
+    "What is the specific item I need to avoid due to my condition?",
+    "Can you remind me which substance triggers my reaction?",
+    "Is my current restriction record updated with the latest test results?"
+   ],
+   "colleague": [
+    "我的同事小李他对{value}过敏，所以聚餐时要注意。",
+    "老板说张伟对{value}有过敏反应，给他订餐时要特别小心。",
+    "新来的实习生对{value}过敏，我们在茶水间要注意不要放置相关食品。"
+   ]
+  },
+  "hobby": {
+   "statements": [
+    "我平时下班后挺喜欢{value}的，算是主要的放松方式。",
+    "跟你说一下哈，我的{value}是{value}，周末基本都在练这个。",
+    "我最大的兴趣就是{value}，没事就琢磨琢磨。",
+    "其实我业余时间都花在{value}上了，别的都没啥心思。",
+    "Just so you know, my hobby is {value}.",
+    "I spend most of my free time on {value}."
+   ],
+   "updates": [
+    "最近我把爱好换成{value}了，之前那个不太玩了。",
+    "我现在主要玩{value}，那个旧爱好已经弃坑了。",
+    "哎呀搞错了，我现在真正的爱好是{value}。",
+    "Actually, I've switched my hobby to {value} recently.",
+    "It's {value} now, not the old one anymore."
+   ],
+   "questions": [
+    "你还记得我平时喜欢做什么吗？",
+    "我之前告诉过你我的兴趣是什么来着？",
+    "我想确认一下，我告诉你的那个爱好是啥？",
+    "帮我回忆一下，我业余时间的活动是什么？",
+    "我的那个爱好是什么，你记着没？",
+    "Do you remember what I said about my interests?",
+    "What was the activity I mentioned for my free time?",
+    "Can you recall the personal interest I shared with you?"
+   ],
+   "colleague": [
+    "我同事小李的爱好是{value}，他天天在群里晒。",
+    "隔壁组的王工特别喜欢{value}，经常约我去。",
+    "听说张总的业余爱好是{value}，挺厉害的。"
+   ]
+  },
+  "os": {
+   "statements": [
+    "我平时主要用 {value} 办公。",
+    "我的主力机跑的是 {value}。",
+    "系统用的是 {value}，习惯了。",
+    "我的工作机装的是 {value}。",
+    "I use {value} for my daily work.",
+    "My laptop runs on {value}."
+   ],
+   "updates": [
+    "我现在把系统换成 {value} 了。",
+    "最近重装了一下，现在是 {value}。",
+    "之前不是那个，现在改成 {value} 了。",
+    "I've switched to {value} recently.",
+    "Actually, it's {value} now."
+   ],
+   "questions": [
+    "你还记得我用的是什么系统吗？",
+    "帮我查一下我的电脑环境。",
+    "我现在的电脑底层是啥？",
+    "我的设备运行环境是什么？",
+    "之前我告诉过你我的系统类型，能复述一下吗？",
+    "What is my current OS?",
+    "Do you remember which platform I'm on?",
+    "Can you tell me my system environment?"
+   ],
+   "colleague": [
+    "我同事用的是 {value}。",
+    "隔壁工位那位装的是 {value}。",
+    "团队里的新成员系统配置是 {value}。"
+   ]
+  },
+  "floor": {
+   "statements": [
+    "我的办公室在{value}。",
+    "我平时都在{value}办公。",
+    "记住啊，我在{value}。",
+    "我的工位位于{value}。",
+    "I'm on the {value} floor.",
+    "My office is located on {value}."
+   ],
+   "updates": [
+    "我现在改到{value}了。",
+    "最近搬到了{value}，记得更新一下。",
+    "我办公室楼层换成{value}了。",
+    "Actually, I moved to {value} recently.",
+    "I'm now on {value}, please update your records."
+   ],
+   "questions": [
+    "我现在具体在几楼办公？",
+    "你还记得我的工位在哪一层吗？",
+    "帮我确认下我现在的办公区域是在哪一层。",
+    "我的办公室楼层信息更新成什么了？",
+    "我现在是在原来的楼层还是换了地方？",
+    "Can you tell me which floor I'm currently on?",
+    "What is my current office location layer?",
+    "Do you have my office floor number memorized?"
+   ],
+   "colleague": [
+    "隔壁小王在{value}。",
+    "李经理的办公室在{value}。",
+    "新来的实习生被安排在{value}。"
+   ]
+  },
+  "seat": {
+   "statements": [
+    "我坐飞机的时候其实挺喜欢{value}的位子。",
+    "以后订票记得帮我选{value}哈，我习惯坐那儿。",
+    "对我来说，{value}是最舒服的座位选择。",
+    "我有个习惯，就是坐飞机一定要选{value}。",
+    "I personally prefer sitting in a {value} seat when flying.",
+    "Please always book the {value} side for me."
+   ],
+   "updates": [
+    "我现在改坐{value}了，之前的习惯换过来了。",
+    "最近我发现自己更喜欢{value}，请更新一下偏好。",
+    "之前坐错了，其实我现在的偏好是{value}。",
+    "Actually, I have switched to preferring {value} seats.",
+    "My preference has changed to {value} recently."
+   ],
+   "questions": [
+    "记得我坐飞机一般喜欢哪种位子吗？",
+    "帮我查一下，我平时选座有什么偏好？",
+    "我之前的座位习惯是什么来着？",
+    "你还记得我登机时喜欢坐哪边吗？",
+    "我订机票时通常指定哪种座位类型？",
+    "What is my recorded seating preference for flights?",
+    "Do you remember which side of the plane I like to sit on?",
+    "What kind of seat do I usually request when booking a trip?"
+   ],
+   "colleague": [
+    "我同事他特别爱坐{value}。",
+    "记得提醒一下，他喜欢{value}的位置。",
+    "他每次出差都非要选{value}不可。"
+   ]
+  },
+  "hotel": {
+   "statements": [
+    "我出差一般都住{value}，习惯了。",
+    "记得帮我记一下，我订酒店首选{value}。",
+    "我的差旅住宿标准是{value}。",
+    "以后安排行程时，默认选{value}就行。",
+    "I usually stay at {value} for my business trips.",
+    "Please note that my preferred hotel chain is {value}."
+   ],
+   "updates": [
+    "我最近把出差住的酒店换成{value}了。",
+    "之前的记录不对，现在改成了{value}。",
+    "请更新我的信息，我现在住{value}。",
+    "Actually, I have switched to {value} for my recent trips.",
+    "My hotel preference has changed to {value}."
+   ],
+   "questions": [
+    "我出差喜欢订哪家连锁？",
+    "你还记得我默认住的酒店品牌吗？",
+    "帮我查一下我的差旅住宿偏好。",
+    "我通常住哪个牌子的酒店？",
+    "我的出差住宿设定是什么？",
+    "What is my current hotel booking preference?",
+    "Can you remind me which chain I usually book?",
+    "What is the default accommodation brand for my trips?"
+   ],
+   "colleague": [
+    "小李出差只住{value}，很有钱。",
+    "张经理的差旅标准是{value}。",
+    "我们部门领导喜欢订{value}。"
+   ]
+  },
+  "report": {
+   "statements": [
+    "我习惯用 {value} 格式来写报告。",
+    "以后所有的汇报材料，请统一保存为 {value}。",
+    "我的报告格式要求是 {value}，别搞错了。",
+    "基本上我都是用 {value} 来做报告的。",
+    "My reports are always in {value} format.",
+    "Please save my documents as {value}."
+   ],
+   "updates": [
+    "我现在改用 {value} 格式了，之前的不用了。",
+    "最近把报告格式换成了 {value}，麻烦更新一下。",
+    "从这周开始，我的格式标准变成了 {value}。",
+    "Actually, I switched my report format to {value} recently.",
+    "I've updated my preference to {value} for all reports."
+   ],
+   "questions": [
+    "我记得我之前说的文件输出格式是什么来着？",
+    "你帮我存的那些文档，默认应该是什么样式？",
+    "我上次强调的文档呈现方式还有印象吗？",
+    "关于我汇报材料的类型要求，你还记得吗？",
+    "我指定的文档排版标准是什么？",
+    "What was the document style I specified earlier?",
+    "Can you recall my preferred output type for reports?",
+    "What file extension do I usually prefer for my deliverables?"
+   ],
+   "colleague": [
+    "张三喜欢用 {value} 来做他的周报。",
+    "李四那边统一要求输出为 {value} 格式。",
+    "王五每次提交的都是 {value} 类型的文件。"
+   ]
+  },
+  "channel": {
+   "statements": [
+    "以后有重要消息直接发我邮件就行。",
+    "我习惯看企业微信，通知往那边推。",
+    "如果是紧急事项，请打电话给我。",
+    "我的通知接收方式设定为短信。",
+    "Please send all notifications via email.",
+    "I prefer receiving alerts through SMS."
+   ],
+   "updates": [
+    "通知方式改到企业微信了。",
+    "最近换成电话通知比较方便。",
+    "请把我的接收渠道调整为邮件。",
+    "Actually, it is now set to enterprise WeChat.",
+    "Please switch my notification channel to SMS."
+   ],
+   "questions": [
+    "我现在是通过什么途径接收提醒？",
+    "之前我设定的消息推送方式是什么？",
+    "关于通知，我选的是哪个渠道？",
+    "我目前偏好哪种方式获取工作消息？",
+    "我设置的接收提醒手段是？",
+    "What is my currently configured alert method?",
+    "Which platform do I get notified on?",
+    "How do I receive alerts now?"
+   ],
+   "colleague": [
+    "小李的通知接收渠道是邮件。",
+    "王经理喜欢用短信接收通知。",
+    "记得给财务部同事打电话提醒。"
+   ]
+  },
+  "budget": {
+   "statements": [
+    "我出差住酒店的预算一般控制在{value}左右。",
+    "帮我记一下，每晚住宿上限是{value}。",
+    "公司报销标准里，我每晚酒店花费不能超过{value}。",
+    "以后订酒店记得，我的预算是每晚{value}。",
+    "My hotel budget per night is {value}.",
+    "I prefer to keep my nightly accommodation cost around {value}."
+   ],
+   "updates": [
+    "最近物价涨了，我的住宿预算调整到{value}了。",
+    "之前那个预算不太够用，现在改成每晚{value}。",
+    "更新一下哈，我每晚住店预算现在是{value}。",
+    "Actually, my nightly hotel budget is now {value}.",
+    "I've adjusted my accommodation limit to {value} per night."
+   ],
+   "questions": [
+    "我住酒店每晚能花多少钱？",
+    "你还记得我订房的标准吗？",
+    "我出差时的住宿限额是多少？",
+    "对于我的差旅住宿，上限设的是多少？",
+    "我每晚订酒店的费用上限是多少？",
+    "What is my nightly accommodation limit?",
+    "Can you recall my budget for hotel stays per night?",
+    "How much can I spend on lodging each night?"
+   ],
+   "colleague": [
+    "我同事小李的住宿预算是{value}。",
+    "记得王总每晚住酒店的花费上限是{value}。",
+    "隔壁部门同事的差旅住宿标准是{value}。"
+   ]
+  },
+  "lang_code": {
+   "statements": [
+    "我平时写代码主要用 {value}。",
+    "我的主力语言是 {value}。",
+    "我就靠 {value} 吃饭。",
+    "说到编程，我首选 {value}。",
+    "My go-to language is {value}.",
+    "I primarily code in {value}."
+   ],
+   "updates": [
+    "我现在改学 {value} 了。",
+    "最近我把主力语言换成了 {value}。",
+    "我现在主要写 {value}。",
+    "Actually, I've switched to {value} recently.",
+    "I'm focusing on {value} now."
+   ],
+   "questions": [
+    "我之前说我用什么语言？",
+    "你还记得我主要写什么吗？",
+    "我常用的那个开发语言是啥来着？",
+    "帮我回忆一下我的技术栈偏好。",
+    "我通常用什么工具写代码？",
+    "What was my primary coding language?",
+    "Which language do I usually prefer?",
+    "Remind me what I said I code in."
+   ],
+   "colleague": [
+    "我同事老王最爱用 {value}。",
+    "隔壁组的架构师一直用 {value} 开发。",
+    "他声称 {value} 是他的本命语言。"
+   ]
+  }
+ },
+ "filler": [
+  "今天北京的天气怎么样？",
+  "帮我查一下上海明天的降水概率。",
+  "广州现在的气温是多少？",
+  "这周会有暴雨预警吗？",
+  "深圳今天的空气质量指数是多少？",
+  "帮我安排下周二上午10点的会议。",
+  "查询接下来三天的空闲时间段。",
+  "会议结束后发送会议纪要给参会者。",
+  "提醒我在明天下午3点参加评审会。",
+  "帮我预约下周一上午9点的会议室。",
+  "起草一封关于项目延期的通知邮件。",
+  "检查收件箱中是否有未回复的客户邮件。",
+  "给合作团队发送进度更新邮件。",
+  "撰写一封确认会议出席的回复邮件。",
+  "将这份报告翻译成英文。",
+  "把这段中文简介翻译成日文。",
+  "将这份技术文档从英文翻译成中文。",
+  "帮我把这段法语内容翻译成西班牙文。",
+  "提交上个月的差旅费报销申请。",
+  "查询当前报销流程的处理状态。",
+  "上传发票副本以完成费用结算。",
+  "确认本周的预算使用情况。",
+  "更新项目里程碑的当前进度。",
+  "生成一份本周的工作进度摘要。",
+  "记录项目风险清单中的最新条目。",
+  "汇总过去一周的团队工作产出。",
+  "这个周末有什么适合户外活动的地方？",
+  "推荐几个适合放松的市内场所。",
+  "查询下周六是否有大型展会活动。",
+  "帮我查看附近有哪些开放的公园。",
+  "服务器连接超时，如何解决？",
+  "代码编译出现报错，请分析原因。",
+  "数据库查询速度变慢，如何优化？",
+  "软件更新后出现兼容性问题，怎么办？",
+  "网络访问不稳定，如何排查故障？",
+  "附近有哪些提供午餐选择的餐厅？",
+  "推荐几家靠近办公区域的快餐店。",
+  "查询午餐时段可用的餐饮选项。",
+  "今天中午有什么推荐的就餐地点？",
+  "查看附近咖啡馆的营业时间和菜单。",
+  "发布本周的公司新闻公告。",
+  "整理内部通讯中的最新动态。",
+  "汇总过去一周的媒体报道摘要。",
+  "撰写一篇关于新产品的新闻稿。",
+  "检查公司官网更新内容的准确性。",
+  "What is the current weather forecast for tomorrow?",
+  "Check the humidity levels in Beijing today.",
+  "Schedule a meeting for next Wednesday at 2 PM.",
+  "Find available time slots for a quick sync.",
+  "Send a reminder for the upcoming workshop.",
+  "Draft an email to confirm the project kickoff.",
+  "Check for any unanswered messages in the inbox.",
+  "Prepare a notification email for the team update.",
+  "Reply to the customer inquiry with a summary.",
+  "Translate this technical document into French.",
+  "Convert the meeting notes from Spanish to English.",
+  "Translate the product description into German.",
+  "Translate the user guide from Chinese to Italian.",
+  "Submit a claim for recent travel expenses.",
+  "Check the status of the current reimbursement request."
+ ]
+}

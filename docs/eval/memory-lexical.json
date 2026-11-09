@@ -1,0 +1,51 @@
+{
+  "configuration": "lexical",
+  "results": {
+    "facts": {
+      "single": {
+        "questions": 130,
+        "currentFirst": 0.4923,
+        "currentInTop5": 0.5385,
+        "staleInTop5": 0,
+        "returnedNothing": 0
+      },
+      "unknown": {
+        "questions": 50,
+        "currentFirst": 0,
+        "currentInTop5": 0,
+        "staleInTop5": 0,
+        "returnedNothing": 0.88
+      },
+      "updated": {
+        "questions": 170,
+        "currentFirst": 0.5,
+        "currentInTop5": 0.5412,
+        "staleInTop5": 0,
+        "returnedNothing": 0
+      }
+    },
+    "raw": {
+      "single": {
+        "questions": 130,
+        "currentFirst": 0.1,
+        "currentInTop5": 0.1923,
+        "staleInTop5": 0.1538,
+        "returnedNothing": 0
+      },
+      "unknown": {
+        "questions": 50,
+        "currentFirst": 0,
+        "currentInTop5": 0,
+        "staleInTop5": 0,
+        "returnedNothing": 0.08
+      },
+      "updated": {
+        "questions": 170,
+        "currentFirst": 0.1294,
+        "currentInTop5": 0.2118,
+        "staleInTop5": 0.3176,
+        "returnedNothing": 0
+      }
+    }
+  }
+}
