@@ -23,6 +23,7 @@ import (
 	"idp-cmi/internal/approvals"
 	"idp-cmi/internal/authorization"
 	"idp-cmi/internal/cmi"
+	"idp-cmi/internal/config"
 	"idp-cmi/internal/consolidate"
 	cmictx "idp-cmi/internal/context"
 	"idp-cmi/internal/evaluation"
@@ -58,7 +59,12 @@ type API struct {
 	Metrics   *observability.Metrics
 	Version   string
 
+	// Limits bounds one writer's use of the store (zero values = unlimited).
+	Limits config.Limits
+
 	resolves *observability.CounterVec
+	writes   *observability.CounterVec
+	limiter  rateLimiter
 }
 
 type ctxKey int
@@ -271,6 +277,8 @@ func (a *API) Handler() http.Handler {
 	}
 	if a.Metrics != nil {
 		a.resolves = a.Metrics.Counter("idp_cmi_resolves_total", "Context resolutions by outcome.", "outcome")
+		a.writes = a.Metrics.Counter("idp_cmi_memory_writes_total", "Memory writes by outcome (stored, flagged, quota, rate_limited, rejected).", "outcome")
+		a.registerGauges()
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
@@ -522,11 +530,30 @@ func (a *API) Handler() http.Handler {
 				return 0, nil, transport.Fail(http.StatusForbidden, "FORBIDDEN", "not a member of "+in.Scope.Kind+":"+in.Scope.ID)
 			}
 		}
+		if err := a.checkWriteLimits(r.Context(), p, in.Scope); err != nil {
+			return 0, nil, err
+		}
 		return a.idempotent(r, p, raw, func() (int, any, error) {
 			out, err := a.Store.CreateMemory(r.Context(), p.Tenant, in, p.Subject, v.Ceiling)
+			a.countWrite(out, err)
 			return http.StatusCreated, out, err
 		})
 	}, writer))
+	// The member's own memory as a file (access to one's data): the records the CMI holds as live about them.
+	mux.Handle("GET /v1/memory/export", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
+		const exportMax = 500
+		out, err := a.Store.ListMemory(r.Context(), p.Tenant, cmi.Scope{Kind: cmi.ScopeSubject, ID: p.Subject}, v, exportMax, false)
+		if err != nil {
+			return 0, nil, err
+		}
+		a.Log.Info("memory export", "subject", p.Subject, "records", len(out), "trace", observability.TraceID(r.Context()))
+		return 200, &withHeaders{body: map[string]any{"format": "idp-cmi.memory-export.v1", "exportedAt": time.Now().UTC(), "subject": p.Subject,
+			"records": out, "truncated": len(out) == exportMax}, headers: map[string]string{"Content-Disposition": `attachment; filename="my-memory.json"`}}, nil
+	}, writer, reader))
 	mux.Handle("POST /v1/memory/records/{id}/share", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		var in struct {
 			Scope  cmi.Scope `json:"scope"`

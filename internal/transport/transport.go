@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -51,9 +52,11 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 
 // Problem is an API error: an HTTP status, a stable code and a message safe to show callers.
 type Problem struct {
-	Status  int    `json:"-"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Status int `json:"-"`
+	// RetryAfter, when positive, is sent as the Retry-After header (seconds).
+	RetryAfter int    `json:"-"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
 }
 
 // Error implements error.
@@ -70,6 +73,9 @@ func WriteProblem(w http.ResponseWriter, err error) {
 	var p *Problem
 	if !errors.As(err, &p) {
 		p = Fail(http.StatusInternalServerError, "INTERNAL", "internal error")
+	}
+	if p.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(p.RetryAfter))
 	}
 	WriteJSON(w, p.Status, map[string]any{"error": p})
 }

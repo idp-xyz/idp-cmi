@@ -247,6 +247,9 @@ func serve(log *slog.Logger) error {
 		approvalClient = &approvals.Client{URL: au.Approvals.URL, Timeout: au.Approvals.Timeout, HTTP: &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsCfg}}}
 	}
 	a := &api.API{Store: store, Auth: verifier, Resolver: resolver, Log: log, Metrics: metrics, Version: version, Evaluator: &evaluation.Suite{Store: store, Resolver: resolver}, PDP: pdpClient, PDPOnError: pdpOnError, Approvals: approvalClient}
+	if l := cfg.Limits; l != nil {
+		a.Limits = *l
+	}
 	if c := cfg.Consolidation; c != nil { // ADR-0001 D15
 		tlsCfg, err := transport.ClientTLS(c.CAFile, "", "")
 		if err != nil {

@@ -169,3 +169,13 @@ Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到�
 | D26 | **`POST /v1/memory/revoke` 允许 cmi-reader 撤销自己 subject 作用域里的记录**：只能按 `recordId`（按 `ref` 撤销仍要 cmi-writer，否则 403），只限 `scope = {subject, 调用者}`，不论谁写的；别人的记录或不存在的 id 一律 404（不泄露存在性）；不带 If-Match；审计动作 `memory.revoke_own`。存储层是单独的 `RevokeOwnMemory`，不改原有 `RevokeMemory` 的规则（写入者撤销自己写的、管理员撤销任何） | 一个人有权让系统忘记关于他的事；范围限定到他自己的 subject 作用域，不给读者任何别的撤销能力。测试：`tests/integration` 的 `memory` 子测试（按引用 403、他人记录 404、自己的 200、重复 404、列表里消失、他人的记录没动） |
 
 契约 `idp.telos.cmi` 不变（请求体不是契约文档）。
+
+## 16. 生产就绪：限额、运行指标、成员导出（2026-11-09）
+
+| # | 决策 | 理由 |
+|---|---|---|
+| D34 | **写入限额与速率限制**：配置 `limits {maxRecordsPerScope, maxRecordsPerTenant, writesPerMinute}`（0 = 不限）。超限返回 429：`QUOTA_EXCEEDED`（作用域或租户已满，撤销或过期后腾出空间）、`RATE_LIMITED`（带 `Retry-After`）。条数在插入前检查，不在同一语句内，并发突发可小幅超出；速率是每主体、每副本一分钟固定窗口，内存实现 | 失控的 Agent 或写错配置的写入者不能把库写满；限额按作用域计（HOST 用同一个服务身份写所有成员的记忆，按写入者计无意义） |
+| D35 | **运行指标与告警**：`idp_cmi_memory_writes_total{outcome}`、`idp_cmi_projection_pending`、`idp_cmi_projection_oldest_age_seconds`、`idp_cmi_db_up`；`deploy/observability/alerts.yaml`（SLO 记录规则与 8 条告警，promtool 单测）；SLO：可用性 99.5%、resolve p95 1 s、投影滞后 10 分钟 | 没有告警就是靠用户发现故障；指标名由测试保证存在，改名不会让告警静默失效 |
+| D36 | **成员导出自己的记忆**：`GET /v1/memory/export`（cmi-reader 或 cmi-writer）返回调用者 subject 作用域里 CMI 当前视为有效的记录，信封 `idp-cmi.memory-export.v1`，`Content-Disposition: attachment`，超过 500 条时 `truncated: true`；永不包含别人的记录 | 数据主体访问权；与 D26（成员删除）配套 |
+
+契约 `idp.telos.cmi` 不变（导出信封与 429 不是契约文档）。局限：限额计数不是原子的；速率限制按副本；导出只含有效记录，不含已过期、已撤销或待审的记录。

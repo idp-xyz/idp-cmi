@@ -50,6 +50,11 @@ data:
       caFile: /etc/idp/model-ca/ca.crt
       source: distiller
       interval: 1h
+    # Bounds on what one writer can store (ADR-0001 D34); 0 = unlimited. Counts are soft, the rate is per principal and replica.
+    limits:
+      maxRecordsPerScope: 2000
+      maxRecordsPerTenant: 1000000
+      writesPerMinute: 600
 ---
 apiVersion: apps/v1
 kind: Deployment

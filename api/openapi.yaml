@@ -117,12 +117,16 @@ paths:
   /api/v1/evaluations/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
     get: {summary: One evaluation with its evidence, responses: {'200': {description: evaluation}, '404': {$ref: '#/components/responses/Problem'}}}
+  /v1/memory/export:
+    get:
+      summary: 'The caller''s own memory as a file (ADR-0001 D34): the records the CMI holds as live about their subject, envelope idp-cmi.memory-export.v1, Content-Disposition attachment; truncated is true when more than 500 records exist. Roles cmi-reader or cmi-writer; nobody else''s records are ever included.'
+      responses: {'200': {description: the export}, '403': {$ref: '#/components/responses/Problem'}}
   /v1/memory/records:
     post:
       summary: 'Append a memory record (ADR-0001 D3); provenance and a registered source are required, the writer''s ceiling bounds the sensitivity. status may be candidate (D21). structured.contradicts (record ids, authoritative sources only) disputes those records. Idempotency-Key (D19) makes retries safe
       parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}
-      responses: {'201': {description: recorded, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}, '403': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+      responses: {'201': {description: recorded, content: {application/json: {schema: {$ref: '#/components/schemas/MemoryRecord'}}}}, '403': {$ref: '#/components/responses/Problem'}, '429': {description: 'RATE_LIMITED (Retry-After seconds) or QUOTA_EXCEEDED: the writer, scope or tenant is over its configured limit (ADR-0001 D34)', content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
     get:
       summary: List the usable records of a scope the caller may see (default scope = the caller's subject); flagged=true (administrators) lists the quarantine (ADR-0001 D12), status=candidate|disputed (administrators) the review queue (D21), across scopes unless one is given
       parameters: [{name: scopeKind, in: query, schema: {type: string, enum: [tenant, subject, thread, agent, organization, team, project]}}, {name: scopeId, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer}}, {name: flagged, in: query, schema: {type: boolean}}, {name: status, in: query, schema: {type: string, enum: [candidate, disputed]}}, {name: validAt, in: query, schema: {type: string, format: date-time}, description: 'bitemporal view (ADR-0001 D25): business time the records must be valid at'}, {name: recordedAt, in: query, schema: {type: string, format: date-time}, description: 'registration time by which the CMI must have known (and not revoked) the records'}]

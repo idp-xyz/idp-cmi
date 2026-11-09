@@ -28,3 +28,17 @@ func TestLoad(t *testing.T) {
 		t.Fatal("unknown key accepted")
 	}
 }
+
+func TestLimits(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "cmi.yaml")
+	_ = os.WriteFile(p, []byte("limits:\n  maxRecordsPerScope: 500\n  maxRecordsPerTenant: 100000\n  writesPerMinute: 120\n"), 0o600)
+	f, err := Load(p)
+	if err != nil || f.Limits == nil || f.Limits.MaxRecordsPerScope != 500 || f.Limits.MaxRecordsPerTenant != 100000 || f.Limits.WritesPerMinute != 120 {
+		t.Fatalf("%+v %v", f, err)
+	}
+	_ = os.WriteFile(p, []byte("limits:\n  writesPerMinute: -1\n"), 0o600)
+	if _, err := Load(p); err == nil {
+		t.Fatal("a negative limit is refused")
+	}
+}

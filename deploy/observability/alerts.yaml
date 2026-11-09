@@ -1,0 +1,81 @@
+# Prometheus rules for idp-cmi. Plain rule-file format (promtool check rules), not a CRD: wrap it in
+# a PrometheusRule if your Prometheus is run by the operator. Metric names come from internal/api
+# and internal/observability; tests/deploy checks that every idp_cmi_ name used here is exported.
+groups:
+  - name: idp-cmi-slo
+    rules:
+      # SLI: share of requests that did not fail on the server side. Objective: 99.5% over 30 days.
+      - record: idp_cmi:requests:rate5m
+        expr: sum(rate(idp_cmi_http_requests_total[5m]))
+      - record: idp_cmi:errors:rate5m
+        expr: sum(rate(idp_cmi_http_requests_total{status=~"5.."}[5m]))
+      - record: idp_cmi:availability:ratio_rate1h
+        expr: 1 - (sum(rate(idp_cmi_http_requests_total{status=~"5.."}[1h])) / clamp_min(sum(rate(idp_cmi_http_requests_total[1h])), 1e-9))
+      # SLI: resolve latency. Objective: p95 under 1 s over 30 days.
+      - record: idp_cmi:resolve_latency_p95:5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(idp_cmi_http_request_duration_seconds_bucket{route="POST /v1/context/resolve"}[5m])))
+
+  - name: idp-cmi-alerts
+    rules:
+      - alert: IdpCmiMetricsMissing
+        expr: absent(idp_cmi_db_up)
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: idp-cmi exports no metrics
+          description: No idp-cmi replica is being scraped (down, or the metrics listener / scrape config is broken). Nothing else here can fire until it is back.
+      - alert: IdpCmiDatabaseDown
+        expr: min(idp_cmi_db_up) == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: an idp-cmi replica cannot reach PostgreSQL
+          description: /readyz fails on that replica, so it is out of rotation. Check PostgreSQL first, then the NetworkPolicy and the credentials Secret.
+      - alert: IdpCmiErrorBudgetBurnFast
+        expr: (idp_cmi:errors:rate5m / clamp_min(idp_cmi:requests:rate5m, 1e-9)) > 0.07 and idp_cmi:requests:rate5m > 0.05
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: more than 7% of idp-cmi requests fail (burns a 30-day 99.5% budget in about 2 days)
+          description: Look at the 5xx routes with sum by (route) (rate(idp_cmi_http_requests_total{status=~"5.."}[5m])), then the service log (trace id is on every 500).
+      - alert: IdpCmiErrorBudgetBurnSlow
+        expr: idp_cmi:availability:ratio_rate1h < 0.99 and idp_cmi:requests:rate5m > 0.05
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: idp-cmi availability below 99% for the last hour
+      - alert: IdpCmiResolveSlow
+        expr: idp_cmi:resolve_latency_p95:5m > 1
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: p95 of context resolution above 1 s
+          description: Usually the database (check connections and slow queries) or a large embedding backlog degrading retrieval.
+      - alert: IdpCmiProjectionBacklog
+        expr: idp_cmi_projection_oldest_age_seconds > 600
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: the embedding projection is more than 10 minutes behind
+          description: Vector retrieval misses recent writes (full-text still finds them). Check the embedding endpoint and the projection log lines "embedding projection failed".
+      - alert: IdpCmiWritesFlaggedHigh
+        expr: sum(rate(idp_cmi_memory_writes_total{outcome="flagged"}[15m])) / clamp_min(sum(rate(idp_cmi_memory_writes_total[15m])), 1e-9) > 0.2 and sum(rate(idp_cmi_memory_writes_total[15m])) > 0.01
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: more than 20% of memory writes are quarantined by the injection scan
+          description: Either a writer is relaying hostile content or the scan is too eager after a change; review GET /v1/memory/records?flagged=true as an administrator.
+      - alert: IdpCmiQuotaRejections
+        expr: sum(increase(idp_cmi_memory_writes_total{outcome=~"quota|rate_limited"}[15m])) > 0
+        for: 0m
+        labels: {severity: info}
+        annotations:
+          summary: writes were refused by a quota or the rate limit
+          description: A member or a writer reached its configured limit (limits in the CMI config). Expected for a runaway agent; if it is a real member, raise the limit or let records expire.
+      - alert: IdpCmiWritesRejectedHigh
+        expr: sum(rate(idp_cmi_memory_writes_total{outcome="rejected"}[15m])) / clamp_min(sum(rate(idp_cmi_memory_writes_total[15m])), 1e-9) > 0.3 and sum(rate(idp_cmi_memory_writes_total[15m])) > 0.01
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: more than 30% of memory writes are rejected as invalid or unregistered
+          description: A writer sends unregistered sources or invalid records, often after a deployment that changed its payload.

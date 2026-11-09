@@ -17,6 +17,16 @@ type File struct {
 	Embedding     *Embedding     `yaml:"embedding"`
 	Consolidation *Consolidation `yaml:"consolidation"`
 	Authorization *Authorization `yaml:"authorization"`
+	Limits        *Limits        `yaml:"limits"`
+}
+
+// Limits bounds what one writer can put into the store (all 0 = unlimited). The counts are checked
+// before the insert, not inside it, so a burst of concurrent writes can overshoot a little; the
+// rate is per principal and per replica.
+type Limits struct {
+	MaxRecordsPerScope  int `yaml:"maxRecordsPerScope"`  // live records (active, candidate, disputed) in one scope, e.g. one member's memory
+	MaxRecordsPerTenant int `yaml:"maxRecordsPerTenant"` // live records in the tenant
+	WritesPerMinute     int `yaml:"writesPerMinute"`     // memory writes by one principal on one replica
 }
 
 // Authorization names the external policy decision point (D23).
@@ -78,6 +88,9 @@ func Load(path string) (*File, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(f); err != nil && !errors.Is(err, os.ErrNotExist) && err.Error() != "EOF" {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if l := f.Limits; l != nil && (l.MaxRecordsPerScope < 0 || l.MaxRecordsPerTenant < 0 || l.WritesPerMinute < 0) {
+		return nil, errors.New("limits: values must not be negative")
 	}
 	if e := f.Embedding; e != nil {
 		if !strings.HasPrefix(e.BaseURL, "http://") && !strings.HasPrefix(e.BaseURL, "https://") || e.Model == "" {

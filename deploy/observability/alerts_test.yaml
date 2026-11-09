@@ -1,0 +1,62 @@
+# promtool test rules alerts_test.yaml
+rule_files: [alerts.yaml]
+evaluation_interval: 1m
+tests:
+  - name: a database that stops answering pages after two minutes
+    interval: 1m
+    input_series:
+      - series: 'idp_cmi_db_up{instance="a"}'
+        values: '1 1 0 0 0 0 0'
+    alert_rule_test:
+      - {eval_time: 3m, alertname: IdpCmiDatabaseDown, exp_alerts: []}
+      - eval_time: 6m
+        alertname: IdpCmiDatabaseDown
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: an idp-cmi replica cannot reach PostgreSQL
+              description: /readyz fails on that replica, so it is out of rotation. Check PostgreSQL first, then the NetworkPolicy and the credentials Secret.
+  - name: no metrics at all
+    interval: 1m
+    input_series:
+      - series: 'up{job="x"}'
+        values: '1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: IdpCmiMetricsMissing
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: idp-cmi exports no metrics
+              description: No idp-cmi replica is being scraped (down, or the metrics listener / scrape config is broken). Nothing else here can fire until it is back.
+  - name: a projection that stays behind
+    interval: 1m
+    input_series:
+      - series: 'idp_cmi_db_up{instance="a"}'
+        values: '1+0x20'
+      - series: 'idp_cmi_projection_oldest_age_seconds{instance="a"}'
+        values: '0 700+60x19'
+    alert_rule_test:
+      - {eval_time: 5m, alertname: IdpCmiProjectionBacklog, exp_alerts: []}
+      - eval_time: 15m
+        alertname: IdpCmiProjectionBacklog
+        exp_alerts:
+          - exp_labels: {severity: warning, instance: a}
+            exp_annotations:
+              summary: the embedding projection is more than 10 minutes behind
+              description: Vector retrieval misses recent writes (full-text still finds them). Check the embedding endpoint and the projection log lines "embedding projection failed".
+  - name: errors above the fast burn threshold
+    interval: 1m
+    input_series:
+      - series: 'idp_cmi_http_requests_total{route="POST /v1/context/resolve",status="200"}'
+        values: '0+60x20'
+      - series: 'idp_cmi_http_requests_total{route="POST /v1/context/resolve",status="500"}'
+        values: '0+30x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: IdpCmiErrorBudgetBurnFast
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: more than 7% of idp-cmi requests fail (burns a 30-day 99.5% budget in about 2 days)
+              description: Look at the 5xx routes with sum by (route) (rate(idp_cmi_http_requests_total{status=~"5.."}[5m])), then the service log (trace id is on every 500).
