@@ -26,6 +26,8 @@ jobs:
           cache: true
       - name: Formatting, vet, unit and contract tests
         run: make test
+      - name: Known vulnerabilities in the dependencies and the standard library (govulncheck)
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest && "$(go env GOPATH)/bin/govulncheck" ./...
       - name: Integration tests (PostgreSQL in Docker)
         run: make test-integration
       - name: Integration tests on PostgreSQL with pgvector (the native semantic path and the HNSW index)

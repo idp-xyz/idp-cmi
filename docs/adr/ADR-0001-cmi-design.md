@@ -228,3 +228,13 @@ Go module `idp-cmi`，单个可执行程序 `cmd/idp-cmi`（`serve` = API + 到�
 | D41 | **事实写入的语义**：`POST /v1/memory/facts {key, value, scope, content, provenance, sensitivity, ...}`（cmi-writer，检查、配额、幂等键与 `POST /v1/memory/records` 相同）。事实是 `structured = {"fact": {"key", "value"}}` 的语义记忆，同一（租户、作用域、键）同一时刻至多一条现行值。在一个事务里、持（租户|作用域|键）的咨询锁：找出现行值 → 取值相同（忽略大小写和空白）则 `unchanged`（200，不写）；现行值比这条陈述更新则 409；否则把现行值的 `valid_until` 关到新值的 `valid_from`（状态仍是 active，版本加一，审计 `memory.fact.close`）并写入新记录（走 `insertMemory`：写入时注入扫描、嵌入、实体、投影都照常），返回 `created` / `updated` 与被关闭的记录 id。不接受 `validUntil`（下一个值就是它的终点）。迁移 0011 加部分表达式索引 | 关有效期而不是撤销或标"被取代"：D25 的双时间查询仍能回答"某天它是什么"，而可用谓词（`valid_until` 在未来）只看现行值，不需要改任何读路径；咨询锁让并发更新留下恰好一个现行值（测试：8 个并发写者）；评测里事实经此接口写入，全文基线的结果与手工关闭有效期的逐位一致 |
 
 局限：精确事实是上限；真实抽取已经接进同一评测（`idp-host` 的 `TestExtractOnTheMemoryDataset` 产出 `tests/eval/extracted_*.json`，`IDP_EVAL_EXTRACTED` 读入）：1750 条用户消息，1.3% 的调用失败，268 条真值事实抽到 252 条（94%；第一版提示词 89%），键名更接近一个属性一个键（158 个，理想 150；第一版 168）；用的是一个模型（本机 Qwen3.8-flash），换模型要重测，且提示词是在这批数据上改的，换成真实对话要再看；属性是我设计的 20 个，真实对话的属性分布更杂；闲聊、同事的属性是模型写的，比真实的更干净；助手回答污染这一项只是间接涉及。
+
+## 19. 安全评审后的加固（2026-11-10）
+
+评审记录在 `docs/security/REVIEW-2026-11-10.md`。最重要的一条：**别人的个人记忆原来对任何同租户的 `cmi-reader` 可读**（只要显式指名那个作用域），之前的"记忆是私有的"验收没有覆盖到这一点。
+
+| # | 决策 | 理由 |
+|---|---|---|
+| D42 | **(1) 个人记忆只有本人、写入它的服务（`cmi-writer`）和管理员能指名**：列表的 `scopeKind=subject&scopeId=`、resolve 的 `scope`/`scopes`、按 id 读取（404）都检查；对别人记忆的读取写审计 `memory.read_other`。**(2) 连接器的出站请求**：`cmi.URLWithin` 按解析后的协议、主机、端口与路径段边界判断"在 baseUrl 之下"（不再是字符串前缀）；连接器客户端不走环境代理、连接时拒绝非公网地址（`IDP_CMI_INGEST_ALLOW_PRIVATE=true` 放开）、重定向必须仍在 baseUrl 之下。**(3) 文件系统连接器默认禁用**，`IDP_CMI_FILESYSTEM_ROOT` 指定唯一根目录，解析符号链接后必须在其下，遍历不跟随符号链接。**(4) JWKS 必须是 https**（`IDP_CMI_ALLOW_INSECURE_JWKS=true` 显式放行开发网络），密钥在颁发方不可达时最多再用 24 小时。**(5) 开发模式在非回环监听上拒绝启动**，除非 `IDP_DEV_ALLOW_REMOTE=true`。**(6) `go.mod` 固定 `toolchain go1.26.10`**（本机 1.26.8 的二进制带 10 个标准库漏洞），CI 增加 `govulncheck` | 这些都是"默认就不安全"的行为；修复把安全作为默认，把不安全变成需要显式写出的运营选择，并在平台的开发配置里显式写明 |
+
+未修复：线程作用域没有所有者（O1）、连接器请求头仍可带类凭据头（O3）、PDP `onError: skip` 的 fail-open（O5，需显式配置）。

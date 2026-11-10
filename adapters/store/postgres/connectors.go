@@ -69,7 +69,7 @@ func (c *Connector) Validate() error {
 	}
 	switch c.Kind {
 	case ConnectorHTTPManifest:
-		if !httpURL(c.Config.URL) || !httpURL(c.Config.BaseURL) || !strings.HasPrefix(c.Config.URL, c.Config.BaseURL) || c.Config.Path != "" {
+		if _, within := cmi.URLWithin(c.Config.BaseURL, c.Config.URL); !httpURL(c.Config.URL) || !httpURL(c.Config.BaseURL) || !within || c.Config.Path != "" {
 			return errors.New("http-manifest needs config.url under config.baseUrl (http(s)) and no path")
 		}
 	case ConnectorFilesystem:

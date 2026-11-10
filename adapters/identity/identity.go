@@ -64,6 +64,9 @@ type JWKS struct {
 	HTTP       *http.Client
 	TTL        time.Duration // how long a fetched key set is trusted
 	MinRefresh time.Duration // unknown kids trigger at most one fetch per MinRefresh
+	// MaxStale bounds how long keys are used when the issuer cannot be reached to refresh them (default 24 h): a key the
+	// issuer has withdrawn must not stay trusted for as long as its endpoint stays down.
+	MaxStale time.Duration
 
 	mu        sync.Mutex
 	keys      map[string]crypto.PublicKey
@@ -173,6 +176,13 @@ func (j *JWKS) Key(ctx context.Context, kid string) (crypto.PublicKey, error) {
 			j.keys, j.fetchedAt = keys, now
 			k, known = keys[kid]
 		}
+	}
+	maxStale := j.MaxStale
+	if maxStale <= 0 {
+		maxStale = 24 * time.Hour
+	}
+	if known && now.Sub(j.fetchedAt) > maxStale {
+		return nil, errors.New("signing keys are stale and the issuer cannot be reached")
 	}
 	if !known {
 		return nil, errors.New("unknown signing key")

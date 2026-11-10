@@ -43,6 +43,7 @@ services:
       IDP_MIGRATION_DATABASE_URL: postgres://postgres:${IDP_PG_OWNER_PASSWORD:?run deploy/e2e.sh}@postgres:5432/idp_cmi?sslmode=disable
       IDP_APP_DB_PASSWORD: ${IDP_APP_DB_PASSWORD:?run deploy/e2e.sh}
       IDP_DEV_MODE: 'true'
+      IDP_DEV_ALLOW_REMOTE: 'true'   # DEV: HS256 tokens on the compose network (idp-cmi D42)
       IDP_DEV_SECRET: ${IDP_DEV_SECRET:?run deploy/e2e.sh}
     depends_on: {postgres: {condition: service_healthy}}
 
@@ -57,6 +58,7 @@ services:
       IDP_CMI_LISTEN: 0.0.0.0:8550
       IDP_CMI_SWEEP: 5s
       IDP_DEV_MODE: 'true'
+      IDP_DEV_ALLOW_REMOTE: 'true'   # DEV: HS256 tokens on the compose network (idp-cmi D42)
       IDP_DEV_SECRET: ${IDP_DEV_SECRET:?run deploy/e2e.sh}
       IDP_METRICS_LISTEN: 0.0.0.0:9565
     depends_on: {postgres: {condition: service_healthy}}
@@ -79,6 +81,7 @@ services:
       IDP_MIGRATION_DATABASE_URL: postgres://postgres:${IDP_PG_OWNER_PASSWORD:?run deploy/e2e.sh}@postgres:5432/idp_host?sslmode=disable
       IDP_APP_DB_PASSWORD: ${IDP_HOST_DB_PASSWORD:?run deploy/e2e.sh}
       IDP_DEV_MODE: 'true'
+      IDP_DEV_ALLOW_REMOTE: 'true'   # DEV: HS256 tokens on the compose network (idp-cmi D42)
       IDP_DEV_SECRET: ${IDP_DEV_SECRET:?run deploy/e2e.sh}
     depends_on: {postgres: {condition: service_healthy}}
 
@@ -93,6 +96,7 @@ services:
       IDP_DATABASE_URL: postgres://idp_host_svc:${IDP_HOST_DB_PASSWORD:?run deploy/e2e.sh}@postgres:5432/idp_host?sslmode=disable
       IDP_HOST_LISTEN: 0.0.0.0:8450
       IDP_DEV_MODE: 'true'
+      IDP_DEV_ALLOW_REMOTE: 'true'   # DEV: HS256 tokens on the compose network (idp-cmi D42)
       IDP_DEV_SECRET: ${IDP_DEV_SECRET:?run deploy/e2e.sh}
       IDP_HOST_CREDENTIAL_KEY: ${IDP_HOST_CREDENTIAL_KEY:?run deploy/e2e.sh}
       IDP_HOST_CONFIG: /etc/idp/host.yaml
@@ -109,6 +113,7 @@ services:
     environment:
       IDP_DATABASE_URL: postgres://idp_host_svc:${IDP_HOST_DB_PASSWORD:?run deploy/e2e.sh}@postgres:5432/idp_host?sslmode=disable
       IDP_DEV_MODE: 'true'
+      IDP_DEV_ALLOW_REMOTE: 'true'   # DEV: HS256 tokens on the compose network (idp-cmi D42)
       IDP_HOST_CREDENTIAL_KEY: ${IDP_HOST_CREDENTIAL_KEY:?run deploy/e2e.sh}
       IDP_HOST_CONFIG: /etc/idp/host.yaml
       IDP_HOST_WORKERS: '2'

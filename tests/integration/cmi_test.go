@@ -618,7 +618,9 @@ func TestCMIEndToEnd(t *testing.T) {
 				_, _ = fmt.Fprintf(w, `[{"uri":"docs://faq","url":"%s/faq.html","title":"FAQ","entities":[{"type":"policy","id":"faq"}]},
 					{"uri":"docs://prices","url":"%s/prices.md","title":"Prices","sensitivity":"internal","acl":{"roles":["finance"]}},
 					{"uri":"docs://evil","url":"http://elsewhere.example/x","title":"outside the base"},
-					{"uri":"docs://missing","url":"%s/missing.txt","title":"gone"}]`, docsBase, docsBase, docsBase)
+					{"uri":"docs://evil2","url":"%s@elsewhere.example/x","title":"credentials trick: the host is elsewhere.example"},
+					{"uri":"docs://evil3","url":"%s.evil.example/x","title":"host suffix trick: a string prefix would pass it"},
+					{"uri":"docs://missing","url":"%s/missing.txt","title":"gone"}]`, docsBase, docsBase, docsBase, docsBase, docsBase)
 			case "/faq.html":
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				_, _ = fmt.Fprint(w, `<html><body><h1>FAQ</h1><p>Deliveries arrive within <b>two</b> business days.</p><script>x()</script></body></html>`)
@@ -690,6 +692,17 @@ func TestCMIEndToEnd(t *testing.T) {
 		}
 		// filesystem connector (development): walks a directory, refuses escapes
 		dir := t.TempDir()
+		// without an operator's root the filesystem connectors are refused, and so is any path outside it (ADR-0001 D42)
+		refused := map[string]any{"source": "docs", "name": "refused", "kind": "filesystem", "config": map[string]any{"path": dir, "sensitivity": "internal", "acl": map[string]any{}}}
+		if st, out := e.call("POST", "/api/v1/connectors", "alice", refused); st != 422 || !strings.Contains(fmt.Sprint(out), "disabled") {
+			t.Fatalf("no root: %d %v", st, out)
+		}
+		e.ingester.FilesystemRoot = dir
+		defer func() { e.ingester.FilesystemRoot = "" }()
+		refused["config"].(map[string]any)["path"] = "/etc"
+		if st, out := e.call("POST", "/api/v1/connectors", "alice", refused); st != 422 || !strings.Contains(fmt.Sprint(out), "outside") {
+			t.Fatalf("outside the root: %d %v", st, out)
+		}
 		_ = os.WriteFile(dir+"/handbook.md", []byte("# Handbook\n\nLockers open at 06:00 sharp.\n"), 0o600)
 		_ = os.WriteFile(dir+"/notes.pdf", []byte("%PDF"), 0o600)
 		e.must(201, "POST", "/api/v1/connectors", "alice", map[string]any{"source": "docs", "name": "local", "kind": "filesystem", "config": map[string]any{"path": dir, "sensitivity": "internal", "acl": map[string]any{}}})

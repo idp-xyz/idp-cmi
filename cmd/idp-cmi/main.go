@@ -20,6 +20,10 @@
 //	IDP_CMI_ISSUER / IDP_CMI_AUDIENCE   accepted tokens (default idp-cmi-dev / idp-cmi)
 //	IDP_CMI_JWKS_URL             production keys; IDP_DEV_SECRET[_FILE] (>= 32 bytes) in dev mode instead
 //	IDP_CMI_TENANT_CLAIM / IDP_CMI_ROLES_CLAIM   claims (default tenant_id / roles)
+//	IDP_CMI_INGEST_ALLOW_PRIVATE "true": connectors may fetch from private addresses (default: only public ones, ADR-0001 D42)
+//	IDP_CMI_FILESYSTEM_ROOT      the one directory filesystem connectors may read below (default: filesystem connectors are refused)
+//	IDP_CMI_ALLOW_INSECURE_JWKS  "true": accept an http:// IDP_CMI_JWKS_URL (default: https only; plain http lets anyone on the path forge tokens)
+//	IDP_DEV_ALLOW_REMOTE         "true": allow dev-mode (HS256) tokens on a non-loopback listener (default: refused)
 //	IDP_CMI_TLS_CERT_FILE / IDP_CMI_TLS_KEY_FILE   serve HTTPS
 //	IDP_IDENTITY_CA_FILE         extra trusted CAs for the JWKS endpoint
 //	IDP_METRICS_LISTEN           serve Prometheus metrics (/metrics) on this address; off when unset
@@ -32,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -166,8 +171,17 @@ func serve(log *slog.Logger) error {
 	var verifier *identity.Verifier
 	switch {
 	case prof.JWKSURL != "":
+		if !strings.HasPrefix(prof.JWKSURL, "https://") && env("IDP_CMI_ALLOW_INSECURE_JWKS", "false") != "true" {
+			return errors.New("IDP_CMI_JWKS_URL must be https:// (over plain http anyone on the path can supply the signing keys); IDP_CMI_ALLOW_INSECURE_JWKS=true accepts http for a development network")
+		}
 		verifier = identity.NewVerifier(prof, &identity.JWKS{URL: prof.JWKSURL, HTTP: &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: nil, TLSClientConfig: identityTLS}}, TTL: 10 * time.Minute, MinRefresh: 30 * time.Second})
 	case dev && secret("IDP_DEV_SECRET") != "":
+		if host, _, herr := net.SplitHostPort(env("IDP_CMI_LISTEN", "127.0.0.1:8550")); herr != nil || (host != "127.0.0.1" && host != "::1" && host != "localhost") {
+			if env("IDP_DEV_ALLOW_REMOTE", "false") != "true" {
+				return errors.New("dev mode (HS256 tokens signed with a shared secret) on a non-loopback listener would let anyone with the secret act as any tenant: set IDP_DEV_ALLOW_REMOTE=true to accept that for a development network")
+			}
+			log.Warn("dev mode is on a non-loopback listener: anyone holding IDP_DEV_SECRET can mint tokens for any tenant and role", "listen", env("IDP_CMI_LISTEN", ""))
+		}
 		if verifier, err = identity.NewDevVerifier(prof, []byte(secret("IDP_DEV_SECRET"))); err != nil {
 			return err
 		}
@@ -316,7 +330,8 @@ func serve(log *slog.Logger) error {
 	if instance == "" {
 		instance, _ = os.Hostname()
 	}
-	a.Ingester = &ingest.Ingester{Store: store, Owner: instance, Lease: time.Minute, Log: log, HTTP: &http.Client{Timeout: 60 * time.Second, Transport: &http.Transport{Proxy: nil}}}
+	// connectors fetch what a tenant administrator names: never a non-public address unless the operator allows it (D42)
+	a.Ingester = &ingest.Ingester{Store: store, Owner: instance, Lease: time.Minute, Log: log, HTTP: ingest.NewHTTPClient(env("IDP_CMI_INGEST_ALLOW_PRIVATE", "false") == "true"), FilesystemRoot: env("IDP_CMI_FILESYSTEM_ROOT", "")}
 	if ingestEvery > 0 { // ADR-0001 D16
 		go func() {
 			t := time.NewTicker(ingestEvery)

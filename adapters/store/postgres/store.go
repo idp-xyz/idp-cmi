@@ -239,6 +239,11 @@ var uuidRE = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 // IsUUID reports whether s looks like a UUID.
 func IsUUID(s string) bool { return uuidRE.MatchString(strings.ToLower(s)) }
 
+// AuditEvent records one event on its own (a read has no transaction of a change to join).
+func (s *Store) AuditEvent(ctx context.Context, tenant, subject, action, resource string, detail any) error {
+	return s.InTenant(ctx, tenant, func(tx pgx.Tx) error { return Audit(ctx, tx, tenant, subject, action, resource, detail) })
+}
+
 // Audit records an administrative action in the current tenant transaction, so the change and
 // its record commit together. The service role can only insert audit rows.
 func Audit(ctx context.Context, tx pgx.Tx, tenantID, subject, action, resource string, detail any) error {

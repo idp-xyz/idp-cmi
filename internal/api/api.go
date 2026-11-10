@@ -102,6 +102,25 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 
 type handler func(r *http.Request, p authorization.Principal) (int, any, error)
 
+// mayNameScope (ADR-0001 D42): a subject scope other than the caller's own is another person's memory. Naming it - in a
+// listing, in a resolve request or by reading a record - needs the writer role (the service that records it, such as
+// idp-host) or administration; a reader sees only their own. Tenant, thread, agent and unit scopes are governed by their
+// own rules (units by membership) and by each record's ACL.
+func mayNameScope(p authorization.Principal, s cmi.Scope) bool {
+	return s.Kind != cmi.ScopeSubject || s.ID == p.Subject || p.Has(authorization.RoleAdmin) || p.Has(authorization.RoleWriter)
+}
+
+// auditOtherMember records that p read somebody else's personal memory (ADR-0001 D42): who, whose, and how. Only the writing
+// service and administrators can, so the trail is short and worth reading.
+func (a *API) auditOtherMember(r *http.Request, p authorization.Principal, s cmi.Scope, via string) error {
+	if s.Kind != cmi.ScopeSubject || s.ID == p.Subject {
+		return nil
+	}
+	return a.Store.AuditEvent(r.Context(), p.Tenant, p.Subject, "memory.read_other", s.ID, map[string]any{"via": via, "client": p.Client, "actor": p.Actor})
+}
+
+var errOtherMember = transport.Fail(http.StatusForbidden, "FORBIDDEN", "another member's memory: only the writing service or an administrator may read it")
+
 // withHeaders is a body with response headers (idempotent replays say so).
 type withHeaders struct {
 	body    any
@@ -405,6 +424,14 @@ func (a *API) Handler() http.Handler {
 		if err := decode(r, &in); err != nil {
 			return 0, nil, err
 		}
+		if in.Kind == postgres.ConnectorFilesystem { // reads the server's own disk: only below the operator's root (ADR-0001 D42)
+			if a.Ingester == nil {
+				return 0, nil, transport.Fail(http.StatusServiceUnavailable, "NOT_CONFIGURED", "no ingester on this CMI")
+			}
+			if _, err := a.Ingester.FilesystemPath(in.Config.Path); err != nil {
+				return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", err.Error())
+			}
+		}
 		out, err := a.Store.CreateConnector(r.Context(), p.Tenant, in, p.Subject)
 		return http.StatusCreated, out, err
 	}, admin))
@@ -655,6 +682,14 @@ func (a *API) Handler() http.Handler {
 			return 0, nil, err
 		}
 		out, err := a.Store.GetMemory(r.Context(), p.Tenant, r.PathValue("id"), narrow(v, o))
+		if err == nil && !mayNameScope(p, out.Scope) { // somebody else's personal memory is not there for this caller
+			return 0, nil, &postgres.Error{Code: "NOT_FOUND", Message: "memory record not found"}
+		}
+		if err == nil {
+			if aerr := a.auditOtherMember(r, p, out.Scope, "get"); aerr != nil {
+				return 0, nil, aerr
+			}
+		}
 		if err == nil {
 			for _, src := range o.ExcludeSources {
 				if out.Provenance.Source == src {
@@ -678,6 +713,12 @@ func (a *API) Handler() http.Handler {
 		if scope.Kind != "" {
 			if err := scope.Validate(); err != nil {
 				return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", err.Error())
+			}
+			if !mayNameScope(p, scope) {
+				return 0, nil, errOtherMember
+			}
+			if err := a.auditOtherMember(r, p, scope, "list"); err != nil {
+				return 0, nil, err
 			}
 		}
 		v, err := a.visibility(r.Context(), p)
@@ -793,6 +834,22 @@ func (a *API) Handler() http.Handler {
 		var in cmictx.Request
 		if err := decode(r, &in); err != nil {
 			return 0, nil, err
+		}
+		if in.Scope != nil {
+			if !mayNameScope(p, *in.Scope) {
+				return 0, nil, errOtherMember
+			}
+			if err := a.auditOtherMember(r, p, *in.Scope, "resolve"); err != nil {
+				return 0, nil, err
+			}
+		}
+		for _, sc := range in.Scopes {
+			if !mayNameScope(p, sc) {
+				return 0, nil, errOtherMember
+			}
+			if err := a.auditOtherMember(r, p, sc, "resolve"); err != nil {
+				return 0, nil, err
+			}
 		}
 		v, err := a.visibility(r.Context(), p)
 		if err != nil {

@@ -36,6 +36,9 @@ type Ingester struct {
 	Owner string // lease owner (instance name)
 	Lease time.Duration
 	Log   *slog.Logger
+	// FilesystemRoot is the one directory filesystem connectors may read below; empty = filesystem connectors are refused. They
+	// read the server's own disk, so they are for development and for a mounted documentation volume, never for a tenant's say-so.
+	FilesystemRoot string
 }
 
 // manifestEntry is one document in an http-manifest.
@@ -69,13 +72,16 @@ func (g *Ingester) Sync(ctx context.Context, tenant string, c *postgres.Connecto
 			entries = wrapped.Documents
 		}
 	case postgres.ConnectorFilesystem:
-		root := filepath.Clean(c.Config.Path)
-		err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		root, err := g.FilesystemPath(c.Config.Path)
+		if err != nil {
+			return 0, err
+		}
+		err = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if d.IsDir() || !extText[strings.ToLower(filepath.Ext(p))] || strings.HasPrefix(d.Name(), ".") {
-				return nil
+			if d.Type()&os.ModeSymlink != 0 || d.IsDir() || !extText[strings.ToLower(filepath.Ext(p))] || strings.HasPrefix(d.Name(), ".") {
+				return nil // a symbolic link is never followed: it may point anywhere
 			}
 			rel, _ := filepath.Rel(root, p)
 			entries = append(entries, manifestEntry{URI: "file://" + c.Name + "/" + filepath.ToSlash(rel), URL: p, Title: strings.TrimSuffix(d.Name(), filepath.Ext(d.Name()))})
@@ -108,8 +114,12 @@ func (g *Ingester) Sync(ctx context.Context, tenant string, c *postgres.Connecto
 		if j.URI == "" || j.URL == "" || strings.TrimSpace(j.Title) == "" || !cmi.ValidSensitivity(j.Sensitivity) || j.ACL.Validate() != nil || cmi.ValidateEntities(j.Entities) != nil {
 			continue // a malformed entry is skipped, not fatal
 		}
-		if c.Kind == postgres.ConnectorHTTPManifest && !strings.HasPrefix(j.URL, c.Config.BaseURL) {
-			continue // outside the connector's base: never fetched
+		if c.Kind == postgres.ConnectorHTTPManifest {
+			norm, ok := cmi.URLWithin(c.Config.BaseURL, j.URL)
+			if !ok {
+				continue // outside the connector's base (host, port, scheme and path segment, not a string prefix): never fetched
+			}
+			j.URL = norm
 		}
 		if c.Kind == postgres.ConnectorFilesystem && !strings.HasPrefix(filepath.Clean(j.URL), filepath.Clean(c.Config.Path)+string(filepath.Separator)) {
 			continue
@@ -194,8 +204,12 @@ func (g *Ingester) work(ctx context.Context, tenant string, j postgres.IngestJob
 func (g *Ingester) load(ctx context.Context, c *postgres.Connector, url string) (string, error) {
 	switch c.Kind {
 	case postgres.ConnectorFilesystem:
-		p := filepath.Clean(url)
-		if !strings.HasPrefix(p, filepath.Clean(c.Config.Path)+string(filepath.Separator)) {
+		root, err := g.FilesystemPath(c.Config.Path)
+		if err != nil {
+			return "", err
+		}
+		p, err := filepath.EvalSymlinks(filepath.Clean(url)) // what the name really is, links resolved
+		if err != nil || !strings.HasPrefix(p, root+string(filepath.Separator)) {
 			return "", errors.New("path outside the connector")
 		}
 		f, err := os.Open(p)
@@ -217,14 +231,32 @@ func (g *Ingester) load(ctx context.Context, c *postgres.Connector, url string) 
 	}
 }
 
-// fetch GETs a URL under the connector's base with the connector's headers.
-func (g *Ingester) fetch(ctx context.Context, c *postgres.Connector, url string) ([]byte, string, error) {
-	if !strings.HasPrefix(url, c.Config.BaseURL) {
+// FilesystemPath is the connector's directory, resolved, and only if it lies under the operator's FilesystemRoot.
+func (g *Ingester) FilesystemPath(configured string) (string, error) {
+	if g.FilesystemRoot == "" {
+		return "", errors.New("filesystem connectors are disabled (IDP_CMI_FILESYSTEM_ROOT is not set)")
+	}
+	root, err := filepath.EvalSymlinks(filepath.Clean(g.FilesystemRoot))
+	if err != nil {
+		return "", fmt.Errorf("filesystem root: %w", err)
+	}
+	p, err := filepath.EvalSymlinks(filepath.Clean(configured))
+	if err != nil || (p != root && !strings.HasPrefix(p, root+string(filepath.Separator))) {
+		return "", errors.New("the connector's path is outside the filesystem root")
+	}
+	return p, nil
+}
+
+// fetch GETs a URL under the connector's base with the connector's headers. A redirect is followed only to another URL under
+// the same base (a site under the base that redirects elsewhere is not a way out), at most three times.
+func (g *Ingester) fetch(ctx context.Context, c *postgres.Connector, rawURL string) ([]byte, string, error) {
+	norm, ok := cmi.URLWithin(c.Config.BaseURL, rawURL)
+	if !ok {
 		return nil, "", errors.New("url outside the connector's baseUrl")
 	}
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, norm, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -233,9 +265,19 @@ func (g *Ingester) fetch(ctx context.Context, c *postgres.Connector, url string)
 		name, value, _ := strings.Cut(h, ": ")
 		req.Header.Set(name, value)
 	}
-	hc := g.HTTP
-	if hc == nil {
-		hc = &http.Client{Timeout: 60 * time.Second}
+	base := g.HTTP
+	if base == nil {
+		base = NewHTTPClient(false)
+	}
+	hc := *base // a copy: the redirect rule is this connector's
+	hc.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if len(via) >= 3 {
+			return errTooManyRedirects
+		}
+		if _, ok := cmi.URLWithin(c.Config.BaseURL, next.URL.String()); !ok {
+			return errors.New("redirect leaves the connector's baseUrl")
+		}
+		return nil
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
