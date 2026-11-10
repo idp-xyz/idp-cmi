@@ -1,0 +1,74 @@
+{
+  "configuration": "hybrid-qwen3-0.6b-instruct-f0.40-b0.05-ex-qwen3.8-flash-next-iq3-xxs-p2",
+  "results": {
+    "extracted": {
+      "single": {
+        "questions": 130,
+        "currentFirst": 0.7538,
+        "currentInTop5": 0.9231,
+        "staleInTop5": 0.0308,
+        "returnedNothing": 0
+      },
+      "unknown": {
+        "questions": 50,
+        "currentFirst": 0,
+        "currentInTop5": 0,
+        "staleInTop5": 0,
+        "returnedNothing": 0.34
+      },
+      "updated": {
+        "questions": 170,
+        "currentFirst": 0.7941,
+        "currentInTop5": 0.8882,
+        "staleInTop5": 0.0588,
+        "returnedNothing": 0
+      }
+    },
+    "facts": {
+      "single": {
+        "questions": 130,
+        "currentFirst": 0.9462,
+        "currentInTop5": 1,
+        "staleInTop5": 0,
+        "returnedNothing": 0
+      },
+      "unknown": {
+        "questions": 50,
+        "currentFirst": 0,
+        "currentInTop5": 0,
+        "staleInTop5": 0,
+        "returnedNothing": 0.34
+      },
+      "updated": {
+        "questions": 170,
+        "currentFirst": 0.9588,
+        "currentInTop5": 0.9882,
+        "staleInTop5": 0,
+        "returnedNothing": 0
+      }
+    },
+    "raw": {
+      "single": {
+        "questions": 130,
+        "currentFirst": 0.5154,
+        "currentInTop5": 0.9231,
+        "staleInTop5": 0.5077,
+        "returnedNothing": 0
+      },
+      "unknown": {
+        "questions": 50,
+        "currentFirst": 0,
+        "currentInTop5": 0,
+        "staleInTop5": 0,
+        "returnedNothing": 0.04
+      },
+      "updated": {
+        "questions": 170,
+        "currentFirst": 0.4471,
+        "currentInTop5": 0.9235,
+        "staleInTop5": 0.9235,
+        "returnedNothing": 0
+      }
+    }
+  }
+}

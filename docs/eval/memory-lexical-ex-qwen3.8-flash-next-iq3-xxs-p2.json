@@ -1,0 +1,74 @@
+{
+  "configuration": "lexical-ex-qwen3.8-flash-next-iq3-xxs-p2",
+  "results": {
+    "extracted": {
+      "single": {
+        "questions": 130,
+        "currentFirst": 0.1615,
+        "currentInTop5": 0.1615,
+        "staleInTop5": 0.0154,
+        "returnedNothing": 0
+      },
+      "unknown": {
+        "questions": 50,
+        "currentFirst": 0,
+        "currentInTop5": 0,
+        "staleInTop5": 0,
+        "returnedNothing": 0.76
+      },
+      "updated": {
+        "questions": 170,
+        "currentFirst": 0.1824,
+        "currentInTop5": 0.2118,
+        "staleInTop5": 0.0294,
+        "returnedNothing": 0
+      }
+    },
+    "facts": {
+      "single": {
+        "questions": 130,
+        "currentFirst": 0.4923,
+        "currentInTop5": 0.5385,
+        "staleInTop5": 0,
+        "returnedNothing": 0
+      },
+      "unknown": {
+        "questions": 50,
+        "currentFirst": 0,
+        "currentInTop5": 0,
+        "staleInTop5": 0,
+        "returnedNothing": 0.88
+      },
+      "updated": {
+        "questions": 170,
+        "currentFirst": 0.5,
+        "currentInTop5": 0.5412,
+        "staleInTop5": 0,
+        "returnedNothing": 0
+      }
+    },
+    "raw": {
+      "single": {
+        "questions": 130,
+        "currentFirst": 0.1,
+        "currentInTop5": 0.1923,
+        "staleInTop5": 0.1538,
+        "returnedNothing": 0
+      },
+      "unknown": {
+        "questions": 50,
+        "currentFirst": 0,
+        "currentInTop5": 0,
+        "staleInTop5": 0,
+        "returnedNothing": 0.08
+      },
+      "updated": {
+        "questions": 170,
+        "currentFirst": 0.1294,
+        "currentInTop5": 0.2059,
+        "staleInTop5": 0.3118,
+        "returnedNothing": 0
+      }
+    }
+  }
+}
