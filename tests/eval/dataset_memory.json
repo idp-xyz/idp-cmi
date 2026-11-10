@@ -442,6 +442,10 @@
      "staleFacts": [
       "p01-f-commute-0",
       "p01-f-commute-1"
+     ],
+     "staleValues": [
+      "开车",
+      "地铁"
      ]
     },
     {
@@ -460,6 +464,10 @@
      "staleFacts": [
       "p01-f-commute-0",
       "p01-f-commute-1"
+     ],
+     "staleValues": [
+      "开车",
+      "地铁"
      ]
     },
     {
@@ -472,7 +480,8 @@
      "currentRaw": "p01-t036",
      "currentFact": "p01-f-city-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p01-q-city-1",
@@ -484,7 +493,8 @@
      "currentRaw": "p01-t036",
      "currentFact": "p01-f-city-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p01-q-hotel-0",
@@ -496,7 +506,8 @@
      "currentRaw": "p01-t061",
      "currentFact": "p01-f-hotel-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p01-q-hotel-1",
@@ -508,7 +519,8 @@
      "currentRaw": "p01-t061",
      "currentFact": "p01-f-hotel-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p01-q-team-0",
@@ -522,7 +534,10 @@
      "staleRaw": [
       "p01-t029"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "支付组"
+     ]
     },
     {
      "id": "p01-q-team-1",
@@ -536,7 +551,10 @@
      "staleRaw": [
       "p01-t029"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "支付组"
+     ]
     },
     {
      "id": "p01-q-meeting-0",
@@ -550,7 +568,10 @@
      "staleRaw": [
       "p01-t009"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "上午十点"
+     ]
     },
     {
      "id": "p01-q-meeting-1",
@@ -564,7 +585,10 @@
      "staleRaw": [
       "p01-t009"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "上午十点"
+     ]
     },
     {
      "id": "p01-q-phone-0",
@@ -581,6 +605,10 @@
      ],
      "staleFacts": [
       "p01-f-phone-0"
+     ],
+     "staleValues": [
+      "小米 14",
+      "华为 Mate 60"
      ]
     },
     {
@@ -598,6 +626,10 @@
      ],
      "staleFacts": [
       "p01-f-phone-0"
+     ],
+     "staleValues": [
+      "小米 14",
+      "华为 Mate 60"
      ]
     },
     {
@@ -1049,7 +1081,8 @@
      "currentRaw": "p02-t016",
      "currentFact": "p02-f-budget-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p02-q-budget-1",
@@ -1061,7 +1094,8 @@
      "currentRaw": "p02-t016",
      "currentFact": "p02-f-budget-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p02-q-floor-0",
@@ -1075,7 +1109,10 @@
      "staleRaw": [
       "p02-t035"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "3楼"
+     ]
     },
     {
      "id": "p02-q-floor-1",
@@ -1089,7 +1126,10 @@
      "staleRaw": [
       "p02-t035"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "3楼"
+     ]
     },
     {
      "id": "p02-q-channel-0",
@@ -1103,7 +1143,10 @@
      "staleRaw": [
       "p02-t007"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "短信"
+     ]
     },
     {
      "id": "p02-q-channel-1",
@@ -1117,7 +1160,10 @@
      "staleRaw": [
       "p02-t007"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "短信"
+     ]
     },
     {
      "id": "p02-q-lang_code-0",
@@ -1133,6 +1179,9 @@
      ],
      "staleFacts": [
       "p02-f-lang_code-0"
+     ],
+     "staleValues": [
+      "Go"
      ]
     },
     {
@@ -1149,6 +1198,9 @@
      ],
      "staleFacts": [
       "p02-f-lang_code-0"
+     ],
+     "staleValues": [
+      "Go"
      ]
     },
     {
@@ -1165,6 +1217,9 @@
      ],
      "staleFacts": [
       "p02-f-colour-0"
+     ],
+     "staleValues": [
+      "青色"
      ]
     },
     {
@@ -1181,6 +1236,9 @@
      ],
      "staleFacts": [
       "p02-f-colour-0"
+     ],
+     "staleValues": [
+      "青色"
      ]
     },
     {
@@ -1195,7 +1253,10 @@
      "staleRaw": [
       "p02-t067"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "如家"
+     ]
     },
     {
      "id": "p02-q-hotel-1",
@@ -1209,7 +1270,10 @@
      "staleRaw": [
       "p02-t067"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "如家"
+     ]
     },
     {
      "id": "p02-q-team-none",
@@ -1668,7 +1732,8 @@
      "currentRaw": "p03-t061",
      "currentFact": "p03-f-os-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p03-q-os-1",
@@ -1680,7 +1745,8 @@
      "currentRaw": "p03-t061",
      "currentFact": "p03-f-os-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p03-q-team-0",
@@ -1697,6 +1763,10 @@
      ],
      "staleFacts": [
       "p03-f-team-0"
+     ],
+     "staleValues": [
+      "支付组",
+      "数据平台组"
      ]
     },
     {
@@ -1714,6 +1784,10 @@
      ],
      "staleFacts": [
       "p03-f-team-0"
+     ],
+     "staleValues": [
+      "支付组",
+      "数据平台组"
      ]
     },
     {
@@ -1726,7 +1800,8 @@
      "currentRaw": "p03-t017",
      "currentFact": "p03-f-colour-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p03-q-colour-1",
@@ -1738,7 +1813,8 @@
      "currentRaw": "p03-t017",
      "currentFact": "p03-f-colour-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p03-q-budget-0",
@@ -1752,7 +1828,10 @@
      "staleRaw": [
       "p03-t044"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "1200元"
+     ]
     },
     {
      "id": "p03-q-budget-1",
@@ -1766,7 +1845,10 @@
      "staleRaw": [
       "p03-t044"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "1200元"
+     ]
     },
     {
      "id": "p03-q-city-0",
@@ -1783,6 +1865,10 @@
      ],
      "staleFacts": [
       "p03-f-city-0"
+     ],
+     "staleValues": [
+      "厦门",
+      "西安"
      ]
     },
     {
@@ -1800,6 +1886,10 @@
      ],
      "staleFacts": [
       "p03-f-city-0"
+     ],
+     "staleValues": [
+      "厦门",
+      "西安"
      ]
     },
     {
@@ -1816,6 +1906,9 @@
      ],
      "staleFacts": [
       "p03-f-allergy-0"
+     ],
+     "staleValues": [
+      "芒果"
      ]
     },
     {
@@ -1832,6 +1925,9 @@
      ],
      "staleFacts": [
       "p03-f-allergy-0"
+     ],
+     "staleValues": [
+      "芒果"
      ]
     },
     {
@@ -2301,7 +2397,10 @@
      "staleRaw": [
       "p04-t053"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "王磊"
+     ]
     },
     {
      "id": "p04-q-manager-1",
@@ -2315,7 +2414,10 @@
      "staleRaw": [
       "p04-t053"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "王磊"
+     ]
     },
     {
      "id": "p04-q-phone-0",
@@ -2329,7 +2431,10 @@
      "staleRaw": [
       "p04-t028"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "Pixel 8"
+     ]
     },
     {
      "id": "p04-q-phone-1",
@@ -2343,7 +2448,10 @@
      "staleRaw": [
       "p04-t028"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "Pixel 8"
+     ]
     },
     {
      "id": "p04-q-budget-0",
@@ -2355,7 +2463,8 @@
      "currentRaw": "p04-t006",
      "currentFact": "p04-f-budget-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p04-q-budget-1",
@@ -2367,7 +2476,8 @@
      "currentRaw": "p04-t006",
      "currentFact": "p04-f-budget-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p04-q-commute-0",
@@ -2379,7 +2489,8 @@
      "currentRaw": "p04-t021",
      "currentFact": "p04-f-commute-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p04-q-commute-1",
@@ -2391,7 +2502,8 @@
      "currentRaw": "p04-t021",
      "currentFact": "p04-f-commute-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p04-q-hotel-0",
@@ -2410,6 +2522,11 @@
      "staleFacts": [
       "p04-f-hotel-0",
       "p04-f-hotel-1"
+     ],
+     "staleValues": [
+      "如家",
+      "亚朵",
+      "希尔顿"
      ]
     },
     {
@@ -2429,6 +2546,11 @@
      "staleFacts": [
       "p04-f-hotel-0",
       "p04-f-hotel-1"
+     ],
+     "staleValues": [
+      "如家",
+      "亚朵",
+      "希尔顿"
      ]
     },
     {
@@ -2447,6 +2569,10 @@
      "staleFacts": [
       "p04-f-allergy-0",
       "p04-f-allergy-1"
+     ],
+     "staleValues": [
+      "花生",
+      "花粉"
      ]
     },
     {
@@ -2465,6 +2591,10 @@
      "staleFacts": [
       "p04-f-allergy-0",
       "p04-f-allergy-1"
+     ],
+     "staleValues": [
+      "花生",
+      "花粉"
      ]
     },
     {
@@ -2961,6 +3091,10 @@
      ],
      "staleFacts": [
       "p05-f-commute-0"
+     ],
+     "staleValues": [
+      "骑自行车",
+      "开车"
      ]
     },
     {
@@ -2978,6 +3112,10 @@
      ],
      "staleFacts": [
       "p05-f-commute-0"
+     ],
+     "staleValues": [
+      "骑自行车",
+      "开车"
      ]
     },
     {
@@ -2994,6 +3132,9 @@
      ],
      "staleFacts": [
       "p05-f-os-0"
+     ],
+     "staleValues": [
+      "Windows"
      ]
     },
     {
@@ -3010,6 +3151,9 @@
      ],
      "staleFacts": [
       "p05-f-os-0"
+     ],
+     "staleValues": [
+      "Windows"
      ]
     },
     {
@@ -3029,6 +3173,11 @@
      "staleFacts": [
       "p05-f-team-0",
       "p05-f-team-1"
+     ],
+     "staleValues": [
+      "支付组",
+      "搜索组",
+      "数据平台组"
      ]
     },
     {
@@ -3048,6 +3197,11 @@
      "staleFacts": [
       "p05-f-team-0",
       "p05-f-team-1"
+     ],
+     "staleValues": [
+      "支付组",
+      "搜索组",
+      "数据平台组"
      ]
     },
     {
@@ -3067,6 +3221,11 @@
      "staleFacts": [
       "p05-f-colour-0",
       "p05-f-colour-1"
+     ],
+     "staleValues": [
+      "墨绿色",
+      "青色",
+      "米白色"
      ]
     },
     {
@@ -3086,6 +3245,11 @@
      "staleFacts": [
       "p05-f-colour-0",
       "p05-f-colour-1"
+     ],
+     "staleValues": [
+      "墨绿色",
+      "青色",
+      "米白色"
      ]
     },
     {
@@ -3098,7 +3262,8 @@
      "currentRaw": "p05-t058",
      "currentFact": "p05-f-report-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p05-q-report-1",
@@ -3110,7 +3275,8 @@
      "currentRaw": "p05-t058",
      "currentFact": "p05-f-report-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p05-q-manager-0",
@@ -3126,6 +3292,9 @@
      ],
      "staleFacts": [
       "p05-f-manager-0"
+     ],
+     "staleValues": [
+      "陈浩"
      ]
     },
     {
@@ -3142,6 +3311,9 @@
      ],
      "staleFacts": [
       "p05-f-manager-0"
+     ],
+     "staleValues": [
+      "陈浩"
      ]
     },
     {
@@ -3647,6 +3819,10 @@
      "staleFacts": [
       "p06-f-diet-0",
       "p06-f-diet-1"
+     ],
+     "staleValues": [
+      "无麸质",
+      "素食"
      ]
     },
     {
@@ -3665,6 +3841,10 @@
      "staleFacts": [
       "p06-f-diet-0",
       "p06-f-diet-1"
+     ],
+     "staleValues": [
+      "无麸质",
+      "素食"
      ]
     },
     {
@@ -3679,7 +3859,10 @@
      "staleRaw": [
       "p06-t035"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "ChromeOS"
+     ]
     },
     {
      "id": "p06-q-os-1",
@@ -3693,7 +3876,10 @@
      "staleRaw": [
       "p06-t035"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "ChromeOS"
+     ]
     },
     {
      "id": "p06-q-lang_code-0",
@@ -3711,6 +3897,10 @@
      "staleFacts": [
       "p06-f-lang_code-0",
       "p06-f-lang_code-1"
+     ],
+     "staleValues": [
+      "Go",
+      "Rust"
      ]
     },
     {
@@ -3729,6 +3919,10 @@
      "staleFacts": [
       "p06-f-lang_code-0",
       "p06-f-lang_code-1"
+     ],
+     "staleValues": [
+      "Go",
+      "Rust"
      ]
     },
     {
@@ -3745,6 +3939,9 @@
      ],
      "staleFacts": [
       "p06-f-channel-0"
+     ],
+     "staleValues": [
+      "邮件"
      ]
     },
     {
@@ -3761,6 +3958,9 @@
      ],
      "staleFacts": [
       "p06-f-channel-0"
+     ],
+     "staleValues": [
+      "邮件"
      ]
     },
     {
@@ -3780,6 +3980,11 @@
      "staleFacts": [
       "p06-f-language-0",
       "p06-f-language-1"
+     ],
+     "staleValues": [
+      "德语",
+      "中文",
+      "日语"
      ]
     },
     {
@@ -3799,6 +4004,11 @@
      "staleFacts": [
       "p06-f-language-0",
       "p06-f-language-1"
+     ],
+     "staleValues": [
+      "德语",
+      "中文",
+      "日语"
      ]
     },
     {
@@ -3816,6 +4026,10 @@
      ],
      "staleFacts": [
       "p06-f-report-0"
+     ],
+     "staleValues": [
+      "幻灯片",
+      "PDF"
      ]
     },
     {
@@ -3833,6 +4047,10 @@
      ],
      "staleFacts": [
       "p06-f-report-0"
+     ],
+     "staleValues": [
+      "幻灯片",
+      "PDF"
      ]
     },
     {
@@ -4313,6 +4531,10 @@
      ],
      "staleFacts": [
       "p07-f-manager-0"
+     ],
+     "staleValues": [
+      "王磊",
+      "周婷"
      ]
     },
     {
@@ -4330,6 +4552,10 @@
      ],
      "staleFacts": [
       "p07-f-manager-0"
+     ],
+     "staleValues": [
+      "王磊",
+      "周婷"
      ]
     },
     {
@@ -4344,7 +4570,10 @@
      "staleRaw": [
       "p07-t020"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "幻灯片"
+     ]
     },
     {
      "id": "p07-q-report-1",
@@ -4358,7 +4587,10 @@
      "staleRaw": [
       "p07-t020"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "幻灯片"
+     ]
     },
     {
      "id": "p07-q-seat-0",
@@ -4374,6 +4606,9 @@
      ],
      "staleFacts": [
       "p07-f-seat-0"
+     ],
+     "staleValues": [
+      "紧急出口"
      ]
     },
     {
@@ -4390,6 +4625,9 @@
      ],
      "staleFacts": [
       "p07-f-seat-0"
+     ],
+     "staleValues": [
+      "紧急出口"
      ]
     },
     {
@@ -4407,6 +4645,10 @@
      ],
      "staleFacts": [
       "p07-f-allergy-0"
+     ],
+     "staleValues": [
+      "海鲜",
+      "芒果"
      ]
     },
     {
@@ -4424,6 +4666,10 @@
      ],
      "staleFacts": [
       "p07-f-allergy-0"
+     ],
+     "staleValues": [
+      "海鲜",
+      "芒果"
      ]
     },
     {
@@ -4440,6 +4686,9 @@
      ],
      "staleFacts": [
       "p07-f-team-0"
+     ],
+     "staleValues": [
+      "数据平台组"
      ]
     },
     {
@@ -4456,6 +4705,9 @@
      ],
      "staleFacts": [
       "p07-f-team-0"
+     ],
+     "staleValues": [
+      "数据平台组"
      ]
     },
     {
@@ -4472,6 +4724,9 @@
      ],
      "staleFacts": [
       "p07-f-city-0"
+     ],
+     "staleValues": [
+      "厦门"
      ]
     },
     {
@@ -4488,6 +4743,9 @@
      ],
      "staleFacts": [
       "p07-f-city-0"
+     ],
+     "staleValues": [
+      "厦门"
      ]
     },
     {
@@ -4969,6 +5227,10 @@
      "staleFacts": [
       "p08-f-seat-0",
       "p08-f-seat-1"
+     ],
+     "staleValues": [
+      "前排",
+      "靠窗"
      ]
     },
     {
@@ -4987,6 +5249,10 @@
      "staleFacts": [
       "p08-f-seat-0",
       "p08-f-seat-1"
+     ],
+     "staleValues": [
+      "前排",
+      "靠窗"
      ]
     },
     {
@@ -5004,6 +5270,10 @@
      ],
      "staleFacts": [
       "p08-f-phone-0"
+     ],
+     "staleValues": [
+      "华为 Mate 60",
+      "iPhone 15"
      ]
     },
     {
@@ -5021,6 +5291,10 @@
      ],
      "staleFacts": [
       "p08-f-phone-0"
+     ],
+     "staleValues": [
+      "华为 Mate 60",
+      "iPhone 15"
      ]
     },
     {
@@ -5033,7 +5307,8 @@
      "currentRaw": "p08-t015",
      "currentFact": "p08-f-city-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p08-q-city-1",
@@ -5045,7 +5320,8 @@
      "currentRaw": "p08-t015",
      "currentFact": "p08-f-city-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p08-q-commute-0",
@@ -5061,6 +5337,9 @@
      ],
      "staleFacts": [
       "p08-f-commute-0"
+     ],
+     "staleValues": [
+      "公交车"
      ]
     },
     {
@@ -5077,6 +5356,9 @@
      ],
      "staleFacts": [
       "p08-f-commute-0"
+     ],
+     "staleValues": [
+      "公交车"
      ]
     },
     {
@@ -5091,7 +5373,10 @@
      "staleRaw": [
       "p08-t059"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "Windows"
+     ]
     },
     {
      "id": "p08-q-os-1",
@@ -5105,7 +5390,10 @@
      "staleRaw": [
       "p08-t059"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "Windows"
+     ]
     },
     {
      "id": "p08-q-report-0",
@@ -5122,6 +5410,10 @@
      ],
      "staleFacts": [
       "p08-f-report-0"
+     ],
+     "staleValues": [
+      "Markdown",
+      "PDF"
      ]
     },
     {
@@ -5139,6 +5431,10 @@
      ],
      "staleFacts": [
       "p08-f-report-0"
+     ],
+     "staleValues": [
+      "Markdown",
+      "PDF"
      ]
     },
     {
@@ -5584,7 +5880,10 @@
      "staleRaw": [
       "p09-t009"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "PDF"
+     ]
     },
     {
      "id": "p09-q-report-1",
@@ -5598,7 +5897,10 @@
      "staleRaw": [
       "p09-t009"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "PDF"
+     ]
     },
     {
      "id": "p09-q-lang_code-0",
@@ -5610,7 +5912,8 @@
      "currentRaw": "p09-t043",
      "currentFact": "p09-f-lang_code-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p09-q-lang_code-1",
@@ -5622,7 +5925,8 @@
      "currentRaw": "p09-t043",
      "currentFact": "p09-f-lang_code-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p09-q-colour-0",
@@ -5636,7 +5940,10 @@
      "staleRaw": [
       "p09-t066"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "青色"
+     ]
     },
     {
      "id": "p09-q-colour-1",
@@ -5650,7 +5957,10 @@
      "staleRaw": [
       "p09-t066"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "青色"
+     ]
     },
     {
      "id": "p09-q-diet-0",
@@ -5662,7 +5972,8 @@
      "currentRaw": "p09-t003",
      "currentFact": "p09-f-diet-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p09-q-diet-1",
@@ -5674,7 +5985,8 @@
      "currentRaw": "p09-t003",
      "currentFact": "p09-f-diet-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p09-q-allergy-0",
@@ -5690,6 +6002,9 @@
      ],
      "staleFacts": [
       "p09-f-allergy-0"
+     ],
+     "staleValues": [
+      "芒果"
      ]
     },
     {
@@ -5706,6 +6021,9 @@
      ],
      "staleFacts": [
       "p09-f-allergy-0"
+     ],
+     "staleValues": [
+      "芒果"
      ]
     },
     {
@@ -5720,7 +6038,10 @@
      "staleRaw": [
       "p09-t045"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "攀岩"
+     ]
     },
     {
      "id": "p09-q-hobby-1",
@@ -5734,7 +6055,10 @@
      "staleRaw": [
       "p09-t045"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "攀岩"
+     ]
     },
     {
      "id": "p09-q-budget-none",
@@ -6255,6 +6579,10 @@
      "staleFacts": [
       "p10-f-coffee-0",
       "p10-f-coffee-1"
+     ],
+     "staleValues": [
+      "美式",
+      "不喝咖啡"
      ]
     },
     {
@@ -6273,6 +6601,10 @@
      "staleFacts": [
       "p10-f-coffee-0",
       "p10-f-coffee-1"
+     ],
+     "staleValues": [
+      "美式",
+      "不喝咖啡"
      ]
     },
     {
@@ -6289,6 +6621,9 @@
      ],
      "staleFacts": [
       "p10-f-seat-0"
+     ],
+     "staleValues": [
+      "紧急出口"
      ]
     },
     {
@@ -6305,6 +6640,9 @@
      ],
      "staleFacts": [
       "p10-f-seat-0"
+     ],
+     "staleValues": [
+      "紧急出口"
      ]
     },
     {
@@ -6322,6 +6660,10 @@
      ],
      "staleFacts": [
       "p10-f-commute-0"
+     ],
+     "staleValues": [
+      "公交车",
+      "骑自行车"
      ]
     },
     {
@@ -6339,6 +6681,10 @@
      ],
      "staleFacts": [
       "p10-f-commute-0"
+     ],
+     "staleValues": [
+      "公交车",
+      "骑自行车"
      ]
     },
     {
@@ -6358,6 +6704,11 @@
      "staleFacts": [
       "p10-f-team-0",
       "p10-f-team-1"
+     ],
+     "staleValues": [
+      "搜索组",
+      "基础设施组",
+      "数据平台组"
      ]
     },
     {
@@ -6377,6 +6728,11 @@
      "staleFacts": [
       "p10-f-team-0",
       "p10-f-team-1"
+     ],
+     "staleValues": [
+      "搜索组",
+      "基础设施组",
+      "数据平台组"
      ]
     },
     {
@@ -6396,6 +6752,11 @@
      "staleFacts": [
       "p10-f-phone-0",
       "p10-f-phone-1"
+     ],
+     "staleValues": [
+      "Pixel 8",
+      "华为 Mate 60",
+      "iPhone 15"
      ]
     },
     {
@@ -6415,6 +6776,11 @@
      "staleFacts": [
       "p10-f-phone-0",
       "p10-f-phone-1"
+     ],
+     "staleValues": [
+      "Pixel 8",
+      "华为 Mate 60",
+      "iPhone 15"
      ]
     },
     {
@@ -6433,6 +6799,10 @@
      "staleFacts": [
       "p10-f-hobby-0",
       "p10-f-hobby-1"
+     ],
+     "staleValues": [
+      "长跑",
+      "摄影"
      ]
     },
     {
@@ -6451,6 +6821,10 @@
      "staleFacts": [
       "p10-f-hobby-0",
       "p10-f-hobby-1"
+     ],
+     "staleValues": [
+      "长跑",
+      "摄影"
      ]
     },
     {
@@ -6936,7 +7310,10 @@
      "staleRaw": [
       "p11-t015"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "500元"
+     ]
     },
     {
      "id": "p11-q-budget-1",
@@ -6950,7 +7327,10 @@
      "staleRaw": [
       "p11-t015"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "500元"
+     ]
     },
     {
      "id": "p11-q-colour-0",
@@ -6968,6 +7348,10 @@
      "staleFacts": [
       "p11-f-colour-0",
       "p11-f-colour-1"
+     ],
+     "staleValues": [
+      "青色",
+      "朱红色"
      ]
     },
     {
@@ -6986,6 +7370,10 @@
      "staleFacts": [
       "p11-f-colour-0",
       "p11-f-colour-1"
+     ],
+     "staleValues": [
+      "青色",
+      "朱红色"
      ]
     },
     {
@@ -7002,6 +7390,9 @@
      ],
      "staleFacts": [
       "p11-f-lang_code-0"
+     ],
+     "staleValues": [
+      "Python"
      ]
     },
     {
@@ -7018,6 +7409,9 @@
      ],
      "staleFacts": [
       "p11-f-lang_code-0"
+     ],
+     "staleValues": [
+      "Python"
      ]
     },
     {
@@ -7035,6 +7429,10 @@
      ],
      "staleFacts": [
       "p11-f-coffee-0"
+     ],
+     "staleValues": [
+      "燕麦拿铁",
+      "美式"
      ]
     },
     {
@@ -7052,6 +7450,10 @@
      ],
      "staleFacts": [
       "p11-f-coffee-0"
+     ],
+     "staleValues": [
+      "燕麦拿铁",
+      "美式"
      ]
     },
     {
@@ -7066,7 +7468,10 @@
      "staleRaw": [
       "p11-t034"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "亚朵"
+     ]
     },
     {
      "id": "p11-q-hotel-1",
@@ -7080,7 +7485,10 @@
      "staleRaw": [
       "p11-t034"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "亚朵"
+     ]
     },
     {
      "id": "p11-q-diet-0",
@@ -7098,6 +7506,10 @@
      "staleFacts": [
       "p11-f-diet-0",
       "p11-f-diet-1"
+     ],
+     "staleValues": [
+      "不吃辣",
+      "素食"
      ]
     },
     {
@@ -7116,6 +7528,10 @@
      "staleFacts": [
       "p11-f-diet-0",
       "p11-f-diet-1"
+     ],
+     "staleValues": [
+      "不吃辣",
+      "素食"
      ]
     },
     {
@@ -7585,7 +8001,10 @@
      "staleRaw": [
       "p12-t035"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "PDF"
+     ]
     },
     {
      "id": "p12-q-report-1",
@@ -7599,7 +8018,10 @@
      "staleRaw": [
       "p12-t035"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "PDF"
+     ]
     },
     {
      "id": "p12-q-hotel-0",
@@ -7618,6 +8040,11 @@
      "staleFacts": [
       "p12-f-hotel-0",
       "p12-f-hotel-1"
+     ],
+     "staleValues": [
+      "全季",
+      "希尔顿",
+      "如家"
      ]
     },
     {
@@ -7637,6 +8064,11 @@
      "staleFacts": [
       "p12-f-hotel-0",
       "p12-f-hotel-1"
+     ],
+     "staleValues": [
+      "全季",
+      "希尔顿",
+      "如家"
      ]
     },
     {
@@ -7649,7 +8081,8 @@
      "currentRaw": "p12-t006",
      "currentFact": "p12-f-commute-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p12-q-commute-1",
@@ -7661,7 +8094,8 @@
      "currentRaw": "p12-t006",
      "currentFact": "p12-f-commute-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p12-q-budget-0",
@@ -7677,6 +8111,9 @@
      ],
      "staleFacts": [
       "p12-f-budget-0"
+     ],
+     "staleValues": [
+      "500元"
      ]
     },
     {
@@ -7693,6 +8130,9 @@
      ],
      "staleFacts": [
       "p12-f-budget-0"
+     ],
+     "staleValues": [
+      "500元"
      ]
     },
     {
@@ -7709,6 +8149,9 @@
      ],
      "staleFacts": [
       "p12-f-meeting-0"
+     ],
+     "staleValues": [
+      "傍晚六点"
      ]
     },
     {
@@ -7725,6 +8168,9 @@
      ],
      "staleFacts": [
       "p12-f-meeting-0"
+     ],
+     "staleValues": [
+      "傍晚六点"
      ]
     },
     {
@@ -7739,7 +8185,10 @@
      "staleRaw": [
       "p12-t049"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "18楼"
+     ]
     },
     {
      "id": "p12-q-floor-1",
@@ -7753,7 +8202,10 @@
      "staleRaw": [
       "p12-t049"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "18楼"
+     ]
     },
     {
      "id": "p12-q-phone-none",
@@ -8232,6 +8684,9 @@
      ],
      "staleFacts": [
       "p13-f-manager-0"
+     ],
+     "staleValues": [
+      "王磊"
      ]
     },
     {
@@ -8248,6 +8703,9 @@
      ],
      "staleFacts": [
       "p13-f-manager-0"
+     ],
+     "staleValues": [
+      "王磊"
      ]
     },
     {
@@ -8264,6 +8722,9 @@
      ],
      "staleFacts": [
       "p13-f-lang_code-0"
+     ],
+     "staleValues": [
+      "Python"
      ]
     },
     {
@@ -8280,6 +8741,9 @@
      ],
      "staleFacts": [
       "p13-f-lang_code-0"
+     ],
+     "staleValues": [
+      "Python"
      ]
     },
     {
@@ -8298,6 +8762,10 @@
      "staleFacts": [
       "p13-f-seat-0",
       "p13-f-seat-1"
+     ],
+     "staleValues": [
+      "紧急出口",
+      "靠窗"
      ]
     },
     {
@@ -8316,6 +8784,10 @@
      "staleFacts": [
       "p13-f-seat-0",
       "p13-f-seat-1"
+     ],
+     "staleValues": [
+      "紧急出口",
+      "靠窗"
      ]
     },
     {
@@ -8333,6 +8805,10 @@
      ],
      "staleFacts": [
       "p13-f-hotel-0"
+     ],
+     "staleValues": [
+      "希尔顿",
+      "亚朵"
      ]
     },
     {
@@ -8350,6 +8826,10 @@
      ],
      "staleFacts": [
       "p13-f-hotel-0"
+     ],
+     "staleValues": [
+      "希尔顿",
+      "亚朵"
      ]
     },
     {
@@ -8364,7 +8844,10 @@
      "staleRaw": [
       "p13-t015"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "企业微信"
+     ]
     },
     {
      "id": "p13-q-channel-1",
@@ -8378,7 +8861,10 @@
      "staleRaw": [
       "p13-t015"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "企业微信"
+     ]
     },
     {
      "id": "p13-q-allergy-0",
@@ -8392,7 +8878,10 @@
      "staleRaw": [
       "p13-t010"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "花粉"
+     ]
     },
     {
      "id": "p13-q-allergy-1",
@@ -8406,7 +8895,10 @@
      "staleRaw": [
       "p13-t010"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "花粉"
+     ]
     },
     {
      "id": "p13-q-meeting-none",
@@ -8903,6 +9395,10 @@
      "staleFacts": [
       "p14-f-report-0",
       "p14-f-report-1"
+     ],
+     "staleValues": [
+      "幻灯片",
+      "PDF"
      ]
     },
     {
@@ -8921,6 +9417,10 @@
      "staleFacts": [
       "p14-f-report-0",
       "p14-f-report-1"
+     ],
+     "staleValues": [
+      "幻灯片",
+      "PDF"
      ]
     },
     {
@@ -8939,6 +9439,10 @@
      "staleFacts": [
       "p14-f-commute-0",
       "p14-f-commute-1"
+     ],
+     "staleValues": [
+      "骑自行车",
+      "公交车"
      ]
     },
     {
@@ -8957,6 +9461,10 @@
      "staleFacts": [
       "p14-f-commute-0",
       "p14-f-commute-1"
+     ],
+     "staleValues": [
+      "骑自行车",
+      "公交车"
      ]
     },
     {
@@ -8976,6 +9484,11 @@
      "staleFacts": [
       "p14-f-allergy-0",
       "p14-f-allergy-1"
+     ],
+     "staleValues": [
+      "芒果",
+      "海鲜",
+      "花粉"
      ]
     },
     {
@@ -8995,6 +9508,11 @@
      "staleFacts": [
       "p14-f-allergy-0",
       "p14-f-allergy-1"
+     ],
+     "staleValues": [
+      "芒果",
+      "海鲜",
+      "花粉"
      ]
     },
     {
@@ -9009,7 +9527,10 @@
      "staleRaw": [
       "p14-t036"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "陈浩"
+     ]
     },
     {
      "id": "p14-q-manager-1",
@@ -9023,7 +9544,10 @@
      "staleRaw": [
       "p14-t036"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "陈浩"
+     ]
     },
     {
      "id": "p14-q-diet-0",
@@ -9040,6 +9564,10 @@
      ],
      "staleFacts": [
       "p14-f-diet-0"
+     ],
+     "staleValues": [
+      "无麸质",
+      "低碳水"
      ]
     },
     {
@@ -9057,6 +9585,10 @@
      ],
      "staleFacts": [
       "p14-f-diet-0"
+     ],
+     "staleValues": [
+      "无麸质",
+      "低碳水"
      ]
     },
     {
@@ -9069,7 +9601,8 @@
      "currentRaw": "p14-t049",
      "currentFact": "p14-f-os-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p14-q-os-1",
@@ -9081,7 +9614,8 @@
      "currentRaw": "p14-t049",
      "currentFact": "p14-f-os-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p14-q-seat-none",
@@ -9563,6 +10097,11 @@
      "staleFacts": [
       "p15-f-channel-0",
       "p15-f-channel-1"
+     ],
+     "staleValues": [
+      "短信",
+      "企业微信",
+      "电话"
      ]
     },
     {
@@ -9582,6 +10121,11 @@
      "staleFacts": [
       "p15-f-channel-0",
       "p15-f-channel-1"
+     ],
+     "staleValues": [
+      "短信",
+      "企业微信",
+      "电话"
      ]
     },
     {
@@ -9601,6 +10145,11 @@
      "staleFacts": [
       "p15-f-language-0",
       "p15-f-language-1"
+     ],
+     "staleValues": [
+      "德语",
+      "中文",
+      "日语"
      ]
     },
     {
@@ -9620,6 +10169,11 @@
      "staleFacts": [
       "p15-f-language-0",
       "p15-f-language-1"
+     ],
+     "staleValues": [
+      "德语",
+      "中文",
+      "日语"
      ]
     },
     {
@@ -9636,6 +10190,9 @@
      ],
      "staleFacts": [
       "p15-f-hobby-0"
+     ],
+     "staleValues": [
+      "围棋"
      ]
     },
     {
@@ -9652,6 +10209,9 @@
      ],
      "staleFacts": [
       "p15-f-hobby-0"
+     ],
+     "staleValues": [
+      "围棋"
      ]
     },
     {
@@ -9664,7 +10224,8 @@
      "currentRaw": "p15-t024",
      "currentFact": "p15-f-os-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p15-q-os-1",
@@ -9676,7 +10237,8 @@
      "currentRaw": "p15-t024",
      "currentFact": "p15-f-os-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p15-q-phone-0",
@@ -9690,7 +10252,10 @@
      "staleRaw": [
       "p15-t015"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "iPhone 15"
+     ]
     },
     {
      "id": "p15-q-phone-1",
@@ -9704,7 +10269,10 @@
      "staleRaw": [
       "p15-t015"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "iPhone 15"
+     ]
     },
     {
      "id": "p15-q-lang_code-0",
@@ -9716,7 +10284,8 @@
      "currentRaw": "p15-t033",
      "currentFact": "p15-f-lang_code-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p15-q-lang_code-1",
@@ -9728,7 +10297,8 @@
      "currentRaw": "p15-t033",
      "currentFact": "p15-f-lang_code-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p15-q-hotel-none",
@@ -10183,6 +10753,9 @@
      ],
      "staleFacts": [
       "p16-f-coffee-0"
+     ],
+     "staleValues": [
+      "拿铁"
      ]
     },
     {
@@ -10199,6 +10772,9 @@
      ],
      "staleFacts": [
       "p16-f-coffee-0"
+     ],
+     "staleValues": [
+      "拿铁"
      ]
     },
     {
@@ -10216,6 +10792,10 @@
      ],
      "staleFacts": [
       "p16-f-budget-0"
+     ],
+     "staleValues": [
+      "2000元",
+      "500元"
      ]
     },
     {
@@ -10233,6 +10813,10 @@
      ],
      "staleFacts": [
       "p16-f-budget-0"
+     ],
+     "staleValues": [
+      "2000元",
+      "500元"
      ]
     },
     {
@@ -10245,7 +10829,8 @@
      "currentRaw": "p16-t024",
      "currentFact": "p16-f-diet-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p16-q-diet-1",
@@ -10257,7 +10842,8 @@
      "currentRaw": "p16-t024",
      "currentFact": "p16-f-diet-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p16-q-hotel-0",
@@ -10269,7 +10855,8 @@
      "currentRaw": "p16-t007",
      "currentFact": "p16-f-hotel-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p16-q-hotel-1",
@@ -10281,7 +10868,8 @@
      "currentRaw": "p16-t007",
      "currentFact": "p16-f-hotel-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p16-q-os-0",
@@ -10295,7 +10883,10 @@
      "staleRaw": [
       "p16-t001"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "Windows"
+     ]
     },
     {
      "id": "p16-q-os-1",
@@ -10309,7 +10900,10 @@
      "staleRaw": [
       "p16-t001"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "Windows"
+     ]
     },
     {
      "id": "p16-q-phone-0",
@@ -10323,7 +10917,10 @@
      "staleRaw": [
       "p16-t042"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "华为 Mate 60"
+     ]
     },
     {
      "id": "p16-q-phone-1",
@@ -10337,7 +10934,10 @@
      "staleRaw": [
       "p16-t042"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "华为 Mate 60"
+     ]
     },
     {
      "id": "p16-q-hobby-none",
@@ -10817,6 +11417,10 @@
      ],
      "staleFacts": [
       "p17-f-manager-0"
+     ],
+     "staleValues": [
+      "陈浩",
+      "李娜"
      ]
     },
     {
@@ -10834,6 +11438,10 @@
      ],
      "staleFacts": [
       "p17-f-manager-0"
+     ],
+     "staleValues": [
+      "陈浩",
+      "李娜"
      ]
     },
     {
@@ -10846,7 +11454,8 @@
      "currentRaw": "p17-t024",
      "currentFact": "p17-f-phone-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p17-q-phone-1",
@@ -10858,7 +11467,8 @@
      "currentRaw": "p17-t024",
      "currentFact": "p17-f-phone-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p17-q-commute-0",
@@ -10870,7 +11480,8 @@
      "currentRaw": "p17-t030",
      "currentFact": "p17-f-commute-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p17-q-commute-1",
@@ -10882,7 +11493,8 @@
      "currentRaw": "p17-t030",
      "currentFact": "p17-f-commute-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p17-q-floor-0",
@@ -10898,6 +11510,9 @@
      ],
      "staleFacts": [
       "p17-f-floor-0"
+     ],
+     "staleValues": [
+      "18楼"
      ]
     },
     {
@@ -10914,6 +11529,9 @@
      ],
      "staleFacts": [
       "p17-f-floor-0"
+     ],
+     "staleValues": [
+      "18楼"
      ]
     },
     {
@@ -10931,6 +11549,10 @@
      ],
      "staleFacts": [
       "p17-f-language-0"
+     ],
+     "staleValues": [
+      "英语",
+      "中文"
      ]
     },
     {
@@ -10948,6 +11570,10 @@
      ],
      "staleFacts": [
       "p17-f-language-0"
+     ],
+     "staleValues": [
+      "英语",
+      "中文"
      ]
     },
     {
@@ -10967,6 +11593,11 @@
      "staleFacts": [
       "p17-f-channel-0",
       "p17-f-channel-1"
+     ],
+     "staleValues": [
+      "邮件",
+      "短信",
+      "企业微信"
      ]
     },
     {
@@ -10986,6 +11617,11 @@
      "staleFacts": [
       "p17-f-channel-0",
       "p17-f-channel-1"
+     ],
+     "staleValues": [
+      "邮件",
+      "短信",
+      "企业微信"
      ]
     },
     {
@@ -11442,6 +12078,10 @@
      ],
      "staleFacts": [
       "p18-f-floor-0"
+     ],
+     "staleValues": [
+      "18楼",
+      "12楼"
      ]
     },
     {
@@ -11459,6 +12099,10 @@
      ],
      "staleFacts": [
       "p18-f-floor-0"
+     ],
+     "staleValues": [
+      "18楼",
+      "12楼"
      ]
     },
     {
@@ -11473,7 +12117,10 @@
      "staleRaw": [
       "p18-t070"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "朱红色"
+     ]
     },
     {
      "id": "p18-q-colour-1",
@@ -11487,7 +12134,10 @@
      "staleRaw": [
       "p18-t070"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "朱红色"
+     ]
     },
     {
      "id": "p18-q-os-0",
@@ -11499,7 +12149,8 @@
      "currentRaw": "p18-t025",
      "currentFact": "p18-f-os-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p18-q-os-1",
@@ -11511,7 +12162,8 @@
      "currentRaw": "p18-t025",
      "currentFact": "p18-f-os-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p18-q-budget-0",
@@ -11525,7 +12177,10 @@
      "staleRaw": [
       "p18-t006"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "500元"
+     ]
     },
     {
      "id": "p18-q-budget-1",
@@ -11539,7 +12194,10 @@
      "staleRaw": [
       "p18-t006"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "500元"
+     ]
     },
     {
      "id": "p18-q-seat-0",
@@ -11555,6 +12213,9 @@
      ],
      "staleFacts": [
       "p18-f-seat-0"
+     ],
+     "staleValues": [
+      "紧急出口"
      ]
     },
     {
@@ -11571,6 +12232,9 @@
      ],
      "staleFacts": [
       "p18-f-seat-0"
+     ],
+     "staleValues": [
+      "紧急出口"
      ]
     },
     {
@@ -11583,7 +12247,8 @@
      "currentRaw": "p18-t029",
      "currentFact": "p18-f-hobby-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p18-q-hobby-1",
@@ -11595,7 +12260,8 @@
      "currentRaw": "p18-t029",
      "currentFact": "p18-f-hobby-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p18-q-commute-none",
@@ -12056,7 +12722,10 @@
      "staleRaw": [
       "p19-t010"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "靠窗"
+     ]
     },
     {
      "id": "p19-q-seat-1",
@@ -12070,7 +12739,10 @@
      "staleRaw": [
       "p19-t010"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "靠窗"
+     ]
     },
     {
      "id": "p19-q-allergy-0",
@@ -12087,6 +12759,10 @@
      ],
      "staleFacts": [
       "p19-f-allergy-0"
+     ],
+     "staleValues": [
+      "花粉",
+      "芒果"
      ]
     },
     {
@@ -12104,6 +12780,10 @@
      ],
      "staleFacts": [
       "p19-f-allergy-0"
+     ],
+     "staleValues": [
+      "花粉",
+      "芒果"
      ]
     },
     {
@@ -12116,7 +12796,8 @@
      "currentRaw": "p19-t049",
      "currentFact": "p19-f-team-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p19-q-team-1",
@@ -12128,7 +12809,8 @@
      "currentRaw": "p19-t049",
      "currentFact": "p19-f-team-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p19-q-floor-0",
@@ -12140,7 +12822,8 @@
      "currentRaw": "p19-t043",
      "currentFact": "p19-f-floor-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p19-q-floor-1",
@@ -12152,7 +12835,8 @@
      "currentRaw": "p19-t043",
      "currentFact": "p19-f-floor-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p19-q-city-0",
@@ -12166,7 +12850,10 @@
      "staleRaw": [
       "p19-t032"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "成都"
+     ]
     },
     {
      "id": "p19-q-city-1",
@@ -12180,7 +12867,10 @@
      "staleRaw": [
       "p19-t032"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "成都"
+     ]
     },
     {
      "id": "p19-q-coffee-0",
@@ -12198,6 +12888,10 @@
      "staleFacts": [
       "p19-f-coffee-0",
       "p19-f-coffee-1"
+     ],
+     "staleValues": [
+      "燕麦拿铁",
+      "拿铁"
      ]
     },
     {
@@ -12216,6 +12910,10 @@
      "staleFacts": [
       "p19-f-coffee-0",
       "p19-f-coffee-1"
+     ],
+     "staleValues": [
+      "燕麦拿铁",
+      "拿铁"
      ]
     },
     {
@@ -12675,7 +13373,8 @@
      "currentRaw": "p20-t013",
      "currentFact": "p20-f-seat-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p20-q-seat-1",
@@ -12687,7 +13386,8 @@
      "currentRaw": "p20-t013",
      "currentFact": "p20-f-seat-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p20-q-manager-0",
@@ -12701,7 +13401,10 @@
      "staleRaw": [
       "p20-t036"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "陈浩"
+     ]
     },
     {
      "id": "p20-q-manager-1",
@@ -12715,7 +13418,10 @@
      "staleRaw": [
       "p20-t036"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "陈浩"
+     ]
     },
     {
      "id": "p20-q-phone-0",
@@ -12729,7 +13435,10 @@
      "staleRaw": [
       "p20-t002"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "小米 14"
+     ]
     },
     {
      "id": "p20-q-phone-1",
@@ -12743,7 +13452,10 @@
      "staleRaw": [
       "p20-t002"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "小米 14"
+     ]
     },
     {
      "id": "p20-q-budget-0",
@@ -12759,6 +13471,9 @@
      ],
      "staleFacts": [
       "p20-f-budget-0"
+     ],
+     "staleValues": [
+      "2000元"
      ]
     },
     {
@@ -12775,6 +13490,9 @@
      ],
      "staleFacts": [
       "p20-f-budget-0"
+     ],
+     "staleValues": [
+      "2000元"
      ]
     },
     {
@@ -12787,7 +13505,8 @@
      "currentRaw": "p20-t044",
      "currentFact": "p20-f-city-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p20-q-city-1",
@@ -12799,7 +13518,8 @@
      "currentRaw": "p20-t044",
      "currentFact": "p20-f-city-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p20-q-lang_code-0",
@@ -12818,6 +13538,11 @@
      "staleFacts": [
       "p20-f-lang_code-0",
       "p20-f-lang_code-1"
+     ],
+     "staleValues": [
+      "Go",
+      "TypeScript",
+      "Rust"
      ]
     },
     {
@@ -12837,6 +13562,11 @@
      "staleFacts": [
       "p20-f-lang_code-0",
       "p20-f-lang_code-1"
+     ],
+     "staleValues": [
+      "Go",
+      "TypeScript",
+      "Rust"
      ]
     },
     {
@@ -13326,6 +14056,10 @@
      "staleFacts": [
       "p21-f-hobby-0",
       "p21-f-hobby-1"
+     ],
+     "staleValues": [
+      "摄影",
+      "围棋"
      ]
     },
     {
@@ -13344,6 +14078,10 @@
      "staleFacts": [
       "p21-f-hobby-0",
       "p21-f-hobby-1"
+     ],
+     "staleValues": [
+      "摄影",
+      "围棋"
      ]
     },
     {
@@ -13358,7 +14096,10 @@
      "staleRaw": [
       "p21-t070"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "花粉"
+     ]
     },
     {
      "id": "p21-q-allergy-1",
@@ -13372,7 +14113,10 @@
      "staleRaw": [
       "p21-t070"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "花粉"
+     ]
     },
     {
      "id": "p21-q-budget-0",
@@ -13386,7 +14130,10 @@
      "staleRaw": [
       "p21-t023"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "800元"
+     ]
     },
     {
      "id": "p21-q-budget-1",
@@ -13400,7 +14147,10 @@
      "staleRaw": [
       "p21-t023"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "800元"
+     ]
     },
     {
      "id": "p21-q-meeting-0",
@@ -13418,6 +14168,10 @@
      "staleFacts": [
       "p21-f-meeting-0",
       "p21-f-meeting-1"
+     ],
+     "staleValues": [
+      "下午三点",
+      "傍晚六点"
      ]
     },
     {
@@ -13436,6 +14190,10 @@
      "staleFacts": [
       "p21-f-meeting-0",
       "p21-f-meeting-1"
+     ],
+     "staleValues": [
+      "下午三点",
+      "傍晚六点"
      ]
     },
     {
@@ -13452,6 +14210,9 @@
      ],
      "staleFacts": [
       "p21-f-hotel-0"
+     ],
+     "staleValues": [
+      "全季"
      ]
     },
     {
@@ -13468,6 +14229,9 @@
      ],
      "staleFacts": [
       "p21-f-hotel-0"
+     ],
+     "staleValues": [
+      "全季"
      ]
     },
     {
@@ -13485,6 +14249,10 @@
      ],
      "staleFacts": [
       "p21-f-coffee-0"
+     ],
+     "staleValues": [
+      "燕麦拿铁",
+      "拿铁"
      ]
     },
     {
@@ -13502,6 +14270,10 @@
      ],
      "staleFacts": [
       "p21-f-coffee-0"
+     ],
+     "staleValues": [
+      "燕麦拿铁",
+      "拿铁"
      ]
     },
     {
@@ -13998,6 +14770,10 @@
      ],
      "staleFacts": [
       "p22-f-manager-0"
+     ],
+     "staleValues": [
+      "陈浩",
+      "李娜"
      ]
     },
     {
@@ -14015,6 +14791,10 @@
      ],
      "staleFacts": [
       "p22-f-manager-0"
+     ],
+     "staleValues": [
+      "陈浩",
+      "李娜"
      ]
     },
     {
@@ -14031,6 +14811,9 @@
      ],
      "staleFacts": [
       "p22-f-meeting-0"
+     ],
+     "staleValues": [
+      "傍晚六点"
      ]
     },
     {
@@ -14047,6 +14830,9 @@
      ],
      "staleFacts": [
       "p22-f-meeting-0"
+     ],
+     "staleValues": [
+      "傍晚六点"
      ]
     },
     {
@@ -14066,6 +14852,11 @@
      "staleFacts": [
       "p22-f-diet-0",
       "p22-f-diet-1"
+     ],
+     "staleValues": [
+      "低碳水",
+      "无麸质",
+      "素食"
      ]
     },
     {
@@ -14085,6 +14876,11 @@
      "staleFacts": [
       "p22-f-diet-0",
       "p22-f-diet-1"
+     ],
+     "staleValues": [
+      "低碳水",
+      "无麸质",
+      "素食"
      ]
     },
     {
@@ -14097,7 +14893,8 @@
      "currentRaw": "p22-t006",
      "currentFact": "p22-f-team-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p22-q-team-1",
@@ -14109,7 +14906,8 @@
      "currentRaw": "p22-t006",
      "currentFact": "p22-f-team-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p22-q-language-0",
@@ -14127,6 +14925,10 @@
      "staleFacts": [
       "p22-f-language-0",
       "p22-f-language-1"
+     ],
+     "staleValues": [
+      "德语",
+      "英语"
      ]
     },
     {
@@ -14145,6 +14947,10 @@
      "staleFacts": [
       "p22-f-language-0",
       "p22-f-language-1"
+     ],
+     "staleValues": [
+      "德语",
+      "英语"
      ]
     },
     {
@@ -14162,6 +14968,10 @@
      ],
      "staleFacts": [
       "p22-f-city-0"
+     ],
+     "staleValues": [
+      "成都",
+      "厦门"
      ]
     },
     {
@@ -14179,6 +14989,10 @@
      ],
      "staleFacts": [
       "p22-f-city-0"
+     ],
+     "staleValues": [
+      "成都",
+      "厦门"
      ]
     },
     {
@@ -14664,7 +15478,10 @@
      "staleRaw": [
       "p23-t049"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "美式"
+     ]
     },
     {
      "id": "p23-q-coffee-1",
@@ -14678,7 +15495,10 @@
      "staleRaw": [
       "p23-t049"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "美式"
+     ]
     },
     {
      "id": "p23-q-floor-0",
@@ -14695,6 +15515,10 @@
      ],
      "staleFacts": [
       "p23-f-floor-0"
+     ],
+     "staleValues": [
+      "7楼",
+      "12楼"
      ]
     },
     {
@@ -14712,6 +15536,10 @@
      ],
      "staleFacts": [
       "p23-f-floor-0"
+     ],
+     "staleValues": [
+      "7楼",
+      "12楼"
      ]
     },
     {
@@ -14729,6 +15557,10 @@
      ],
      "staleFacts": [
       "p23-f-seat-0"
+     ],
+     "staleValues": [
+      "靠过道",
+      "前排"
      ]
     },
     {
@@ -14746,6 +15578,10 @@
      ],
      "staleFacts": [
       "p23-f-seat-0"
+     ],
+     "staleValues": [
+      "靠过道",
+      "前排"
      ]
     },
     {
@@ -14762,6 +15598,9 @@
      ],
      "staleFacts": [
       "p23-f-lang_code-0"
+     ],
+     "staleValues": [
+      "Rust"
      ]
     },
     {
@@ -14778,6 +15617,9 @@
      ],
      "staleFacts": [
       "p23-f-lang_code-0"
+     ],
+     "staleValues": [
+      "Rust"
      ]
     },
     {
@@ -14794,6 +15636,9 @@
      ],
      "staleFacts": [
       "p23-f-allergy-0"
+     ],
+     "staleValues": [
+      "花生"
      ]
     },
     {
@@ -14810,6 +15655,9 @@
      ],
      "staleFacts": [
       "p23-f-allergy-0"
+     ],
+     "staleValues": [
+      "花生"
      ]
     },
     {
@@ -14828,6 +15676,10 @@
      "staleFacts": [
       "p23-f-language-0",
       "p23-f-language-1"
+     ],
+     "staleValues": [
+      "日语",
+      "中文"
      ]
     },
     {
@@ -14846,6 +15698,10 @@
      "staleFacts": [
       "p23-f-language-0",
       "p23-f-language-1"
+     ],
+     "staleValues": [
+      "日语",
+      "中文"
      ]
     },
     {
@@ -15341,6 +16197,9 @@
      ],
      "staleFacts": [
       "p24-f-floor-0"
+     ],
+     "staleValues": [
+      "12楼"
      ]
     },
     {
@@ -15357,6 +16216,9 @@
      ],
      "staleFacts": [
       "p24-f-floor-0"
+     ],
+     "staleValues": [
+      "12楼"
      ]
     },
     {
@@ -15375,6 +16237,10 @@
      "staleFacts": [
       "p24-f-phone-0",
       "p24-f-phone-1"
+     ],
+     "staleValues": [
+      "小米 14",
+      "Pixel 8"
      ]
     },
     {
@@ -15393,6 +16259,10 @@
      "staleFacts": [
       "p24-f-phone-0",
       "p24-f-phone-1"
+     ],
+     "staleValues": [
+      "小米 14",
+      "Pixel 8"
      ]
     },
     {
@@ -15407,7 +16277,10 @@
      "staleRaw": [
       "p24-t010"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "朱红色"
+     ]
     },
     {
      "id": "p24-q-colour-1",
@@ -15421,7 +16294,10 @@
      "staleRaw": [
       "p24-t010"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "朱红色"
+     ]
     },
     {
      "id": "p24-q-commute-0",
@@ -15438,6 +16314,10 @@
      ],
      "staleFacts": [
       "p24-f-commute-0"
+     ],
+     "staleValues": [
+      "公交车",
+      "开车"
      ]
     },
     {
@@ -15455,6 +16335,10 @@
      ],
      "staleFacts": [
       "p24-f-commute-0"
+     ],
+     "staleValues": [
+      "公交车",
+      "开车"
      ]
     },
     {
@@ -15471,6 +16355,9 @@
      ],
      "staleFacts": [
       "p24-f-allergy-0"
+     ],
+     "staleValues": [
+      "花粉"
      ]
     },
     {
@@ -15487,6 +16374,9 @@
      ],
      "staleFacts": [
       "p24-f-allergy-0"
+     ],
+     "staleValues": [
+      "花粉"
      ]
     },
     {
@@ -15506,6 +16396,11 @@
      "staleFacts": [
       "p24-f-budget-0",
       "p24-f-budget-1"
+     ],
+     "staleValues": [
+      "1200元",
+      "500元",
+      "800元"
      ]
     },
     {
@@ -15525,6 +16420,11 @@
      "staleFacts": [
       "p24-f-budget-0",
       "p24-f-budget-1"
+     ],
+     "staleValues": [
+      "1200元",
+      "500元",
+      "800元"
      ]
     },
     {
@@ -15982,6 +16882,10 @@
      "staleFacts": [
       "p25-f-allergy-0",
       "p25-f-allergy-1"
+     ],
+     "staleValues": [
+      "海鲜",
+      "花粉"
      ]
     },
     {
@@ -16000,6 +16904,10 @@
      "staleFacts": [
       "p25-f-allergy-0",
       "p25-f-allergy-1"
+     ],
+     "staleValues": [
+      "海鲜",
+      "花粉"
      ]
     },
     {
@@ -16014,7 +16922,10 @@
      "staleRaw": [
       "p25-t042"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "Ubuntu"
+     ]
     },
     {
      "id": "p25-q-os-1",
@@ -16028,7 +16939,10 @@
      "staleRaw": [
       "p25-t042"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "Ubuntu"
+     ]
     },
     {
      "id": "p25-q-hobby-0",
@@ -16040,7 +16954,8 @@
      "currentRaw": "p25-t016",
      "currentFact": "p25-f-hobby-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p25-q-hobby-1",
@@ -16052,7 +16967,8 @@
      "currentRaw": "p25-t016",
      "currentFact": "p25-f-hobby-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p25-q-phone-0",
@@ -16066,7 +16982,10 @@
      "staleRaw": [
       "p25-t065"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "华为 Mate 60"
+     ]
     },
     {
      "id": "p25-q-phone-1",
@@ -16080,7 +16999,10 @@
      "staleRaw": [
       "p25-t065"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "华为 Mate 60"
+     ]
     },
     {
      "id": "p25-q-report-0",
@@ -16092,7 +17014,8 @@
      "currentRaw": "p25-t048",
      "currentFact": "p25-f-report-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p25-q-report-1",
@@ -16104,7 +17027,8 @@
      "currentRaw": "p25-t048",
      "currentFact": "p25-f-report-0",
      "staleRaw": [],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": []
     },
     {
      "id": "p25-q-seat-0",
@@ -16118,7 +17042,10 @@
      "staleRaw": [
       "p25-t025"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "靠过道"
+     ]
     },
     {
      "id": "p25-q-seat-1",
@@ -16132,7 +17059,10 @@
      "staleRaw": [
       "p25-t025"
      ],
-     "staleFacts": []
+     "staleFacts": [],
+     "staleValues": [
+      "靠过道"
+     ]
     },
     {
      "id": "p25-q-coffee-none",

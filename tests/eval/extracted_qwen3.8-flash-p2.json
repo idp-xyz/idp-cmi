@@ -1,0 +1,1714 @@
+{
+ "model": "qwen3.8-flash-next-iq3_xxs-p2",
+ "personas": [
+  {
+   "id": "p01",
+   "facts": [
+    {
+     "day": 13,
+     "key": "commute_mode",
+     "value": "开车",
+     "statement": "用户通常开车通勤上班"
+    },
+    {
+     "day": 18,
+     "key": "daily_device",
+     "value": "小米 14",
+     "statement": "The user uses a 小米 14 for daily tasks."
+    },
+    {
+     "day": 27,
+     "key": "commute_mode",
+     "value": "地铁",
+     "statement": "用户现在通勤方式是地铁"
+    },
+    {
+     "day": 33,
+     "key": "department",
+     "value": "数据平台组",
+     "statement": "用户所在部门是数据平台组"
+    },
+    {
+     "day": 39,
+     "key": "residence",
+     "value": "成都",
+     "statement": "The user currently resides in 成都"
+    },
+    {
+     "day": 41,
+     "key": "preferred_meeting_time",
+     "value": "下午三点",
+     "statement": "用户认为下午三点是最理想的会议时段"
+    },
+    {
+     "day": 60,
+     "key": "daily_device",
+     "value": "Pixel 8",
+     "statement": "用户最近把手机换成 Pixel 8。"
+    },
+    {
+     "day": 64,
+     "key": "commute_mode",
+     "value": "公交车",
+     "statement": "用户现在通勤方式改成公交车。"
+    },
+    {
+     "day": 75,
+     "key": "travel_accommodation",
+     "value": "亚朵",
+     "statement": "用户出差一般住亚朵"
+    }
+   ]
+  },
+  {
+   "id": "p02",
+   "facts": [
+    {
+     "day": 17,
+     "key": "primary_language",
+     "value": "Go",
+     "statement": "The user primarily codes in Go."
+    },
+    {
+     "day": 20,
+     "key": "hotel_budget",
+     "value": "每晚800元",
+     "statement": "用户订酒店的预算是每晚800元"
+    },
+    {
+     "day": 20,
+     "key": "hotel_preference",
+     "value": "希尔顿",
+     "statement": "用户出差一般住希尔顿"
+    },
+    {
+     "day": 21,
+     "key": "primary_language",
+     "value": "TypeScript",
+     "statement": "用户现在主要写 TypeScript。"
+    },
+    {
+     "day": 29,
+     "key": "notification_method",
+     "value": "短信",
+     "statement": "用户的通知接收方式设定为短信"
+    },
+    {
+     "day": 32,
+     "key": "favourite_colour",
+     "value": "青色",
+     "statement": "The user has always been a big fan of 青色."
+    },
+    {
+     "day": 40,
+     "key": "floor",
+     "value": "7楼",
+     "statement": "用户在7楼"
+    },
+    {
+     "day": 66,
+     "key": "favourite_colour",
+     "value": "米白色",
+     "statement": "用户现在更中意米白色。"
+    }
+   ]
+  },
+  {
+   "id": "p03",
+   "facts": [
+    {
+     "day": 10,
+     "key": "residence",
+     "value": "厦门",
+     "statement": "The user currently resides in 厦门."
+    },
+    {
+     "day": 26,
+     "key": "favourite_colour",
+     "value": "青色",
+     "statement": "用户平时最偏爱青色"
+    },
+    {
+     "day": 33,
+     "key": "residence",
+     "value": "成都",
+     "statement": "用户最近换到成都住了。"
+    },
+    {
+     "day": 35,
+     "key": "business_trip_hotel_budget",
+     "value": "500元左右",
+     "statement": "用户出差住酒店的预算一般控制在500元左右。"
+    },
+    {
+     "day": 36,
+     "key": "allergy",
+     "value": "芒果",
+     "statement": "用户对芒果过敏"
+    },
+    {
+     "day": 36,
+     "key": "gift_policy",
+     "value": "拒收含芒果成分的礼物",
+     "statement": "用户要求拒收含芒果成分的礼物"
+    },
+    {
+     "day": 48,
+     "key": "department",
+     "value": "支付组",
+     "statement": "用户在支付组部门工作"
+    },
+    {
+     "day": 49,
+     "key": "allergy",
+     "value": "花粉",
+     "statement": "用户其实对花粉过敏"
+    },
+    {
+     "day": 78,
+     "key": "department",
+     "value": "搜索组",
+     "statement": "用户已调到搜索组"
+    },
+    {
+     "day": 81,
+     "key": "laptop_os",
+     "value": "Windows",
+     "statement": "The user's laptop runs on Windows."
+    }
+   ]
+  },
+  {
+   "id": "p04",
+   "facts": [
+    {
+     "day": 6,
+     "key": "hotel_reimbursement_limit",
+     "value": "每晚不超过2000元",
+     "statement": "用户公司报销标准中每晚酒店花费不能超过2000元。"
+    },
+    {
+     "day": 18,
+     "key": "allergy",
+     "value": "花生",
+     "statement": "The user is allergic to 花生."
+    },
+    {
+     "day": 24,
+     "key": "business_trip_hotel",
+     "value": "如家",
+     "statement": "用户出差一般住如家"
+    },
+    {
+     "day": 29,
+     "key": "line_manager",
+     "value": "陈浩",
+     "statement": "用户的直属经理是陈浩"
+    },
+    {
+     "day": 29,
+     "key": "commute_mode",
+     "value": "自行车",
+     "statement": "用户平时上班骑自行车"
+    },
+    {
+     "day": 40,
+     "key": "business_trip_hotel",
+     "value": "亚朵",
+     "statement": "The user has switched to 亚朵 for recent trips."
+    },
+    {
+     "day": 46,
+     "key": "device",
+     "value": "iPhone 15",
+     "statement": "用户的设备是 iPhone 15"
+    },
+    {
+     "day": 49,
+     "key": "allergy",
+     "value": "花粉",
+     "statement": "The user's allergy is to 花粉."
+    },
+    {
+     "day": 60,
+     "key": "allergy",
+     "value": "海鲜",
+     "statement": "用户更正过敏源为海鲜"
+    },
+    {
+     "day": 80,
+     "key": "business_trip_hotel",
+     "value": "全季",
+     "statement": "用户现在出差酒店改成全季。"
+    }
+   ]
+  },
+  {
+   "id": "p05",
+   "facts": [
+    {
+     "day": 11,
+     "key": "work_os",
+     "value": "Windows",
+     "statement": "用户平时主要用 Windows 办公。"
+    },
+    {
+     "day": 21,
+     "key": "direct_supervisor",
+     "value": "陈浩",
+     "statement": "用户的直接上级叫陈浩"
+    },
+    {
+     "day": 23,
+     "key": "team",
+     "value": "支付组",
+     "statement": "用户的所属团队是支付组"
+    },
+    {
+     "day": 40,
+     "key": "commute_mode",
+     "value": "骑自行车",
+     "statement": "用户主要骑自行车通勤"
+    },
+    {
+     "day": 49,
+     "key": "team",
+     "value": "搜索组",
+     "statement": "The user's team has been changed to 搜索组."
+    },
+    {
+     "day": 54,
+     "key": "commute_mode",
+     "value": "公交车",
+     "statement": "用户现在通勤改成公交车。"
+    },
+    {
+     "day": 54,
+     "key": "favourite_colour",
+     "value": "墨绿色",
+     "statement": "用户对墨绿色情有独钟"
+    },
+    {
+     "day": 59,
+     "key": "favourite_colour",
+     "value": "青色",
+     "statement": "The user's favourite colour has changed to 青色."
+    },
+    {
+     "day": 70,
+     "key": "favourite_colour",
+     "value": "朱红色",
+     "statement": "The user has updated their favourite colour to 朱红色."
+    },
+    {
+     "day": 77,
+     "key": "report_format",
+     "value": "Markdown",
+     "statement": "The user's reports are always in Markdown format."
+    },
+    {
+     "day": 86,
+     "key": "work_os",
+     "value": "macOS",
+     "statement": "用户现在使用 macOS。"
+    },
+    {
+     "day": 88,
+     "key": "team",
+     "value": "基础设施组",
+     "statement": "用户现在被调到了基础设施组。"
+    },
+    {
+     "day": 89,
+     "key": "direct_supervisor",
+     "value": "周婷",
+     "statement": "用户的直属经理最近换成了周婷"
+    }
+   ]
+  },
+  {
+   "id": "p06",
+   "facts": [
+    {
+     "day": 9,
+     "key": "diet",
+     "value": "无麸质",
+     "statement": "用户平时基本上吃无麸质。"
+    },
+    {
+     "day": 9,
+     "key": "notification_method",
+     "value": "短信",
+     "statement": "用户的通知接收方式设定为短信"
+    },
+    {
+     "day": 11,
+     "key": "report_format",
+     "value": "幻灯片",
+     "statement": "用户的报告总是幻灯片格式。"
+    },
+    {
+     "day": 24,
+     "key": "primary_language",
+     "value": "Go",
+     "statement": "The user primarily codes in Go."
+    },
+    {
+     "day": 28,
+     "key": "diet",
+     "value": "素食",
+     "statement": "用户当前的饮食偏好是严格素食。"
+    },
+    {
+     "day": 41,
+     "key": "notification_method",
+     "value": "电话通知",
+     "statement": "用户最近换成电话通知比较方便。"
+    },
+    {
+     "day": 52,
+     "key": "work_machine_os",
+     "value": "macOS",
+     "statement": "用户的工作机安装的是 macOS。"
+    },
+    {
+     "day": 54,
+     "key": "work_communication_language",
+     "value": "中文",
+     "statement": "用户现在更倾向于使用中文进行工作沟通。"
+    },
+    {
+     "day": 61,
+     "key": "primary_language",
+     "value": "Rust",
+     "statement": "The user is focusing on Rust now."
+    },
+    {
+     "day": 66,
+     "key": "primary_language",
+     "value": "Python",
+     "statement": "用户最近把主力语言换成了 Python。"
+    },
+    {
+     "day": 84,
+     "key": "diet",
+     "value": "不吃辣",
+     "statement": "用户现在严格不吃辣"
+    },
+    {
+     "day": 86,
+     "key": "report_format",
+     "value": "Word",
+     "statement": "The user wants all reports in Word."
+    }
+   ]
+  },
+  {
+   "id": "p07",
+   "facts": [
+    {
+     "day": 2,
+     "key": "report_format",
+     "value": "Word",
+     "statement": "用户的报告格式要求是 Word。"
+    },
+    {
+     "day": 2,
+     "key": "allergy",
+     "value": "海鲜",
+     "statement": "The user is allergic to 海鲜."
+    },
+    {
+     "day": 15,
+     "key": "line_manager",
+     "value": "王磊",
+     "statement": "用户的直线经理是王磊"
+    },
+    {
+     "day": 24,
+     "key": "team",
+     "value": "数据平台组",
+     "statement": "The user is currently part of the 数据平台组."
+    },
+    {
+     "day": 34,
+     "key": "line_manager",
+     "value": "陈浩",
+     "statement": "The user's line manager has been updated to 陈浩."
+    },
+    {
+     "day": 39,
+     "key": "seat_preference",
+     "value": "紧急出口",
+     "statement": "用户订票时习惯坐紧急出口。"
+    },
+    {
+     "day": 48,
+     "key": "team",
+     "value": "搜索组",
+     "statement": "用户的团队是搜索组"
+    },
+    {
+     "day": 56,
+     "key": "seat_preference",
+     "value": "前排",
+     "statement": "用户最近更喜欢前排座位"
+    },
+    {
+     "day": 57,
+     "key": "city_of_residence",
+     "value": "厦门",
+     "statement": "The user's city of residence is 厦门"
+    },
+    {
+     "day": 73,
+     "key": "allergy",
+     "value": "花生",
+     "statement": "用户其实对花生过敏"
+    },
+    {
+     "day": 86,
+     "key": "city_of_residence",
+     "value": "西安",
+     "statement": "The user has relocated and now lives in 西安."
+    }
+   ]
+  },
+  {
+   "id": "p08",
+   "facts": [
+    {
+     "day": 2,
+     "key": "work_machine_os",
+     "value": "ChromeOS",
+     "statement": "用户的工作机安装的是 ChromeOS。"
+    },
+    {
+     "day": 20,
+     "key": "seat_preference",
+     "value": "前排",
+     "statement": "用户订票时习惯选前排座位。"
+    },
+    {
+     "day": 23,
+     "key": "document_format",
+     "value": "Markdown",
+     "statement": "The user wants documents saved as Markdown."
+    },
+    {
+     "day": 25,
+     "key": "location",
+     "value": "厦门",
+     "statement": "用户日常在厦门活动。"
+    },
+    {
+     "day": 53,
+     "key": "primary_transport",
+     "value": "公交车",
+     "statement": "用户习惯用公交车作为主要交通工具"
+    },
+    {
+     "day": 57,
+     "key": "primary_transport",
+     "value": "地铁",
+     "statement": "用户现在主要交通方式改成地铁了。"
+    },
+    {
+     "day": 60,
+     "key": "seat_preference",
+     "value": "靠窗",
+     "statement": "用户现在的座位偏好是靠窗"
+    },
+    {
+     "day": 64,
+     "key": "seat_preference",
+     "value": "紧急出口",
+     "statement": "用户现在更喜欢紧急出口座位"
+    },
+    {
+     "day": 68,
+     "key": "device",
+     "value": "华为 Mate 60",
+     "statement": "用户的设备是华为 Mate 60。"
+    },
+    {
+     "day": 81,
+     "key": "document_format",
+     "value": "幻灯片",
+     "statement": "用户从这周开始格式标准变成幻灯片"
+    },
+    {
+     "day": 82,
+     "key": "device",
+     "value": "Pixel 8",
+     "statement": "用户之前的设备不用了，改成 Pixel 8。"
+    }
+   ]
+  },
+  {
+   "id": "p09",
+   "facts": [
+    {
+     "day": 5,
+     "key": "diet",
+     "value": "不吃辣",
+     "statement": "用户坚持不吃辣。"
+    },
+    {
+     "day": 21,
+     "key": "allergy",
+     "value": "海鲜",
+     "statement": "用户确认过敏源是海鲜"
+    },
+    {
+     "day": 41,
+     "key": "hobby",
+     "value": "摄影",
+     "statement": "用户最大的兴趣是摄影"
+    },
+    {
+     "day": 46,
+     "key": "document_format",
+     "value": "Word",
+     "statement": "The user wants documents saved as Word."
+    },
+    {
+     "day": 50,
+     "key": "income_source",
+     "value": "TypeScript",
+     "statement": "用户靠 TypeScript 吃饭。"
+    },
+    {
+     "day": 68,
+     "key": "favourite_colour",
+     "value": "朱红色",
+     "statement": "用户最喜欢的颜色是朱红色"
+    }
+   ]
+  },
+  {
+   "id": "p10",
+   "facts": [
+    {
+     "day": 1,
+     "key": "drink_preference",
+     "value": "美式",
+     "statement": "用户平时都点美式"
+    },
+    {
+     "day": 9,
+     "key": "exercise_habit",
+     "value": "周末基本都在练长跑",
+     "statement": "用户周末基本都在练长跑。"
+    },
+    {
+     "day": 11,
+     "key": "device",
+     "value": "Pixel 8",
+     "statement": "用户的设备是 Pixel 8"
+    },
+    {
+     "day": 26,
+     "key": "department",
+     "value": "搜索组",
+     "statement": "用户在搜索组这个部门"
+    },
+    {
+     "day": 37,
+     "key": "flight_seat_choice",
+     "value": "坐飞机一定要选紧急出口",
+     "statement": "用户坐飞机一定要选紧急出口。"
+    },
+    {
+     "day": 46,
+     "key": "drink_preference",
+     "value": "不喝咖啡",
+     "statement": "用户的咖啡偏好已改为不喝咖啡。"
+    },
+    {
+     "day": 61,
+     "key": "commute_mode",
+     "value": "公交车",
+     "statement": "用户通常乘公交车通勤上班"
+    },
+    {
+     "day": 62,
+     "key": "commute_mode",
+     "value": "地铁",
+     "statement": "用户现在通勤方式是地铁。"
+    },
+    {
+     "day": 63,
+     "key": "hobby",
+     "value": "摄影",
+     "statement": "用户现在真正的爱好是摄影"
+    },
+    {
+     "day": 64,
+     "key": "drink_preference",
+     "value": "拿铁",
+     "statement": "用户的咖啡偏好已改为拿铁"
+    },
+    {
+     "day": 64,
+     "key": "device",
+     "value": "华为 Mate 60",
+     "statement": "用户最近换用了华为 Mate 60。"
+    },
+    {
+     "day": 66,
+     "key": "hobby",
+     "value": "攀岩",
+     "statement": "用户现在真正的爱好是攀岩"
+    },
+    {
+     "day": 69,
+     "key": "department",
+     "value": "基础设施组",
+     "statement": "用户的团队记录已更新为基础设施组"
+    },
+    {
+     "day": 75,
+     "key": "flight_seat_choice",
+     "value": "前排",
+     "statement": "用户最近将座位偏好改为前排"
+    },
+    {
+     "day": 79,
+     "key": "department",
+     "value": "支付组",
+     "statement": "用户最近转岗去支付组了"
+    },
+    {
+     "day": 85,
+     "key": "device",
+     "value": "小米 14",
+     "statement": "用户最近把手机换成了小米 14"
+    }
+   ]
+  },
+  {
+   "id": "p11",
+   "facts": [
+    {
+     "day": 14,
+     "key": "hotel_reimbursement_limit",
+     "value": "1200元",
+     "statement": "用户公司报销标准中每晚酒店花费不能超过1200元"
+    },
+    {
+     "day": 20,
+     "key": "programming_language",
+     "value": "Python",
+     "statement": "用户平时写代码主要使用 Python。"
+    },
+    {
+     "day": 20,
+     "key": "diet",
+     "value": "素食",
+     "statement": "The user has recently switched to a 素食 diet."
+    },
+    {
+     "day": 54,
+     "key": "programming_language",
+     "value": "Go",
+     "statement": "用户现在改学 Go。"
+    },
+    {
+     "day": 56,
+     "key": "favourite_colour",
+     "value": "朱红色",
+     "statement": "用户现在的首选颜色是朱红色"
+    },
+    {
+     "day": 60,
+     "key": "business_trip_hotel",
+     "value": "全季",
+     "statement": "用户出差一般住全季"
+    },
+    {
+     "day": 67,
+     "key": "standard_drink",
+     "value": "燕麦拿铁",
+     "statement": "用户的标准配置是燕麦拿铁"
+    },
+    {
+     "day": 74,
+     "key": "standard_drink",
+     "value": "拿铁",
+     "statement": "用户最近换成拿铁了。"
+    },
+    {
+     "day": 80,
+     "key": "diet",
+     "value": "低碳水",
+     "statement": "The user has recently switched to a 低碳水 diet."
+    },
+    {
+     "day": 81,
+     "key": "favourite_colour",
+     "value": "墨绿色",
+     "statement": "用户现在的首选颜色是墨绿色"
+    }
+   ]
+  },
+  {
+   "id": "p12",
+   "facts": [
+    {
+     "day": 11,
+     "key": "commute_mode",
+     "value": "坐公交车",
+     "statement": "用户平时上班坐公交车。"
+    },
+    {
+     "day": 11,
+     "key": "preferred_meeting_time",
+     "value": "傍晚六点",
+     "statement": "用户认为傍晚六点是最理想的会议时段。"
+    },
+    {
+     "day": 17,
+     "key": "hotel_budget",
+     "value": "每晚500元",
+     "statement": "用户订酒店的预算是每晚500元"
+    },
+    {
+     "day": 34,
+     "key": "hotel_standard",
+     "value": "全季",
+     "statement": "用户的差旅住宿标准是全季。"
+    },
+    {
+     "day": 46,
+     "key": "hotel_standard",
+     "value": "希尔顿",
+     "statement": "用户现在住希尔顿"
+    },
+    {
+     "day": 54,
+     "key": "hotel_budget",
+     "value": "每晚2000元",
+     "statement": "用户现在将酒店预算改为每晚2000元"
+    },
+    {
+     "day": 55,
+     "key": "report_format",
+     "value": "幻灯片",
+     "statement": "用户希望以后所有汇报材料统一保存为幻灯片。"
+    },
+    {
+     "day": 61,
+     "key": "office_floor",
+     "value": "7楼",
+     "statement": "The user's office is located on 7楼."
+    },
+    {
+     "day": 81,
+     "key": "hotel_standard",
+     "value": "亚朵",
+     "statement": "用户最近把出差住的酒店换成亚朵了。"
+    },
+    {
+     "day": 85,
+     "key": "preferred_meeting_time",
+     "value": "下午三点",
+     "statement": "用户的会议时间已调整为下午三点"
+    }
+   ]
+  },
+  {
+   "id": "p13",
+   "facts": [
+    {
+     "day": 12,
+     "key": "line_manager",
+     "value": "王磊",
+     "statement": "The user's line manager is 王磊."
+    },
+    {
+     "day": 16,
+     "key": "default_hotel",
+     "value": "希尔顿",
+     "statement": "用户以后安排行程时默认选择希尔顿。"
+    },
+    {
+     "day": 18,
+     "key": "default_hotel",
+     "value": "全季",
+     "statement": "用户最近把出差住的酒店换成全季。"
+    },
+    {
+     "day": 20,
+     "key": "seat_side",
+     "value": "紧急出口 side",
+     "statement": "The user wants to always book the 紧急出口 side."
+    },
+    {
+     "day": 32,
+     "key": "notification_channel",
+     "value": "企业微信",
+     "statement": "用户习惯看企业微信，通知往那边推。"
+    },
+    {
+     "day": 42,
+     "key": "line_manager",
+     "value": "周婷",
+     "statement": "用户的直属上级现在是周婷"
+    },
+    {
+     "day": 49,
+     "key": "seat_side",
+     "value": "靠窗",
+     "statement": "用户最近更喜欢靠窗的座位"
+    },
+    {
+     "day": 55,
+     "key": "programming_language",
+     "value": "Python",
+     "statement": "The user's go-to language is Python."
+    },
+    {
+     "day": 63,
+     "key": "seat_side",
+     "value": "靠过道",
+     "statement": "用户最近座位偏好改为靠过道"
+    },
+    {
+     "day": 83,
+     "key": "programming_language",
+     "value": "Rust",
+     "statement": "用户现在主要写 Rust。"
+    }
+   ]
+  },
+  {
+   "id": "p14",
+   "facts": [
+    {
+     "day": 7,
+     "key": "meeting_minutes_recipients",
+     "value": "参会者",
+     "statement": "用户希望会议结束后将会议纪要发送给参会者"
+    },
+    {
+     "day": 10,
+     "key": "direct_supervisor",
+     "value": "李娜",
+     "statement": "用户的直接上级叫李娜"
+    },
+    {
+     "day": 11,
+     "key": "report_format",
+     "value": "幻灯片",
+     "statement": "用户的报告总是幻灯片格式。"
+    },
+    {
+     "day": 26,
+     "key": "main_transportation",
+     "value": "骑自行车",
+     "statement": "用户习惯骑自行车作为主要交通工具"
+    },
+    {
+     "day": 27,
+     "key": "report_format",
+     "value": "PDF",
+     "statement": "The user switched their report format to PDF recently."
+    },
+    {
+     "day": 38,
+     "key": "allergy",
+     "value": "海鲜",
+     "statement": "用户的过敏原是海鲜"
+    },
+    {
+     "day": 45,
+     "key": "report_format",
+     "value": "Markdown",
+     "statement": "The user switched their report format to Markdown recently."
+    },
+    {
+     "day": 47,
+     "key": "main_transportation",
+     "value": "公交车",
+     "statement": "用户已把通勤方式改为公交车。"
+    },
+    {
+     "day": 49,
+     "key": "diet",
+     "value": "无麸质 diet",
+     "statement": "The user strictly follows a 无麸质 diet."
+    },
+    {
+     "day": 50,
+     "key": "diet",
+     "value": "素食",
+     "statement": "用户决定转向素食。"
+    },
+    {
+     "day": 74,
+     "key": "main_machine_os",
+     "value": "Windows",
+     "statement": "用户的主力机运行 Windows。"
+    },
+    {
+     "day": 79,
+     "key": "main_transportation",
+     "value": "地铁",
+     "statement": "用户现在主要乘坐地铁。"
+    },
+    {
+     "day": 85,
+     "key": "allergy",
+     "value": "花生",
+     "statement": "用户真正过敏的是花生"
+    }
+   ]
+  },
+  {
+   "id": "p15",
+   "facts": [
+    {
+     "day": 6,
+     "key": "communication_language",
+     "value": "德语",
+     "statement": "用户以后默认用德语交流。"
+    },
+    {
+     "day": 8,
+     "key": "communication_language",
+     "value": "中文",
+     "statement": "用户现在的常用语言是中文"
+    },
+    {
+     "day": 16,
+     "key": "interest",
+     "value": "围棋",
+     "statement": "用户最大的兴趣是围棋"
+    },
+    {
+     "day": 17,
+     "key": "communication_language",
+     "value": "英语",
+     "statement": "The user has switched their preferred working language to 英语."
+    },
+    {
+     "day": 29,
+     "key": "urgent_contact_method",
+     "value": "电话",
+     "statement": "用户希望紧急事项通过电话联系我"
+    },
+    {
+     "day": 32,
+     "key": "operating_system",
+     "value": "Ubuntu",
+     "statement": "用户使用 Ubuntu 系统。"
+    },
+    {
+     "day": 44,
+     "key": "income_source",
+     "value": "Rust",
+     "statement": "用户靠 Rust 吃饭"
+    },
+    {
+     "day": 45,
+     "key": "device",
+     "value": "Pixel 8",
+     "statement": "用户的设备是 Pixel 8"
+    },
+    {
+     "day": 48,
+     "key": "receiving_channel",
+     "value": "邮件",
+     "statement": "用户的接收渠道是邮件。"
+    },
+    {
+     "day": 66,
+     "key": "receiving_channel",
+     "value": "企业微信",
+     "statement": "用户的通知方式已改到企业微信。"
+    },
+    {
+     "day": 86,
+     "key": "interest",
+     "value": "长跑",
+     "statement": "用户现在主要玩长跑，旧爱好已弃坑。"
+    }
+   ]
+  },
+  {
+   "id": "p16",
+   "facts": [
+    {
+     "day": 9,
+     "key": "standard_drink",
+     "value": "拿铁",
+     "statement": "用户的标准配置是拿铁"
+    },
+    {
+     "day": 9,
+     "key": "hotel_preference",
+     "value": "希尔顿",
+     "statement": "用户出差一般住希尔顿"
+    },
+    {
+     "day": 16,
+     "key": "accommodation_budget",
+     "value": "around 2000元",
+     "statement": "The user prefers to keep nightly accommodation cost around 2000元."
+    },
+    {
+     "day": 19,
+     "key": "main_phone",
+     "value": "iPhone 15",
+     "statement": "用户的主力机是 iPhone 15"
+    },
+    {
+     "day": 29,
+     "key": "standard_drink",
+     "value": "燕麦拿铁",
+     "statement": "用户最近换成燕麦拿铁了"
+    },
+    {
+     "day": 30,
+     "key": "diet",
+     "value": "不吃肉",
+     "statement": "用户不吃肉，不希望被推荐含肉的东西"
+    },
+    {
+     "day": 30,
+     "key": "spice_preference",
+     "value": "不吃辣",
+     "statement": "用户是不吃辣爱好者"
+    },
+    {
+     "day": 32,
+     "key": "work_os",
+     "value": "ChromeOS",
+     "statement": "用户平时主要用 ChromeOS 办公。"
+    },
+    {
+     "day": 33,
+     "key": "accommodation_budget",
+     "value": "1200元",
+     "statement": "用户每晚酒店预算现在是1200元"
+    }
+   ]
+  },
+  {
+   "id": "p17",
+   "facts": [
+    {
+     "day": 34,
+     "key": "phone_model",
+     "value": "iPhone 15",
+     "statement": "用户现在使用的手机是 iPhone 15"
+    },
+    {
+     "day": 43,
+     "key": "main_transportation",
+     "value": "骑自行车",
+     "statement": "用户习惯骑自行车作为主要交通工具。"
+    },
+    {
+     "day": 43,
+     "key": "important_message_contact_method",
+     "value": "邮件",
+     "statement": "用户希望以后重要消息直接通过邮件发送"
+    },
+    {
+     "day": 46,
+     "key": "direct_supervisor",
+     "value": "陈浩",
+     "statement": "用户的直接上级叫陈浩"
+    },
+    {
+     "day": 49,
+     "key": "office_floor",
+     "value": "18楼",
+     "statement": "用户的办公室位于18楼"
+    },
+    {
+     "day": 63,
+     "key": "preferred_communication_language",
+     "value": "英语",
+     "statement": "用户的首选沟通语言是英语"
+    },
+    {
+     "day": 65,
+     "key": "preferred_communication_language",
+     "value": "日语",
+     "statement": "用户现在更倾向于使用日语进行工作沟通"
+    },
+    {
+     "day": 71,
+     "key": "office_floor",
+     "value": "12楼",
+     "statement": "用户的办公室楼层换成了12楼"
+    },
+    {
+     "day": 81,
+     "key": "direct_supervisor",
+     "value": "周婷",
+     "statement": "用户现在归周婷管"
+    },
+    {
+     "day": 84,
+     "key": "notification_channel",
+     "value": "SMS",
+     "statement": "用户希望将通知渠道切换为短信。"
+    }
+   ]
+  },
+  {
+   "id": "p18",
+   "facts": [
+    {
+     "day": 12,
+     "key": "flight_seat_preference",
+     "value": "紧急出口的位子",
+     "statement": "用户坐飞机时喜欢紧急出口的位子"
+    },
+    {
+     "day": 15,
+     "key": "office_floor",
+     "value": "18楼",
+     "statement": "用户的办公室位于18楼。"
+    },
+    {
+     "day": 20,
+     "key": "office_floor",
+     "value": "3楼",
+     "statement": "用户现在在3楼"
+    },
+    {
+     "day": 30,
+     "key": "operating_system",
+     "value": "ChromeOS",
+     "statement": "用户习惯使用 ChromeOS 系统。"
+    },
+    {
+     "day": 36,
+     "key": "hobby",
+     "value": "攀岩",
+     "statement": "用户的爱好是攀岩"
+    },
+    {
+     "day": 42,
+     "key": "flight_seat_preference",
+     "value": "靠过道",
+     "statement": "用户最近更喜欢靠过道的座位"
+    },
+    {
+     "day": 47,
+     "key": "favourite_colour",
+     "value": "米白色",
+     "statement": "用户一直很喜欢米白色。"
+    },
+    {
+     "day": 78,
+     "key": "hotel_budget",
+     "value": "800元左右",
+     "statement": "用户出差住酒店的预算一般控制在800元左右。"
+    }
+   ]
+  },
+  {
+   "id": "p19",
+   "facts": [
+    {
+     "day": 9,
+     "key": "location",
+     "value": "厦门",
+     "statement": "用户目前在厦门工作生活"
+    },
+    {
+     "day": 10,
+     "key": "allergy",
+     "value": "花粉",
+     "statement": "用户对花粉严重过敏"
+    },
+    {
+     "day": 19,
+     "key": "usual_drink",
+     "value": "燕麦拿铁",
+     "statement": "用户通常点燕麦拿铁"
+    },
+    {
+     "day": 21,
+     "key": "seat_preference",
+     "value": "靠过道",
+     "statement": "用户认为靠过道是最舒服的座位选择"
+    },
+    {
+     "day": 24,
+     "key": "allergy",
+     "value": "海鲜",
+     "statement": "用户真正过敏的是海鲜"
+    },
+    {
+     "day": 26,
+     "key": "usual_drink",
+     "value": "拿铁",
+     "statement": "用户现在喝咖啡口味调整为拿铁"
+    },
+    {
+     "day": 27,
+     "key": "usual_drink",
+     "value": "不喝咖啡",
+     "statement": "用户现在不喝咖啡了。"
+    },
+    {
+     "day": 51,
+     "key": "workstation_floor",
+     "value": "18楼",
+     "statement": "用户的工位位于18楼"
+    },
+    {
+     "day": 57,
+     "key": "team",
+     "value": "搜索组",
+     "statement": "The user is currently part of the 搜索组."
+    }
+   ]
+  },
+  {
+   "id": "p20",
+   "facts": [
+    {
+     "day": 1,
+     "key": "preferred_programming_language",
+     "value": "Go",
+     "statement": "用户编程首选 Go。"
+    },
+    {
+     "day": 13,
+     "key": "primary_phone",
+     "value": "华为 Mate 60",
+     "statement": "用户的主力机是华为 Mate 60"
+    },
+    {
+     "day": 19,
+     "key": "flight_seat_preference",
+     "value": "靠过道 seat",
+     "statement": "The user personally prefers sitting in a 靠过道 seat when flying."
+    },
+    {
+     "day": 24,
+     "key": "line_manager",
+     "value": "周婷",
+     "statement": "用户的直线经理是周婷"
+    },
+    {
+     "day": 52,
+     "key": "accommodation_budget_cap",
+     "value": "2000元",
+     "statement": "用户每晚住宿上限是2000元"
+    },
+    {
+     "day": 58,
+     "key": "accommodation_budget_cap",
+     "value": "1200元 per night",
+     "statement": "用户已将住宿预算上限调整为每晚1200元。"
+    },
+    {
+     "day": 62,
+     "key": "current_location",
+     "value": "厦门",
+     "statement": "用户目前在厦门工作生活。"
+    },
+    {
+     "day": 83,
+     "key": "preferred_programming_language",
+     "value": "TypeScript",
+     "statement": "用户现在改学 TypeScript。"
+    },
+    {
+     "day": 86,
+     "key": "preferred_programming_language",
+     "value": "Python",
+     "statement": "用户现在主要写 Python。"
+    }
+   ]
+  },
+  {
+   "id": "p21",
+   "facts": [
+    {
+     "day": 4,
+     "key": "coffee_order_preference",
+     "value": "燕麦拿铁",
+     "statement": "用户以后订咖啡要按燕麦拿铁来。"
+    },
+    {
+     "day": 8,
+     "key": "preferred_meeting_time",
+     "value": "下午三点",
+     "statement": "用户认为下午三点是最理想的会议时段。"
+    },
+    {
+     "day": 11,
+     "key": "preferred_meeting_time",
+     "value": "傍晚六点",
+     "statement": "The user has switched their meeting preference to 傍晚六点."
+    },
+    {
+     "day": 19,
+     "key": "hotel_budget",
+     "value": "500元左右",
+     "statement": "用户出差住酒店的预算一般控制在500元左右。"
+    },
+    {
+     "day": 20,
+     "key": "coffee_order_preference",
+     "value": "不喝咖啡",
+     "statement": "用户现在不喝咖啡"
+    },
+    {
+     "day": 34,
+     "key": "preferred_hotel_chain",
+     "value": "全季",
+     "statement": "用户偏好的酒店连锁是全季。"
+    },
+    {
+     "day": 40,
+     "key": "hobby",
+     "value": "摄影",
+     "statement": "用户的爱好是摄影"
+    },
+    {
+     "day": 40,
+     "key": "weekend_habit",
+     "value": "练摄影",
+     "statement": "用户周末基本都在练摄影"
+    },
+    {
+     "day": 44,
+     "key": "hobby",
+     "value": "围棋",
+     "statement": "用户现在真正的爱好是围棋"
+    },
+    {
+     "day": 55,
+     "key": "hobby",
+     "value": "攀岩",
+     "statement": "用户最近把爱好换成攀岩了"
+    },
+    {
+     "day": 62,
+     "key": "preferred_hotel_chain",
+     "value": "希尔顿",
+     "statement": "用户现在偏好的酒店连锁是希尔顿"
+    },
+    {
+     "day": 72,
+     "key": "allergy",
+     "value": "花生",
+     "statement": "用户对花生反应很大，需要避开花生"
+    },
+    {
+     "day": 85,
+     "key": "preferred_meeting_time",
+     "value": "早上八点半",
+     "statement": "用户现在偏好的会议时间是早上八点半"
+    }
+   ]
+  },
+  {
+   "id": "p22",
+   "facts": [
+    {
+     "day": 4,
+     "key": "diet",
+     "value": "低碳水",
+     "statement": "用户的饮食习惯是低碳水。"
+    },
+    {
+     "day": 5,
+     "key": "membership_group",
+     "value": "搜索组",
+     "statement": "用户是搜索组的成员"
+    },
+    {
+     "day": 5,
+     "key": "group_association_preference",
+     "value": "优先关联到我",
+     "statement": "用户希望以后关于搜索组的事项优先关联到自己"
+    },
+    {
+     "day": 8,
+     "key": "preferred_meeting_time",
+     "value": "傍晚六点",
+     "statement": "用户希望未来会议尽量安排在傍晚六点"
+    },
+    {
+     "day": 17,
+     "key": "line_manager",
+     "value": "陈浩",
+     "statement": "用户直接向陈浩汇报，陈浩是其直线经理。"
+    },
+    {
+     "day": 21,
+     "key": "line_manager",
+     "value": "周婷",
+     "statement": "用户的直属经理最近换成周婷了。"
+    },
+    {
+     "day": 22,
+     "key": "city_of_residence",
+     "value": "成都",
+     "statement": "The user's city of residence is 成都."
+    },
+    {
+     "day": 28,
+     "key": "preferred_communication_language",
+     "value": "德语",
+     "statement": "用户的首选沟通语言是德语"
+    },
+    {
+     "day": 32,
+     "key": "preferred_communication_language",
+     "value": "英语",
+     "statement": "用户现在的常用语言改成了英语"
+    },
+    {
+     "day": 33,
+     "key": "preferred_communication_language",
+     "value": "中文",
+     "statement": "The user now uses Chinese for daily tasks."
+    },
+    {
+     "day": 34,
+     "key": "diet",
+     "value": "无麸质",
+     "statement": "用户现在坚持无麸质饮食。"
+    },
+    {
+     "day": 40,
+     "key": "city_of_residence",
+     "value": "西安",
+     "statement": "The user now lives in 西安."
+    },
+    {
+     "day": 64,
+     "key": "preferred_meeting_time",
+     "value": "早上八点半",
+     "statement": "用户之前说的会议时间不对，现在改成早上八点半。"
+    }
+   ]
+  },
+  {
+   "id": "p23",
+   "facts": [
+    {
+     "day": 1,
+     "key": "work_language",
+     "value": "日语",
+     "statement": "用户习惯用日语处理工作邮件和文档。"
+    },
+    {
+     "day": 3,
+     "key": "work_floor",
+     "value": "7楼",
+     "statement": "用户平时在7楼办公。"
+    },
+    {
+     "day": 3,
+     "key": "preferred_programming_language",
+     "value": "Rust",
+     "statement": "用户首选的编程语言是 Rust。"
+    },
+    {
+     "day": 16,
+     "key": "seat_preference",
+     "value": "靠过道",
+     "statement": "用户订票时偏好靠过道的座位。"
+    },
+    {
+     "day": 32,
+     "key": "seat_preference",
+     "value": "紧急出口",
+     "statement": "The user now prefers 紧急出口 seats."
+    },
+    {
+     "day": 33,
+     "key": "coffee_habit",
+     "value": "燕麦拿铁",
+     "statement": "用户的咖啡习惯是燕麦拿铁"
+    },
+    {
+     "day": 34,
+     "key": "work_language",
+     "value": "中文",
+     "statement": "用户现在的常用语言是中文。"
+    },
+    {
+     "day": 37,
+     "key": "work_language",
+     "value": "英语",
+     "statement": "用户最近把主要工作语言换成英语了。"
+    },
+    {
+     "day": 53,
+     "key": "work_floor",
+     "value": "3楼",
+     "statement": "用户现在在3楼"
+    },
+    {
+     "day": 53,
+     "key": "allergy",
+     "value": "花生",
+     "statement": "用户对花生过敏"
+    },
+    {
+     "day": 66,
+     "key": "allergy",
+     "value": "花粉",
+     "statement": "用户真正过敏的是花粉"
+    },
+    {
+     "day": 68,
+     "key": "preferred_programming_language",
+     "value": "TypeScript",
+     "statement": "用户最近把主力语言换成了 TypeScript。"
+    }
+   ]
+  },
+  {
+   "id": "p24",
+   "facts": [
+    {
+     "day": 17,
+     "key": "commuting_method",
+     "value": "公交车",
+     "statement": "The user's daily commuting method is 公交车."
+    },
+    {
+     "day": 17,
+     "key": "business_trip_hotel_budget",
+     "value": "1200元左右",
+     "statement": "用户出差住酒店的预算一般控制在1200元左右。"
+    },
+    {
+     "day": 28,
+     "key": "main_phone",
+     "value": "小米 14",
+     "statement": "用户的主力机是小米 14"
+    },
+    {
+     "day": 34,
+     "key": "business_trip_hotel_budget",
+     "value": "500元 per night",
+     "statement": "用户已将住宿限额调整为每晚500元。"
+    },
+    {
+     "day": 37,
+     "key": "office_floor",
+     "value": "12楼",
+     "statement": "用户的办公室位于12楼"
+    },
+    {
+     "day": 52,
+     "key": "office_floor",
+     "value": "7楼",
+     "statement": "用户现在改到7楼。"
+    },
+    {
+     "day": 53,
+     "key": "allergy",
+     "value": "海鲜",
+     "statement": "The user's correct allergy is 海鲜."
+    },
+    {
+     "day": 55,
+     "key": "commuting_method",
+     "value": "地铁",
+     "statement": "用户现在改成地铁通勤。"
+    },
+    {
+     "day": 70,
+     "key": "favourite_colour",
+     "value": "米白色",
+     "statement": "The user has always been a big fan of 米白色."
+    },
+    {
+     "day": 70,
+     "key": "business_trip_hotel_budget",
+     "value": "2000元",
+     "statement": "用户每晚住店预算现在是2000元"
+    },
+    {
+     "day": 77,
+     "key": "main_phone",
+     "value": "Pixel 8",
+     "statement": "用户现在使用的手机是 Pixel 8"
+    },
+    {
+     "day": 79,
+     "key": "main_phone",
+     "value": "iPhone 15",
+     "statement": "The user recently switched to an iPhone 15."
+    }
+   ]
+  },
+  {
+   "id": "p25",
+   "facts": [
+    {
+     "day": 2,
+     "key": "flight_seat_preference",
+     "value": "前排 seat",
+     "statement": "The user prefers sitting in a 前排 seat when flying."
+    },
+    {
+     "day": 23,
+     "key": "hobby",
+     "value": "摄影",
+     "statement": "用户业余时间都花在摄影上"
+    },
+    {
+     "day": 25,
+     "key": "meeting_minutes_recipients",
+     "value": "参会者",
+     "statement": "用户希望会议结束后发送会议纪要给参会者。"
+    },
+    {
+     "day": 26,
+     "key": "allergy",
+     "value": "海鲜",
+     "statement": "用户对海鲜过敏"
+    },
+    {
+     "day": 31,
+     "key": "allergy",
+     "value": "花粉",
+     "statement": "用户确认过敏源是花粉"
+    },
+    {
+     "day": 39,
+     "key": "smartphone_model",
+     "value": "小米 14",
+     "statement": "The user's current smartphone is 小米 14."
+    },
+    {
+     "day": 54,
+     "key": "report_format",
+     "value": "Markdown",
+     "statement": "用户要求以后所有汇报材料统一保存为 Markdown。"
+    },
+    {
+     "day": 76,
+     "key": "operating_system",
+     "value": "Windows",
+     "statement": "The user uses Windows for daily work."
+    },
+    {
+     "day": 78,
+     "key": "allergy",
+     "value": "芒果",
+     "statement": "The user's allergy is to 芒果."
+    }
+   ]
+  }
+ ]
+}

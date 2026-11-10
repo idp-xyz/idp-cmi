@@ -10,10 +10,12 @@ package eval
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +39,36 @@ type memFact struct {
 	Content    string `json:"content"`
 }
 
+// extractedFile is what idp-host's memfacts evaluation wrote: the facts its Extractor drew from each persona's user
+// messages, in order (go test ./internal/memfacts -run TestExtractOnTheMemoryDataset in idp-host).
+type extractedFile struct {
+	Model    string `json:"model"`
+	Personas []struct {
+		ID    string `json:"id"`
+		Facts []struct {
+			Day                   int `json:"day"`
+			Key, Value, Statement string
+		} `json:"facts"`
+	} `json:"personas"`
+}
+
+// mentions says whether text states value: an ASCII value must stand as a whole word (so "Go" is not "Google").
+func mentions(text, value string) bool {
+	if value == "" {
+		return false
+	}
+	ascii := true
+	for _, r := range value {
+		if r > 127 {
+			ascii = false
+		}
+	}
+	if !ascii {
+		return strings.Contains(text, value)
+	}
+	return regexp.MustCompile(`(?i)(^|[^A-Za-z0-9])` + regexp.QuoteMeta(value) + `([^A-Za-z0-9]|$)`).MatchString(text)
+}
+
 type memoryDataset struct {
 	Version  string `json:"version"`
 	Today    int    `json:"today"`
@@ -52,6 +84,7 @@ type memoryDataset struct {
 			ID, Kind, Lang, Slot, Text, Value string
 			CurrentRaw, CurrentFact           string
 			StaleRaw, StaleFacts              []string
+			StaleValues                       []string `json:"staleValues"`
 		} `json:"questions"`
 	} `json:"personas"`
 }
@@ -80,6 +113,17 @@ func TestMemoryDialogues(t *testing.T) {
 	if err := json.Unmarshal(raw, &ds); err != nil {
 		t.Fatal(err)
 	}
+	var ex *extractedFile
+	if p := os.Getenv("IDP_EVAL_EXTRACTED"); p != "" {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ex = &extractedFile{}
+		if err := json.Unmarshal(b, ex); err != nil {
+			t.Fatal(err)
+		}
+	}
 	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
 	at := func(day int) time.Time { return now.Add(-time.Duration(ds.Today-day) * 24 * time.Hour) }
 	type config struct {
@@ -103,6 +147,10 @@ func TestMemoryDialogues(t *testing.T) {
 		configs = append(configs, config{name: fmt.Sprintf("hybrid-%s-f%.2f-b%.2f", name, floor, blend), emb: asym, query: asym.Queries(), floor: floor, blend: blend})
 	}
 	for _, cfg := range configs {
+		if ex != nil { // a run that includes the extracted representation is a different result file
+			cfg.name += "-ex-" + regexp.MustCompile(`[^A-Za-z0-9.]+`).ReplaceAllString(ex.Model, "-")
+			cfg.committed = false
+		}
 		store, tenant, owner := scratch(t)
 		store.Now = func() time.Time { return now }
 		ctx := context.Background()
@@ -134,6 +182,21 @@ func TestMemoryDialogues(t *testing.T) {
 				}
 			}
 		}
+		if ex != nil {
+			for _, p := range ex.Personas {
+				for _, f := range p.Facts { // the extractor's own order: oldest first, as the HOST would have written them
+					rec := cmi.MemoryRecord{Scope: cmi.Scope{Kind: cmi.ScopeSubject, ID: p.ID + "-extracted"}, Content: f.Statement, Sensitivity: cmi.SensitivityInternal,
+						Provenance: cmi.Provenance{Source: "idp-host", Ref: fmt.Sprintf("%s-x-%s-%d", p.ID, f.Key, f.Day), ObservedAt: at(f.Day), RecordedBy: "eval"}, Validity: cmi.Validity{ValidFrom: at(f.Day)}}
+					if _, err := store.UpsertFact(ctx, tenant, rec, f.Key, f.Value, "eval", cmi.SensitivityRestricted); err != nil {
+						var se *postgres.Error
+						if errors.As(err, &se) && se.Code == "CONFLICT" { // a statement older than the current value: the HOST gets 409 too
+							continue
+						}
+						t.Fatal(p.ID, f.Key, err)
+					}
+				}
+			}
+		}
 		// pin created_at to the evaluation's clock (freshness would otherwise follow the wall clock)
 		if cfg.emb != nil {
 			store.Embedder = cfg.emb
@@ -149,18 +212,25 @@ func TestMemoryDialogues(t *testing.T) {
 		}
 		resolver := &cmictx.Resolver{Store: store, Embedder: cfg.query, Now: func() time.Time { return now }, SemanticFloor: cfg.floor, Blend: cfg.blend}
 		type acc struct{ n, top1, in5, stale, empty int }
-		sums := map[string]map[string]*acc{"raw": {}, "facts": {}}
+		reps := []string{"raw", "facts"}
+		if ex != nil {
+			reps = append(reps, "extracted")
+		}
+		sums := map[string]map[string]*acc{}
+		for _, rep := range reps {
+			sums[rep] = map[string]*acc{}
+		}
 		for _, p := range ds.Personas {
 			for _, q := range p.Questions {
-				for _, rep := range []string{"raw", "facts"} {
+				for _, rep := range reps {
 					v := postgres.Visibility{Subject: p.ID + "-" + rep, Roles: []string{authorization.RoleReader}, Ceiling: cmi.SensitivityInternal}
 					pkg, _, err := resolver.Resolve(ctx, tenant, v, cmictx.Request{Query: q.Text, Purpose: "evaluation", Budget: &cmi.Budget{MaxItems: 5, MaxTokens: 8000}})
 					if err != nil {
 						t.Fatal(q.ID, err)
 					}
-					var got []string
+					var got []string // the text of the first five items
 					for _, it := range pkg.Items {
-						got = append(got, it.Ref)
+						got = append(got, it.Excerpt)
 					}
 					a := sums[rep][q.Kind]
 					if a == nil {
@@ -174,29 +244,25 @@ func TestMemoryDialogues(t *testing.T) {
 						}
 						continue
 					}
-					current, stale := q.CurrentRaw, q.StaleRaw
-					if rep == "facts" {
-						current, stale = q.CurrentFact, q.StaleFacts
-					}
-					if len(got) > 0 && got[0] == current {
+					if len(got) > 0 && mentions(got[0], q.Value) {
 						a.top1++
 					}
-					for _, ref := range got {
-						if ref == current {
+					for _, text := range got {
+						if mentions(text, q.Value) {
 							a.in5++
 							break
 						}
 					}
-					for _, ref := range got {
-						for _, s := range stale {
-							if ref == s {
+				stale:
+					for _, text := range got {
+						for _, sv := range q.StaleValues {
+							if mentions(text, sv) && !mentions(text, q.Value) {
 								a.stale++
-								goto counted
+								break stale
 							}
 						}
 					}
-				counted:
-					t.Logf("%s %s %s %q -> %v (current %s)", cfg.name, rep, q.ID, q.Text, got, current)
+					t.Logf("%s %s %s %q -> %d items, current %q", cfg.name, rep, q.ID, q.Text, len(got), q.Value)
 				}
 			}
 		}
@@ -211,7 +277,7 @@ func TestMemoryDialogues(t *testing.T) {
 		_ = owner
 		out, _ := json.MarshalIndent(res, "", "  ")
 		out = append(out, '\n')
-		for _, rep := range []string{"raw", "facts"} {
+		for _, rep := range reps {
 			for _, kind := range []string{"single", "updated", "unknown"} {
 				s := res.Results[rep][kind]
 				t.Logf("%s | %-5s | %-7s n=%d current-first %.3f in-top5 %.3f stale-in-top5 %.3f nothing %.3f", cfg.name, rep, kind, s.Questions, s.CurrentTop1, s.CurrentIn5, s.StaleIn5, s.Empty)
@@ -249,9 +315,12 @@ func memoryReport(version string) string {
 			continue
 		}
 		fmt.Fprintf(&sb, "## %s\n\n| 存法 | 问题类型 | 条数 | 当前值第一 | 当前值在前 5 | 前 5 含过期值 | 什么都不返回 |\n|---|---|---|---|---|---|---|\n", r.Configuration)
-		for _, rep := range []string{"raw", "facts"} {
+		for _, rep := range []string{"raw", "facts", "extracted"} {
 			for _, kind := range []string{"single", "updated", "unknown"} {
-				s := r.Results[rep][kind]
+				s, ok := r.Results[rep][kind]
+				if !ok {
+					continue
+				}
 				if kind == "unknown" {
 					fmt.Fprintf(&sb, "| %s | %s | %d | — | — | — | %.2f |\n", rep, kind, s.Questions, s.Empty)
 				} else {

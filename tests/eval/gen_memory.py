@@ -106,9 +106,11 @@ def main():
                 pool = cache["slots"][key]["statements" if i == 0 else "updates"]
                 turns.append((day, rng.choice(pool).replace("{value}", val), rng.choice(ASSISTANT_ACK), ("stmt", key, i, val)))
         # confounders: someone else's attribute, on days around the real ones
+        conf_value = {}
         for key, zh, en, values in rng.sample(chosen, 3):
             other = rng.choice([v for v in values if v not in [x[1] for x in plan[key]]] or values)
             turns.append((rng.randrange(1, 95), rng.choice(cache["slots"][key]["colleague"]).replace("{value}", other), rng.choice(ASSISTANT_GENERIC), ("confounder", key, 0, other)))
+            conf_value[key] = other
         # filler up to TURNS
         while len(turns) < TURNS:
             turns.append((rng.randrange(1, 95), rng.choice(filler), rng.choice(ASSISTANT_GENERIC), ("filler", None, 0, None)))
@@ -136,7 +138,8 @@ def main():
                 questions.append({"id": f"{pid}-q-{key}-{qi}", "kind": kind, "lang": lang, "slot": key, "text": q, "value": hist[-1][1],
                                   "currentRaw": ref_of[("stmt", key, len(hist) - 1)], "currentFact": f"{pid}-f-{key}-{len(hist)-1}",
                                   "staleRaw": [ref_of[("stmt", key, i)] for i in range(len(hist) - 1)] + ([ref_of[("confounder", key, 0)]] if ("confounder", key, 0) in ref_of else []),
-                                  "staleFacts": [f"{pid}-f-{key}-{i}" for i in range(len(hist) - 1)]})
+                                  "staleFacts": [f"{pid}-f-{key}-{i}" for i in range(len(hist) - 1)],
+                                  "staleValues": [v for _, v in hist[:-1]] + ([conf_value[key]] if key in conf_value else [])})
         # questions about things never said: the right answer is nothing
         said = {k for k, *_ in chosen}
         for key, zh, en, values in rng.sample([s for s in slots if s[0] not in said], 2):

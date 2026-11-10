@@ -42,8 +42,8 @@
       "updated": {
         "questions": 170,
         "currentFirst": 0.1294,
-        "currentInTop5": 0.2118,
-        "staleInTop5": 0.3176,
+        "currentInTop5": 0.2059,
+        "staleInTop5": 0.3118,
         "returnedNothing": 0
       }
     }
