@@ -3,13 +3,24 @@ PG_IMAGE ?= public.ecr.aws/docker/library/postgres:17-alpine
 PG_NAME  ?= idp-cmi-test-pg
 PGVECTOR_IMAGE ?= pgvector/pgvector:0.8.7-pg17
 
-.PHONY: build test vet test-integration test-integration-pgvector test-eval e2e test-live pg-up pg-down
+.PHONY: build test vet test-integration test-integration-pgvector test-eval test-longmemeval e2e test-live pg-up pg-down
 
 # Retrieval evaluation on the labelled set (ADR-0001 D27); UPDATE=1 regenerates docs/eval
 test-eval: pg-up
 	@PORT=$$(docker port $(PG_NAME) 5432/tcp | head -1 | sed 's/.*://'); \
 	IDP_TEST_PG_OWNER_URL="postgres://postgres:test@127.0.0.1:$$PORT/postgres?sslmode=disable" \
 	go test -count=1 -v -timeout 10m ./tests/eval/ $(if $(UPDATE),-args -update,) ; status=$$?; \
+	$(MAKE) --no-print-directory pg-down; exit $$status
+
+# LongMemEval, the public long-term memory benchmark (docs/eval/LONGMEMEVAL.md): retrieval over each question's own history.
+# The data is fetched once by tests/eval/longmemeval.sh fetch; LIMIT=20 takes the first 20 questions of each type;
+# IDP_EVAL_EMBEDDING_* adds the hybrid configuration; UPDATE=1 writes docs/eval/longmemeval-*.json
+test-longmemeval: pg-up
+	@DATA=$$(tests/eval/longmemeval.sh path) || { $(MAKE) --no-print-directory pg-down; exit 1; }; \
+	PORT=$$(docker port $(PG_NAME) 5432/tcp | head -1 | sed 's/.*://'); \
+	IDP_TEST_PG_OWNER_URL="postgres://postgres:test@127.0.0.1:$$PORT/postgres?sslmode=disable" \
+	IDP_EVAL_LONGMEMEVAL="$$DATA" IDP_EVAL_LONGMEMEVAL_LIMIT="$(LIMIT)" \
+	go test -count=1 -v -timeout 6h -run TestLongMemEval ./tests/eval/ $(if $(UPDATE),-args -update,) ; status=$$?; \
 	$(MAKE) --no-print-directory pg-down; exit $$status
 
 # Live model gate (ADR-0001 D15): the consolidation model against a real OpenAI-compatible endpoint, e.g.

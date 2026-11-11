@@ -4,6 +4,7 @@
 |---|---|
 | `dataset.json`, `eval_test.go` | the governance gate (ADR-0001 D27): forbidden items, traceability; deterministic fake embedder |
 | `dataset_large.json`, `large_test.go` | the larger labelled set for choosing and calibrating embedding models (D37, results in `docs/eval/LARGE.md`) |
+| `longmemeval_test.go`, `longmemeval.sh` | LongMemEval, the public long-term memory benchmark: retrieval over each question's own history (results in `docs/eval/LONGMEMEVAL.md`); the data is fetched, not committed |
 | `embedding-server.sh` | a local embedding endpoint (text-embeddings-inference) on CPU or GPU |
 
 Measure a model:
@@ -23,3 +24,19 @@ Measure a model:
 CPU and GPU give the same metrics (the same model; fp16 changes cosines by about 1e-3); only latency differs, and
 latency is logged, never committed. Switching is `start cpu` / `start gpu` on the same port; the GPU is refused when
 less than `GPU_MIN_FREE_MIB` (default 2500) is free.
+
+## LongMemEval
+
+A public benchmark (Wu et al., ICLR 2025, MIT) next to our own sets, so the numbers can be compared with what others
+publish: 500 questions, each over about 50 chat sessions of its own. The test stores a question's history as idp-host
+would (one episodic record per round, in the question's subject scope, at the session's date), resolves the question
+at its date and measures retrieval at the session level; see the comment at the top of `longmemeval_test.go`.
+
+    HF_ENDPOINT=https://hf-mirror.com tests/eval/longmemeval.sh fetch   # once: 277 MB into ~/.cache/idp-eval, SHA-256 pinned
+    make test-longmemeval LIMIT=5                # the first 5 questions of each type, lexical: half a minute
+    make test-longmemeval UPDATE=1               # all 470 (30 abstention questions are left out): some 125,000 records
+    IDP_EVAL_EMBEDDING_URL=... IDP_EVAL_EMBEDDING_MODEL=... IDP_EVAL_EMBEDDING_NAME=... IDP_EVAL_QUERY_PREFIX=... \
+      make test-longmemeval UPDATE=1             # adds the hybrid configuration (floor 0.40, blend 0.05; IDP_EVAL_MEMORY_FLOOR)
+
+It is not part of `make test-eval` or of CI: the data is not in the repository and the full hybrid run embeds some
+50 million tokens (a GPU). A limited run writes its own files (`longmemeval-<configuration>-n<LIMIT>.json`).

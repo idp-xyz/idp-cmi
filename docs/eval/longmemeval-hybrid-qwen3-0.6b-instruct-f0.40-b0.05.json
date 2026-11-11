@@ -1,0 +1,66 @@
+{
+  "configuration": "hybrid-qwen3-0.6b-instruct-f0.40-b0.05",
+  "dataset": "longmemeval_s_cleaned.json",
+  "records": 116699,
+  "abstentionQuestionsLeftOut": 30,
+  "results": {
+    "all": {
+      "questions": 470,
+      "recallAny@5": 0.8511,
+      "recallAll@5": 0.6213,
+      "recallAny@10": 0.8723,
+      "recallAll@10": 0.6723,
+      "evidenceRound@10": 0.7787
+    },
+    "knowledge-update": {
+      "questions": 72,
+      "recallAny@5": 0.9861,
+      "recallAll@5": 0.7639,
+      "recallAny@10": 1,
+      "recallAll@10": 0.8472,
+      "evidenceRound@10": 0.9722,
+      "updatedQuestions": 72,
+      "latestEvidenceFirst": 0.6944
+    },
+    "multi-session": {
+      "questions": 121,
+      "recallAny@5": 0.8512,
+      "recallAll@5": 0.4463,
+      "recallAny@10": 0.876,
+      "recallAll@10": 0.5702,
+      "evidenceRound@10": 0.7521
+    },
+    "single-session-assistant": {
+      "questions": 56,
+      "recallAny@5": 1,
+      "recallAll@5": 1,
+      "recallAny@10": 1,
+      "recallAll@10": 1,
+      "evidenceRound@10": 0.9821
+    },
+    "single-session-preference": {
+      "questions": 30,
+      "recallAny@5": 0.8,
+      "recallAll@5": 0.8,
+      "recallAny@10": 0.8667,
+      "recallAll@10": 0.8667,
+      "evidenceRound@10": 0.7
+    },
+    "single-session-user": {
+      "questions": 64,
+      "recallAny@5": 0.75,
+      "recallAll@5": 0.75,
+      "recallAny@10": 0.75,
+      "recallAll@10": 0.75,
+      "evidenceRound@10": 0.7344
+    },
+    "temporal-reasoning": {
+      "questions": 127,
+      "recallAny@5": 0.7717,
+      "recallAll@5": 0.4331,
+      "recallAny@10": 0.8031,
+      "recallAll@10": 0.4409,
+      "evidenceRound@10": 0.6457
+    }
+  }
+}
