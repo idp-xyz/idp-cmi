@@ -740,8 +740,12 @@ func TestCMIEndToEnd(t *testing.T) {
 			t.Fatalf("%d evaluations", n)
 		}
 		nonce := ev["checks"].(map[string]any)["nonce"].(string)
-		if left := items(e.must(200, "POST", "/v1/context/resolve", "alice", map[string]any{"query": nonce, "kinds": []string{"memory"}})); len(left) != 0 {
-			t.Fatalf("probes survived the run: %v", left)
+		// only the probes (ref "eval:<nonce>") count: the query is a random nonce, and now and then it also resembles another record of
+		// this test enough to be returned ("alice likes green", score 0.58, failed the build once)
+		for _, it := range items(e.must(200, "POST", "/v1/context/resolve", "alice", map[string]any{"query": nonce, "kinds": []string{"memory"}})) {
+			if ref, _ := it["ref"].(string); strings.HasPrefix(ref, "eval:") {
+				t.Fatalf("a probe survived the run: %v", it)
+			}
 		}
 		if n := len(e.must(200, "GET", "/api/v1/evaluations", "erin", nil)["evaluations"].([]any)); n != 0 {
 			t.Fatalf("evaluations leaked: %d", n)
