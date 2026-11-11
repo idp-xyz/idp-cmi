@@ -140,7 +140,7 @@ func TestMemoryDialogues(t *testing.T) {
 		dims, _ := strconv.Atoi(os.Getenv("IDP_EVAL_EMBEDDING_DIMS"))
 		base := &embedding.OpenAI{BaseURL: u, ModelName: os.Getenv("IDP_EVAL_EMBEDDING_MODEL"), APIKey: os.Getenv("IDP_EVAL_EMBEDDING_KEY"), Dimensions: dims, Timeout: 120 * time.Second, HTTP: &http.Client{Transport: &http.Transport{Proxy: nil}}}
 		asym := embedding.Asymmetric{Base: base, QueryPrefix: strings.ReplaceAll(os.Getenv("IDP_EVAL_QUERY_PREFIX"), `\n`, "\n"), DocumentPrefix: strings.ReplaceAll(os.Getenv("IDP_EVAL_DOC_PREFIX"), `\n`, "\n")}
-		floor, blend := 0.40, 0.05
+		floor, blend := 0.20, 0.05 // embedding.memoryFloor: memory has a floor of its own (docs/eval/LONGMEMEVAL.md)
 		if v, err := strconv.ParseFloat(os.Getenv("IDP_EVAL_MEMORY_FLOOR"), 64); err == nil {
 			floor = v
 		}
@@ -210,7 +210,7 @@ func TestMemoryDialogues(t *testing.T) {
 				}
 			}
 		}
-		resolver := &cmictx.Resolver{Store: store, Embedder: cfg.query, Now: func() time.Time { return now }, SemanticFloor: cfg.floor, Blend: cfg.blend}
+		resolver := &cmictx.Resolver{Store: store, Embedder: cfg.query, Now: func() time.Time { return now }, SemanticFloor: 0.40, MemoryFloor: cfg.floor, Blend: cfg.blend}
 		type acc struct{ n, top1, in5, stale, empty int }
 		reps := []string{"raw", "facts"}
 		if ex != nil {

@@ -78,6 +78,7 @@ type Embedding struct {
 	QueryPrefix    string  `yaml:"queryPrefix"`    // instruction in front of every query, e.g. "Instruct: Given a user question, retrieve the passages that answer it\nQuery: "
 	DocumentPrefix string  `yaml:"documentPrefix"` // in front of every stored text (E5 models: "passage: "); changing it re-embeds everything
 	Floor          float64 `yaml:"floor"`          // cosine below which a candidate is dropped (0 = the built-in 0.35)
+	MemoryFloor    float64 `yaml:"memoryFloor"`    // the floor for memory records (0 = floor): an exchange is longer than a chunk and its cosine to a question lower (docs/eval/LONGMEMEVAL.md)
 	LexicalBlend   float64 `yaml:"lexicalBlend"`   // > 0: semantic-led relevance, cosine + blend x normalized lexical score (0 = the legacy max of the two)
 }
 
@@ -138,8 +139,8 @@ func Load(path string) (*File, error) {
 		if e.APIKey, err = secret(e.APIKey, e.APIKeyFile); err != nil {
 			return nil, fmt.Errorf("embedding: %w", err)
 		}
-		if e.Floor < 0 || e.Floor >= 1 || e.LexicalBlend < 0 || e.LexicalBlend > 1 {
-			return nil, errors.New("embedding: floor must be within [0, 1) and lexicalBlend within [0, 1]")
+		if e.Floor < 0 || e.Floor >= 1 || e.MemoryFloor < 0 || e.MemoryFloor >= 1 || e.LexicalBlend < 0 || e.LexicalBlend > 1 {
+			return nil, errors.New("embedding: floor and memoryFloor must be within [0, 1) and lexicalBlend within [0, 1]")
 		}
 		if e.Backfill == 0 {
 			e.Backfill = 30 * time.Second

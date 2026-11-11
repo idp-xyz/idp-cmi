@@ -36,7 +36,9 @@ at its date and measures retrieval at the session level; see the comment at the 
     make test-longmemeval LIMIT=5                # the first 5 questions of each type, lexical: half a minute
     make test-longmemeval UPDATE=1               # all 470 (30 abstention questions are left out): some 125,000 records
     IDP_EVAL_EMBEDDING_URL=... IDP_EVAL_EMBEDDING_MODEL=... IDP_EVAL_EMBEDDING_NAME=... IDP_EVAL_QUERY_PREFIX=... \
-      make test-longmemeval UPDATE=1             # adds the hybrid configuration (floor 0.40, blend 0.05; IDP_EVAL_MEMORY_FLOOR)
+      make test-longmemeval UPDATE=1             # adds the hybrid configuration (memoryFloor 0.20, blend 0.05; IDP_EVAL_MEMORY_FLOOR, or
+                                                 # IDP_EVAL_VARIANTS='0.40:0.05,0.20:0.05' for several; IDP_EVAL_LONGMEMEVAL_TRACE=file
+                                                 # writes the raw scores of the answer rounds per question)
 
 It is not part of `make test-eval` or of CI: the data is not in the repository and the full hybrid run embeds some
 50 million tokens (a GPU). A limited run writes its own files (`longmemeval-<configuration>-n<LIMIT>.json`).

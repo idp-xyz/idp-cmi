@@ -263,7 +263,7 @@ func serve(log *slog.Logger) error {
 	}
 	resolver := &cmictx.Resolver{Store: store, Embedder: embedder, Log: log}
 	if e := cfg.Embedding; e != nil {
-		resolver.SemanticFloor, resolver.Blend = e.Floor, e.LexicalBlend
+		resolver.SemanticFloor, resolver.MemoryFloor, resolver.Blend = e.Floor, e.MemoryFloor, e.LexicalBlend
 	}
 	if rr := cfg.Rerank; rr != nil { // ADR-0001 D39
 		tlsCfg, err := transport.ClientTLS(rr.CAFile, "", "")

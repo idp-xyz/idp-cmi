@@ -155,13 +155,40 @@ func TestLongMemEval(t *testing.T) {
 		dims, _ := strconv.Atoi(os.Getenv("IDP_EVAL_EMBEDDING_DIMS"))
 		base := &embedding.OpenAI{BaseURL: u, ModelName: os.Getenv("IDP_EVAL_EMBEDDING_MODEL"), APIKey: os.Getenv("IDP_EVAL_EMBEDDING_KEY"), Dimensions: dims, Timeout: 300 * time.Second, HTTP: &http.Client{Transport: &http.Transport{Proxy: nil}}}
 		asym := embedding.Asymmetric{Base: base, QueryPrefix: strings.ReplaceAll(os.Getenv("IDP_EVAL_QUERY_PREFIX"), `\n`, "\n"), DocumentPrefix: strings.ReplaceAll(os.Getenv("IDP_EVAL_DOC_PREFIX"), `\n`, "\n")}
-		floor, blend := 0.40, 0.05
-		if v, err := strconv.ParseFloat(os.Getenv("IDP_EVAL_MEMORY_FLOOR"), 64); err == nil {
-			floor = v
-		}
 		store.Embedder = asym
-		configs = append(configs, config{fmt.Sprintf("hybrid-%s-f%.2f-b%.2f", os.Getenv("IDP_EVAL_EMBEDDING_NAME"), floor, blend),
-			&cmictx.Resolver{Store: store, Embedder: asym.Queries(), Now: clock, SemanticFloor: floor, Blend: blend}})
+		variants := [][2]float64{{0.20, 0.05}} // embedding.memoryFloor and lexicalBlend of deploy/kubernetes/cmi.yaml
+		if v, err := strconv.ParseFloat(os.Getenv("IDP_EVAL_MEMORY_FLOOR"), 64); err == nil {
+			variants[0][0] = v
+		}
+		if spec := os.Getenv("IDP_EVAL_VARIANTS"); spec != "" { // "floor:blend,...": several settings on the one stored history
+			variants = nil
+			for _, p := range strings.Split(spec, ",") {
+				f, b, _ := strings.Cut(strings.TrimSpace(p), ":")
+				fl, _ := strconv.ParseFloat(f, 64)
+				bl, _ := strconv.ParseFloat(b, 64)
+				variants = append(variants, [2]float64{fl, bl})
+			}
+		}
+		for _, v := range variants {
+			configs = append(configs, config{fmt.Sprintf("hybrid-%s-f%.2f-b%.2f", os.Getenv("IDP_EVAL_EMBEDDING_NAME"), v[0], v[1]),
+				&cmictx.Resolver{Store: store, Embedder: asym.Queries(), Now: clock, SemanticFloor: 0.40, MemoryFloor: v[0], Blend: v[1]}})
+		}
+	}
+	// IDP_EVAL_LONGMEMEVAL_TRACE=file: a line per question and configuration with what came back and the raw scores of
+	// the rounds that hold the answer (why did a configuration miss?)
+	var trace *json.Encoder
+	if p := os.Getenv("IDP_EVAL_LONGMEMEVAL_TRACE"); p != "" {
+		tf, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tf.Close()
+		trace = json.NewEncoder(tf)
+	}
+	refOf := map[string]string{} // record id -> ref, of the question at hand
+	var raw []cmictx.CandidateScore
+	for _, cfg := range configs {
+		cfg.resolver.OnCandidates = func(_ string, c []cmictx.CandidateScore) { raw = c }
 	}
 
 	type acc struct{ n, any5, all5, any10, all10, round10, updated, latest int }
@@ -208,6 +235,7 @@ func TestLongMemEval(t *testing.T) {
 		}
 		sort.SliceStable(sessions, func(i, j int) bool { return sessions[i].at.Before(sessions[j].at) })
 		sessionOf, answerRound := map[string]session{}, map[string]bool{}
+		clear(refOf)
 		var latest time.Time // of the evidence sessions
 		dates := map[time.Time]bool{}
 		for _, s := range sessions {
@@ -223,9 +251,11 @@ func TestLongMemEval(t *testing.T) {
 				ref := fmt.Sprintf("%s/%d/%d", q.ID, s.i, r)
 				rec := cmi.MemoryRecord{Scope: cmi.Scope{Kind: cmi.ScopeSubject, ID: q.ID}, Kind: cmi.KindEpisodic, Content: text, Sensitivity: cmi.SensitivityInternal,
 					Provenance: cmi.Provenance{Source: "idp-host", Ref: ref, ObservedAt: s.at.Add(time.Duration(r) * time.Second), RecordedBy: "eval"}, Validity: cmi.Validity{ValidFrom: s.at}}
-				if _, err := store.CreateMemory(ctx, tenant, rec, "eval", cmi.SensitivityRestricted); err != nil {
+				made, err := store.CreateMemory(ctx, tenant, rec, "eval", cmi.SensitivityRestricted)
+				if err != nil {
 					t.Fatal(ref, err)
 				}
+				refOf[made.ID] = ref
 				sessionOf[ref], answerRound[ref] = s, evidence[r]
 				records++
 			}
@@ -266,6 +296,36 @@ func TestLongMemEval(t *testing.T) {
 				if first.IsZero() {
 					first = s.at
 				}
+			}
+			if trace != nil {
+				type score struct {
+					Ref               string
+					Lexical, Semantic float64
+					Returned          int // its place among the items, 0 = not returned
+				}
+				place := map[string]int{}
+				for i, it := range pkg.Items {
+					place[it.Ref] = i + 1
+				}
+				var answers []score
+				cand, best := 0, 0.0
+				for _, c := range raw {
+					cand++
+					if c.Semantic > best {
+						best = c.Semantic
+					}
+					if ref := refOf[c.ID]; answerRound[ref] {
+						answers = append(answers, score{ref, c.Lexical, c.Semantic, place[ref]})
+					}
+				}
+				nAnswer := 0
+				for _, is := range answerRound {
+					if is {
+						nAnswer++
+					}
+				}
+				_ = trace.Encode(map[string]any{"config": cfg.name, "question": q.ID, "type": q.Type, "text": q.Question, "items": len(pkg.Items), "omitted": pkg.Omitted,
+					"candidates": cand, "bestSemantic": best, "answerRounds": nAnswer, "answerCandidates": answers, "any10": len(found10) > 0})
 			}
 			for _, key := range []string{q.Type, "all"} {
 				a := sums[cfg.name][key]

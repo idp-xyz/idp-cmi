@@ -39,7 +39,7 @@ metadata:
 data:
   cmi.yaml: |
     # A self-hosted Qwen3-Embedding-0.6B (text-embeddings-inference, 1024 dimensions): restricted data never leaves the
-    # cluster (ADR-0001 D29). The three calibration lines below belong to THIS model: cosine scales differ between models,
+    # cluster (ADR-0001 D29). The calibration lines below belong to THIS model: cosine scales differ between models,
     # so another model needs its own, measured with tests/eval (ADR-0001 D37, docs/eval/LARGE.md and HELDOUT.md).
     embedding:
       baseUrl: https://embeddings.example.com/v1
@@ -48,6 +48,7 @@ data:
       caFile: /etc/idp/model-ca/ca.crt
       queryPrefix: "Instruct: Given a user question, retrieve the passages that answer it\nQuery: "
       floor: 0.40          # cosine below which a candidate is dropped; recall falls steeply above ~0.45 on both evaluation sets
+      memoryFloor: 0.20    # the same for memory records: an exchange is long and its cosine to a question lower (LongMemEval: recall of any evidence in 5 goes from 0.85 to 0.93)
       lexicalBlend: 0.05   # relevance = cosine + 0.05 x lexical score, so an exact identifier still lifts a candidate
     # Optional cross-encoder rerank (ADR-0001 D39), OFF by default: it trades 3-7 points of recall for refusing to answer when
     # nothing fits (bge-reranker-v2-m3, top 10, floor 0.01-0.05). Enable only where "better silent than wrong" holds.

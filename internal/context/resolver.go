@@ -102,6 +102,11 @@ type Resolver struct {
 	// vector-only candidate (or, with Blend > 0, any candidate that has a vector) is dropped. Cosine scales
 	// differ between embedding models, so this is calibrated per model on the labelled set (tests/eval).
 	SemanticFloor float64
+	// MemoryFloor, when positive, is the floor for memory records instead of SemanticFloor (knowledge chunks keep
+	// that one). A stored exchange is long and holds the fact asked about in passing, so its cosine to the question
+	// is lower than a chunk's: on LongMemEval 40% of the rounds that hold the answer are below the knowledge floor
+	// of 0.40 (docs/eval/LONGMEMEVAL.md).
+	MemoryFloor float64
 	// Blend > 0 switches the relevance from "the larger of lexical and semantic" to semantic-led: relevance is
 	// the cosine plus Blend times the lexical score normalized to the best lexical hit (so exact identifiers
 	// still lift a candidate), a candidate whose cosine is under the floor is dropped even if a word matched
@@ -347,8 +352,16 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 		floor = r.SemanticFloor
 	}
 	// candidates below the floor are noise
+	memoryFloor := floor
+	if r.MemoryFloor > 0 {
+		memoryFloor = r.MemoryFloor
+	}
 	kept := cands[:0]
 	for _, c := range cands {
+		floor := floor
+		if c.item.Kind == cmi.ItemMemory {
+			floor = memoryFloor
+		}
 		if r.Blend > 0 && len(q.Vector) > 0 {
 			if c.semantic != 0 && c.semantic < floor { // has a vector and is not close enough, whatever words matched
 				omitted.LowSimilarity++

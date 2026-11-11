@@ -4,6 +4,34 @@
 
 指标：当前值的记录是否排第一、是否在前 5、前 5 里是否混进了**过期的旧值或同事的属性**（越低越好）、问没说过的事时是否什么都不返回。
 
+## hybrid-qwen3-0.6b-instruct-f0.20-b0.05-ex-qwen3.8-flash-next-iq3-xxs-p2
+
+| 存法 | 问题类型 | 条数 | 当前值第一 | 当前值在前 5 | 前 5 含过期值 | 什么都不返回 |
+|---|---|---|---|---|---|---|
+| raw | single | 130 | 0.51 | 0.90 | 0.46 | — |
+| raw | updated | 170 | 0.45 | 0.92 | 0.91 | — |
+| raw | unknown | 50 | — | — | — | 0.00 |
+| facts | single | 130 | 0.93 | 1.00 | 0.00 | — |
+| facts | updated | 170 | 0.96 | 1.00 | 0.00 | — |
+| facts | unknown | 50 | — | — | — | 0.00 |
+| extracted | single | 130 | 0.73 | 0.95 | 0.03 | — |
+| extracted | updated | 170 | 0.80 | 0.94 | 0.07 | — |
+| extracted | unknown | 50 | — | — | — | 0.00 |
+
+## hybrid-qwen3-0.6b-instruct-f0.20-b0.05-ex-qwen3.8-flash-next-iq3-xxs
+
+| 存法 | 问题类型 | 条数 | 当前值第一 | 当前值在前 5 | 前 5 含过期值 | 什么都不返回 |
+|---|---|---|---|---|---|---|
+| raw | single | 130 | 0.51 | 0.90 | 0.46 | — |
+| raw | updated | 170 | 0.45 | 0.92 | 0.91 | — |
+| raw | unknown | 50 | — | — | — | 0.00 |
+| facts | single | 130 | 0.93 | 1.00 | 0.00 | — |
+| facts | updated | 170 | 0.96 | 1.00 | 0.00 | — |
+| facts | unknown | 50 | — | — | — | 0.00 |
+| extracted | single | 130 | 0.68 | 0.89 | 0.03 | — |
+| extracted | updated | 170 | 0.69 | 0.82 | 0.21 | — |
+| extracted | unknown | 50 | — | — | — | 0.00 |
+
 ## hybrid-qwen3-0.6b-instruct-f0.40-b0.05-ex-qwen3.8-flash-next-iq3-xxs-p2
 
 | 存法 | 问题类型 | 条数 | 当前值第一 | 当前值在前 5 | 前 5 含过期值 | 什么都不返回 |
