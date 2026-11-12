@@ -254,6 +254,12 @@ func (g *Ingester) fetch(ctx context.Context, c *postgres.Connector, rawURL stri
 	if !ok {
 		return nil, "", errors.New("url outside the connector's baseUrl")
 	}
+	for _, h := range c.Config.Headers { // D45: a connector registered before the rule (its value is redacted by now) is not used
+		if cmi.CredentialHeader(h) {
+			name, _, _ := strings.Cut(h, ":")
+			return nil, "", fmt.Errorf("the connector's header %s looks like a credential: remove it and put the credential in a reverse proxy", strings.TrimSpace(name))
+		}
+	}
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, norm, nil)

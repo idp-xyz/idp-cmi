@@ -44,6 +44,9 @@ func scanMemory(row pgx.Row) (*cmi.MemoryRecord, error) {
 	return &m, nil
 }
 
+// ThreadAdminRole reads every thread's memory (D44): authorization.RoleAdmin, which the store does not import.
+const ThreadAdminRole = "cmi-admin"
+
 // Visibility is the principal's view: who they are, their roles and their sensitivity ceiling.
 type Visibility struct {
 	Subject        string
@@ -110,6 +113,12 @@ func (s *Store) insertMemory(ctx context.Context, tx pgx.Tx, tenant string, in c
 	}
 	if in.Status != cmi.StatusActive && in.Status != cmi.StatusCandidate {
 		return nil, fail("INVALID", "a record is written as active or candidate; %s is reached by transition", in.Status)
+	}
+	if in.Scope.Kind == cmi.ScopeThread && len(in.ACL.Subjects) == 0 && len(in.ACL.Roles) == 0 {
+		// D44: a thread id is no secret (it is in runs, packages and logs), so naming a thread may not be enough to read
+		// its memory. Written without an ACL, it is its writer's and the administrators'; a writer that wants others to
+		// read it says whom. Set after Validate: the writer is the authenticated subject, whatever its spelling.
+		in.ACL = cmi.ACL{Subjects: []string{by}, Roles: []string{ThreadAdminRole}}
 	}
 	contradicts, err := contradictions(in.Structured)
 	if err != nil {

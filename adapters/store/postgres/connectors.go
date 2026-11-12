@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -35,7 +36,7 @@ type ConnectorConfig struct {
 	Path        string   `json:"path,omitempty"`
 	Sensitivity string   `json:"sensitivity"`
 	ACL         cmi.ACL  `json:"acl"`
-	Headers     []string `json:"headers,omitempty"` // "Name: value" sent with every fetch (no secrets: use a reverse proxy for those)
+	Headers     []string `json:"headers,omitempty"` // "Name: value" sent with every fetch; no credentials (D45: use a reverse proxy for those)
 }
 
 const (
@@ -63,8 +64,11 @@ func (c *Connector) Validate() error {
 		return errors.New("at most 8 headers")
 	}
 	for _, h := range c.Config.Headers {
-		if !headerRE.MatchString(h) || strings.EqualFold(strings.SplitN(h, ":", 2)[0], "authorization") {
-			return errors.New("headers must be 'Name: value' and may not carry credentials")
+		if !headerRE.MatchString(h) {
+			return errors.New("headers must be 'Name: value'")
+		}
+		if cmi.CredentialHeader(h) { // D45: stored and shown to administrators, so no credentials
+			return fmt.Errorf("header %s looks like a credential; put credentials in a reverse proxy in front of the document store", strings.TrimSpace(strings.SplitN(h, ":", 2)[0]))
 		}
 	}
 	switch c.Kind {

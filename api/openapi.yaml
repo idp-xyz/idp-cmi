@@ -207,7 +207,7 @@ components:
         sharedFrom: {type: string, readOnly: true, description: the record this one was shared from (ADR-0001 D22)}
         revocation: {type: object, properties: {at: {type: string, format: date-time}, by: {type: string}, reason: {type: string}}}
         sensitivity: {type: string, enum: [public, internal, confidential, restricted]}
-        acl: {type: object, properties: {subjects: {type: array, items: {type: string}}, roles: {type: array, items: {type: string}}}}
+        acl: {type: object, description: 'who may read the record besides the tenant ceiling: empty = everyone who may name the scope. A thread-scoped record written without one gets {subjects: [the writer], roles: [cmi-admin]} (ADR-0001 D44); a writer that wants others to read the thread names them', properties: {subjects: {type: array, items: {type: string}}, roles: {type: array, items: {type: string}}}}
         entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}, description: business objects the record refers to (ADR-0001 D13)}
         flags: {type: array, items: {type: string}, readOnly: true, description: 'write-time scan findings (ADR-0001 D12), e.g. injection:instruction_override; flagged records stay out of packages unless the policy includes them'}
         version: {type: integer, readOnly: true, description: bumped by every state change (ADR-0001 D19)}
@@ -233,7 +233,7 @@ components:
         source: {type: string, description: a document-store source}
         name: {type: string}
         kind: {type: string, enum: [http-manifest, filesystem]}
-        config: {type: object, properties: {url: {type: string, description: 'http-manifest: a JSON list of {uri, url, title, sensitivity?, acl?, entities?}'}, baseUrl: {type: string, description: 'http-manifest: only urls under it are fetched'}, path: {type: string, description: 'filesystem: an absolute directory on the CMI host (development)'}, sensitivity: {type: string}, acl: {type: object}, headers: {type: array, items: {type: string}}}}
+        config: {type: object, properties: {url: {type: string, description: 'http-manifest: a JSON list of {uri, url, title, sensitivity?, acl?, entities?}'}, baseUrl: {type: string, description: 'http-manifest: only urls under it are fetched'}, path: {type: string, description: 'filesystem: an absolute directory on the CMI host (development)'}, sensitivity: {type: string}, acl: {type: object}, headers: {type: array, items: {type: string}, description: '"Name: value"; no credentials (ADR-0001 D45): Authorization, Cookie, X-Api-Key and other names or values that carry one are refused (422)'}}}
         scheduleSeconds: {type: integer, description: 0 = manual sync only; otherwise at least 60}
         lastSyncAt: {type: string, format: date-time}
         createdBy: {type: string}
