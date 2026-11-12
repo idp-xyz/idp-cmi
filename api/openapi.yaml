@@ -250,7 +250,7 @@ components:
         scope: {type: object, properties: {kind: {type: string, enum: [tenant, subject, thread, agent, organization, team, project]}, id: {type: string}}}
         scopes: {type: array, maxItems: 32, items: {type: object, properties: {kind: {type: string}, id: {type: string}}}, description: 'more scopes (ADR-0001 D22); the caller''s own units are always included, a unit the caller does not belong to is a 403'}
         asOf: {type: object, properties: {valid: {type: string, format: date-time}, recorded: {type: string, format: date-time}}, description: 'bitemporal view (ADR-0001 D25): resolve what was valid at valid and known by recorded (a missing axis = now); recorded in the package'}
-        budget: {type: object, properties: {maxTokens: {type: integer, description: default 2000, at most 32000}, maxItems: {type: integer, description: default 20, at most 100}}}
+        budget: {type: object, properties: {maxTokens: {type: integer, description: 'default 3000 (ADR-0001 D46; 2000 before), at most 32000'}, maxItems: {type: integer, description: default 20, at most 100}}}
         sources: {type: array, items: {type: string}}
         kinds: {type: array, items: {type: string, enum: [memory, knowledge]}}
         maxAgeDays: {type: integer}

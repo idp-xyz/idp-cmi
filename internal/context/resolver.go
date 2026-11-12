@@ -20,6 +20,13 @@ import (
 	"idp-cmi/internal/rerank"
 )
 
+// The budget of a request that names none (D5). DefaultMaxTokens was 2000 until D46: on LongMemEval the round that holds the
+// answer was in such a package for 0.853 of the questions, against 0.906 at 3000 (ADR-0001 section 22).
+const (
+	DefaultMaxTokens = 3000
+	DefaultMaxItems  = 20
+)
+
 // Request is a resolve call.
 type Request struct {
 	Query              string       `json:"query"`
@@ -27,7 +34,7 @@ type Request struct {
 	Scope              *cmi.Scope   `json:"scope,omitempty"`   // the thread / agent / subject the caller works in
 	Scopes             []cmi.Scope  `json:"scopes,omitempty"`  // more of them (D22); unit scopes need membership
 	AsOf               *cmi.AsOf    `json:"asOf,omitempty"`    // a bitemporal view (D25): what was valid and known at those times
-	Budget             *cmi.Budget  `json:"budget,omitempty"`  // maxTokens (default 2000, at most 32000), maxItems (default 20, at most 100)
+	Budget             *cmi.Budget  `json:"budget,omitempty"`  // maxTokens (default DefaultMaxTokens, at most 32000), maxItems (default 20, at most 100)
 	Sources            []string     `json:"sources,omitempty"` // knowledge sources to consider (empty = all visible)
 	Kinds              []string     `json:"kinds,omitempty"`   // memory | knowledge (empty = both)
 	MaxAgeDays         int          `json:"maxAgeDays,omitempty"`
@@ -225,7 +232,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 	if req.SensitivityCeiling != "" && cmi.Within(req.SensitivityCeiling, v.Ceiling) {
 		v.Ceiling = req.SensitivityCeiling
 	}
-	budget := cmi.Budget{MaxTokens: 2000, MaxItems: 20}
+	budget := cmi.Budget{MaxTokens: DefaultMaxTokens, MaxItems: DefaultMaxItems}
 	if req.Budget != nil {
 		if req.Budget.MaxTokens > 0 {
 			budget.MaxTokens = req.Budget.MaxTokens

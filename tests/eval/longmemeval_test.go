@@ -473,7 +473,7 @@ func TestLongMemEval(t *testing.T) {
 					tally(fmt.Sprintf("%s-cap%d", cfg.name, c), kept)
 				}
 			}
-			// IDP_EVAL_BUDGETS: the same question under other package budgets (items:tokens), e.g. the CMI's default 20:2000
+			// IDP_EVAL_BUDGETS: the same question under other package budgets (items:tokens), e.g. the CMI's default 20:3000 (20:2000 before D46)
 			for _, b := range budgets {
 				p, _, err := cfg.resolver.Resolve(ctx, tenant, v, cmictx.Request{Query: q.Question, Purpose: "evaluation", Budget: &cmi.Budget{MaxItems: b[0], MaxTokens: b[1]}})
 				if err != nil {
