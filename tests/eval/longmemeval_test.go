@@ -322,10 +322,7 @@ func TestLongMemEval(t *testing.T) {
 		// item at 1200 bytes), and whether the latest evidence session is; tally adds a package to a configuration's sums
 		evidenceIn := func(items []cmi.Item) (found5, found10 map[string]bool, round, visible, latest5, latest10 bool) {
 			found5, found10 = map[string]bool{}, map[string]bool{}
-			for i, it := range items {
-				if i >= 10 {
-					break
-				}
+			for i, it := range items { // the whole package: 10 items by default, more under a larger budget (IDP_EVAL_BUDGETS)
 				s := sessionOf[it.Ref]
 				if !isEvidence[s.id] {
 					continue
