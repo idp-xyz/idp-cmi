@@ -216,6 +216,16 @@ func TestLongMemEval(t *testing.T) {
 	for _, cfg := range configs {
 		sums[cfg.name] = map[string]*acc{}
 	}
+	var caps []int // IDP_EVAL_SESSION_CAPS="1,2,3": per-session caps measured beside every configuration (not in the trace)
+	for _, f := range strings.Split(os.Getenv("IDP_EVAL_SESSION_CAPS"), ",") {
+		if c, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && c > 0 {
+			caps = append(caps, c)
+		}
+	}
+	var names []string // every configuration measured, in order
+	for _, cfg := range configs {
+		names = append(names, cfg.name)
+	}
 	taken := map[string]int{}
 	records, abstention, started := 0, 0, time.Now()
 	for dec.More() {
@@ -291,6 +301,63 @@ func TestLongMemEval(t *testing.T) {
 				}
 			}
 		}
+		// evidenceIn: which evidence sessions are among the first 5 and 10 items, whether a round that holds the answer is,
+		// and whether the latest evidence session is; tally adds a question's result to a configuration's sums
+		evidenceIn := func(items []cmi.Item) (found5, found10 map[string]bool, round, latest5, latest10 bool) {
+			found5, found10 = map[string]bool{}, map[string]bool{}
+			for i, it := range items {
+				s := sessionOf[it.Ref]
+				if !isEvidence[s.id] {
+					continue
+				}
+				if i < 5 {
+					found5[s.id] = true
+					latest5 = latest5 || s.at.Equal(latest)
+				}
+				found10[s.id] = true
+				latest10 = latest10 || s.at.Equal(latest)
+				round = round || answerRound[it.Ref]
+			}
+			return
+		}
+		tally := func(name string, found5, found10 map[string]bool, round, latest5, latest10 bool) {
+			if sums[name] == nil {
+				sums[name] = map[string]*acc{}
+				names = append(names, name)
+			}
+			for _, key := range []string{q.Type, "all"} {
+				a := sums[name][key]
+				if a == nil {
+					a = &acc{}
+					sums[name][key] = a
+				}
+				a.n++
+				if len(found5) > 0 {
+					a.any5++
+				}
+				if len(found5) == len(isEvidence) {
+					a.all5++
+				}
+				if len(found10) > 0 {
+					a.any10++
+				}
+				if len(found10) == len(isEvidence) {
+					a.all10++
+				}
+				if round {
+					a.round10++
+				}
+				if q.Type == "knowledge-update" && len(dates) > 1 {
+					a.updated++
+					if latest5 {
+						a.latest5++
+					}
+					if latest10 {
+						a.latest10++
+					}
+				}
+			}
+		}
 		now = asked
 		for _, cfg := range configs {
 			v := postgres.Visibility{Subject: q.ID, Roles: []string{authorization.RoleReader}, Ceiling: cmi.SensitivityInternal}
@@ -353,36 +420,28 @@ func TestLongMemEval(t *testing.T) {
 					"package": items, "omitted": pkg.Omitted, "candidates": cand, "bestSemantic": best, "answerRounds": nAnswer, "answerCandidates": answers,
 					"evidence": evidenceItems, "latestEvidence": latest.Format(time.RFC3339)})
 			}
-			for _, key := range []string{q.Type, "all"} {
-				a := sums[cfg.name][key]
-				if a == nil {
-					a = &acc{}
-					sums[cfg.name][key] = a
+			tally(cfg.name, found5, found10, round, latest5, latest10)
+			// IDP_EVAL_SESSION_CAPS: would the first 10 hold more of the evidence if one session could take only so many of
+			// them? A wider pool from the same resolver, at most c items per session, the first 10 of what is left
+			if len(caps) > 0 {
+				wide, _, err := cfg.resolver.Resolve(ctx, tenant, v, cmictx.Request{Query: q.Question, Purpose: "evaluation", Budget: &cmi.Budget{MaxItems: 100, MaxTokens: 32000}})
+				if err != nil {
+					t.Fatal(q.ID, err)
 				}
-				a.n++
-				if len(found5) > 0 {
-					a.any5++
-				}
-				if len(found5) == len(isEvidence) {
-					a.all5++
-				}
-				if len(found10) > 0 {
-					a.any10++
-				}
-				if len(found10) == len(isEvidence) {
-					a.all10++
-				}
-				if round {
-					a.round10++
-				}
-				if q.Type == "knowledge-update" && len(dates) > 1 {
-					a.updated++
-					if latest5 {
-						a.latest5++
+				for _, c := range caps {
+					per := map[string]int{}
+					var kept []cmi.Item
+					for _, it := range wide.Items {
+						if s := sessionOf[it.Ref]; per[s.id] < c {
+							per[s.id]++
+							kept = append(kept, it)
+						}
+						if len(kept) == 10 {
+							break
+						}
 					}
-					if latest10 {
-						a.latest10++
-					}
+					f5, f10, r, l5, l10 := evidenceIn(kept)
+					tally(fmt.Sprintf("%s-cap%d", cfg.name, c), f5, f10, r, l5, l10)
 				}
 			}
 		}
@@ -396,7 +455,8 @@ func TestLongMemEval(t *testing.T) {
 	if perType > 0 {
 		suffix = fmt.Sprintf("-n%d", perType)
 	}
-	for _, cfg := range configs {
+	for _, name := range names {
+		cfg := struct{ name string }{name}
 		res := LMEResult{Configuration: cfg.name, Dataset: dataset, PerType: perType, Records: records, Abstention: abstention, Results: map[string]LMEStat{}}
 		for key, a := range sums[cfg.name] {
 			share := func(x int) float64 { return round(float64(x) / float64(a.n)) }
