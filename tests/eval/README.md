@@ -5,6 +5,7 @@
 | `dataset.json`, `eval_test.go` | the governance gate (ADR-0001 D27): forbidden items, traceability; deterministic fake embedder |
 | `dataset_large.json`, `large_test.go` | the larger labelled set for choosing and calibrating embedding models (D37, results in `docs/eval/LARGE.md`) |
 | `longmemeval_test.go`, `longmemeval.sh` | LongMemEval, the public long-term memory benchmark: retrieval over each question's own history (results in `docs/eval/LONGMEMEVAL.md`); the data is fetched, not committed |
+| `longmemeval_reader.py` | the same packages given to a reader model in several orders, with and without dates: does the order matter? |
 | `embedding-server.sh` | a local embedding endpoint (text-embeddings-inference) on CPU or GPU |
 
 Measure a model:
@@ -36,9 +37,25 @@ at its date and measures retrieval at the session level; see the comment at the 
     make test-longmemeval LIMIT=5                # the first 5 questions of each type, lexical: half a minute
     make test-longmemeval UPDATE=1               # all 470 (30 abstention questions are left out): some 125,000 records
     IDP_EVAL_EMBEDDING_URL=... IDP_EVAL_EMBEDDING_MODEL=... IDP_EVAL_EMBEDDING_NAME=... IDP_EVAL_QUERY_PREFIX=... \
-      make test-longmemeval UPDATE=1             # adds the hybrid configuration (memoryFloor 0.20, blend 0.05; IDP_EVAL_MEMORY_FLOOR, or
-                                                 # IDP_EVAL_VARIANTS='0.40:0.05,0.20:0.05' for several; IDP_EVAL_LONGMEMEVAL_TRACE=file
-                                                 # writes the raw scores of the answer rounds per question)
+      make test-longmemeval UPDATE=1             # adds the hybrid configuration (memoryFloor 0.20, blend 0.05)
 
 It is not part of `make test-eval` or of CI: the data is not in the repository and the full hybrid run embeds some
-50 million tokens (a GPU). A limited run writes its own files (`longmemeval-<configuration>-n<LIMIT>.json`).
+50 million tokens (a GPU: 25 minutes). A limited run writes its own files (`longmemeval-<configuration>-n<LIMIT>.json`).
+For repeated runs:
+
+| Variable | What |
+|---|---|
+| `IDP_EVAL_EMBEDDING_CACHE=file` | keeps every vector on disk (`embedcache_test.go`; 380 MB for the whole set): the next run embeds nothing and takes a quarter of an hour |
+| `IDP_EVAL_VARIANTS='0.40:0.05,0.20:0.05'` | several `memoryFloor:blend` settings on the one stored history (or `IDP_EVAL_MEMORY_FLOOR` for one) |
+| `IDP_EVAL_LONGMEMEVAL_TRACE=file` | a line per question and configuration: the raw scores of the rounds that hold the answer, where the evidence came back, and the package itself |
+
+### Does the order of a package matter to its reader?
+
+`longmemeval_reader.py` answers that with a chat model: the packages of a trace, read in the CMI's order, newest first
+and oldest first, each with and without the item's date, and judged against the benchmark's answers (the last section
+of `docs/eval/LONGMEMEVAL.md`; the decision is ADR-0001 D43). It needs an OpenAI-compatible chat endpoint and nothing
+but Python's standard library; 72 questions six ways are 432 answers and as many verdicts, an hour on a local model.
+
+    tests/eval/longmemeval_reader.py --trace /tmp/trace.jsonl --config hybrid-qwen3-0.6b-instruct-f0.20-b0.05 \
+        --url http://127.0.0.1:8080/v1 --model qwen3.8-flash --answers /tmp/answers.jsonl --update
+    go test ./tests/eval -run TestLongMemEvalReport -args -update     # LONGMEMEVAL.md from the result files

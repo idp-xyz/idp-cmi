@@ -1,0 +1,58 @@
+{
+  "reader": "qwen3.8-flash-next-iq3_xxs",
+  "judge": "qwen3.8-flash-next-iq3_xxs",
+  "configuration": "hybrid-qwen3-0.6b-instruct-f0.20-b0.05",
+  "questionType": "knowledge-update",
+  "questions": 72,
+  "itemsPerQuestion": 10,
+  "results": [
+    {
+      "order": "relevance",
+      "dates": true,
+      "correct": 63,
+      "wrong": 6,
+      "dontKnow": 3,
+      "noAnswer": 0
+    },
+    {
+      "order": "relevance",
+      "dates": false,
+      "correct": 50,
+      "wrong": 18,
+      "dontKnow": 3,
+      "noAnswer": 1
+    },
+    {
+      "order": "newestFirst",
+      "dates": true,
+      "correct": 63,
+      "wrong": 6,
+      "dontKnow": 3,
+      "noAnswer": 0
+    },
+    {
+      "order": "newestFirst",
+      "dates": false,
+      "correct": 46,
+      "wrong": 24,
+      "dontKnow": 2,
+      "noAnswer": 0
+    },
+    {
+      "order": "oldestFirst",
+      "dates": true,
+      "correct": 63,
+      "wrong": 8,
+      "dontKnow": 1,
+      "noAnswer": 0
+    },
+    {
+      "order": "oldestFirst",
+      "dates": false,
+      "correct": 63,
+      "wrong": 8,
+      "dontKnow": 1,
+      "noAnswer": 0
+    }
+  ]
+}

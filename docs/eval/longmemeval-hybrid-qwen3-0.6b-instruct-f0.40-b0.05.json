@@ -20,7 +20,8 @@
       "recallAll@10": 0.8472,
       "evidenceRound@10": 0.9722,
       "updatedQuestions": 72,
-      "latestEvidenceFirst": 0.6944
+      "latestEvidence@5": 0.9028,
+      "latestEvidence@10": 0.9306
     },
     "multi-session": {
       "questions": 121,
