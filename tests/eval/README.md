@@ -47,6 +47,7 @@ For repeated runs:
 |---|---|
 | `IDP_EVAL_EMBEDDING_CACHE=file` | keeps every vector on disk (`embedcache_test.go`; 380 MB for the whole set): the next run embeds nothing and takes a quarter of an hour |
 | `IDP_EVAL_VARIANTS='0.40:0.05,0.20:0.05'` | several `memoryFloor:blend` settings on the one stored history (or `IDP_EVAL_MEMORY_FLOOR` for one) |
+| `IDP_EVAL_BUDGETS='20:2000'` | beside every configuration, the same question under other package budgets (items:tokens; the CMI's default is 20:2000). The log also gives, for every configuration, how often the turn that holds the answer is in the item's excerpt (`visible@10`), and a package's mean items and tokens (ADR-0001 section 22) |
 | `IDP_EVAL_SESSION_CAPS='1,2,3'` | beside every configuration, the same resolver's wider pool (100 items) with at most that many items per session, first 10 kept: does one session crowd the others out? (ADR-0001 section 22: it does, but capping loses the rounds that hold the answer) |
 | `IDP_EVAL_LONGMEMEVAL_TRACE=file` | a line per question and configuration: the raw scores of the rounds that hold the answer, where the evidence came back, and the package itself |
 

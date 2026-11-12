@@ -68,6 +68,9 @@ type LMEStat struct {
 	RecallAny10 float64  `json:"recallAny@10"` // the same among the first 10
 	RecallAll10 float64  `json:"recallAll@10"`
 	Round10     float64  `json:"evidenceRound@10"`            // a round that holds the answer itself is among the first 10 items
+	Visible10   float64  `json:"answerVisible@10,omitempty"`  // ... and the turn that holds the answer is in its excerpt (what a reader sees)
+	MeanItems   float64  `json:"meanItems,omitempty"`         // items in a package
+	MeanTokens  float64  `json:"meanTokens,omitempty"`        // the CMI's estimate of a package's size
 	Updated     int      `json:"updatedQuestions,omitempty"`  // knowledge-update questions whose evidence sessions have different dates
 	Latest5     *float64 `json:"latestEvidence@5,omitempty"`  // of those: the latest evidence session is among the sessions of the first 5 items
 	Latest10    *float64 `json:"latestEvidence@10,omitempty"` // ... of the first 10
@@ -95,9 +98,10 @@ func lmeCut(s string, n int) string {
 }
 
 // lmeRounds turns a session into the records idp-host would have written: a user message with the answer(s) to it.
-func lmeRounds(session []lmeTurn) (texts []string, evidence []bool) {
+// snippets holds, for a round that holds the answer, the beginning of the turn that does (is it in what a reader sees?).
+func lmeRounds(session []lmeTurn) (texts []string, evidence []bool, snippets []string) {
 	var user, assistant []string
-	has := false
+	has, snippet := false, ""
 	flush := func() {
 		if len(user) == 0 && len(assistant) == 0 {
 			return
@@ -109,8 +113,8 @@ func lmeRounds(session []lmeTurn) (texts []string, evidence []bool) {
 		if len(assistant) > 0 {
 			parts = append(parts, "The assistant answered: "+lmeCut(strings.Join(assistant, "\n"), 1500))
 		}
-		texts, evidence = append(texts, strings.Join(parts, "\n")), append(evidence, has)
-		user, assistant, has = nil, nil, false
+		texts, evidence, snippets = append(texts, strings.Join(parts, "\n")), append(evidence, has), append(snippets, snippet)
+		user, assistant, has, snippet = nil, nil, false, ""
 	}
 	for _, turn := range session {
 		if strings.TrimSpace(turn.Content) == "" {
@@ -124,10 +128,13 @@ func lmeRounds(session []lmeTurn) (texts []string, evidence []bool) {
 		} else {
 			assistant = append(assistant, turn.Content)
 		}
+		if turn.HasAnswer && !has {
+			snippet = lmeCut(strings.TrimSpace(turn.Content), 40)
+		}
 		has = has || turn.HasAnswer
 	}
 	flush()
-	return texts, evidence
+	return texts, evidence, snippets
 }
 
 func TestLongMemEval(t *testing.T) {
@@ -211,7 +218,7 @@ func TestLongMemEval(t *testing.T) {
 		cfg.resolver.OnCandidates = func(_ string, c []cmictx.CandidateScore) { raw = c }
 	}
 
-	type acc struct{ n, any5, all5, any10, all10, round10, updated, latest5, latest10 int }
+	type acc struct{ n, any5, all5, any10, all10, round10, visible10, updated, latest5, latest10, items, tokens int }
 	sums := map[string]map[string]*acc{}
 	for _, cfg := range configs {
 		sums[cfg.name] = map[string]*acc{}
@@ -220,6 +227,15 @@ func TestLongMemEval(t *testing.T) {
 	for _, f := range strings.Split(os.Getenv("IDP_EVAL_SESSION_CAPS"), ",") {
 		if c, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && c > 0 {
 			caps = append(caps, c)
+		}
+	}
+	var budgets [][2]int // IDP_EVAL_BUDGETS="20:2000": more package budgets (items:tokens) beside the 10 items measured by default
+	for _, f := range strings.Split(os.Getenv("IDP_EVAL_BUDGETS"), ",") {
+		items, tokens, ok := strings.Cut(strings.TrimSpace(f), ":")
+		i, err1 := strconv.Atoi(items)
+		n, err2 := strconv.Atoi(tokens)
+		if ok && err1 == nil && err2 == nil && i > 0 && n > 0 {
+			budgets = append(budgets, [2]int{i, n})
 		}
 	}
 	var names []string // every configuration measured, in order
@@ -264,7 +280,7 @@ func TestLongMemEval(t *testing.T) {
 			sessions[i] = session{q.SessionIDs[i], at, i}
 		}
 		sort.SliceStable(sessions, func(i, j int) bool { return sessions[i].at.Before(sessions[j].at) })
-		sessionOf, answerRound := map[string]session{}, map[string]bool{}
+		sessionOf, answerRound, answerSnippet := map[string]session{}, map[string]bool{}, map[string]string{}
 		clear(refOf)
 		var latest time.Time // of the evidence sessions
 		dates := map[time.Time]bool{}
@@ -275,7 +291,7 @@ func TestLongMemEval(t *testing.T) {
 					latest = s.at
 				}
 			}
-			texts, evidence := lmeRounds(q.Sessions[s.i])
+			texts, evidence, snippets := lmeRounds(q.Sessions[s.i])
 			now = s.at
 			for r, text := range texts {
 				ref := fmt.Sprintf("%s/%d/%d", q.ID, s.i, r)
@@ -286,7 +302,7 @@ func TestLongMemEval(t *testing.T) {
 					t.Fatal(ref, err)
 				}
 				refOf[made.ID] = ref
-				sessionOf[ref], answerRound[ref] = s, evidence[r]
+				sessionOf[ref], answerRound[ref], answerSnippet[ref] = s, evidence[r], snippets[r]
 				records++
 			}
 		}
@@ -301,11 +317,15 @@ func TestLongMemEval(t *testing.T) {
 				}
 			}
 		}
-		// evidenceIn: which evidence sessions are among the first 5 and 10 items, whether a round that holds the answer is,
-		// and whether the latest evidence session is; tally adds a question's result to a configuration's sums
-		evidenceIn := func(items []cmi.Item) (found5, found10 map[string]bool, round, latest5, latest10 bool) {
+		// evidenceIn: which evidence sessions are among the first 5 and 10 items, whether a round that holds the answer is
+		// (and whether the turn that holds it is in the item's excerpt, which is what a reader sees: the CMI cuts a memory
+		// item at 1200 bytes), and whether the latest evidence session is; tally adds a package to a configuration's sums
+		evidenceIn := func(items []cmi.Item) (found5, found10 map[string]bool, round, visible, latest5, latest10 bool) {
 			found5, found10 = map[string]bool{}, map[string]bool{}
 			for i, it := range items {
+				if i >= 10 {
+					break
+				}
 				s := sessionOf[it.Ref]
 				if !isEvidence[s.id] {
 					continue
@@ -316,14 +336,22 @@ func TestLongMemEval(t *testing.T) {
 				}
 				found10[s.id] = true
 				latest10 = latest10 || s.at.Equal(latest)
-				round = round || answerRound[it.Ref]
+				if answerRound[it.Ref] {
+					round = true
+					visible = visible || (answerSnippet[it.Ref] != "" && strings.Contains(it.Excerpt, answerSnippet[it.Ref]))
+				}
 			}
 			return
 		}
-		tally := func(name string, found5, found10 map[string]bool, round, latest5, latest10 bool) {
+		tally := func(name string, items []cmi.Item) {
+			found5, found10, round, visible, latest5, latest10 := evidenceIn(items)
 			if sums[name] == nil {
 				sums[name] = map[string]*acc{}
 				names = append(names, name)
+			}
+			tokens := 0
+			for _, it := range items {
+				tokens += it.Tokens
 			}
 			for _, key := range []string{q.Type, "all"} {
 				a := sums[name][key]
@@ -332,6 +360,8 @@ func TestLongMemEval(t *testing.T) {
 					sums[name][key] = a
 				}
 				a.n++
+				a.items += len(items)
+				a.tokens += tokens
 				if len(found5) > 0 {
 					a.any5++
 				}
@@ -346,6 +376,9 @@ func TestLongMemEval(t *testing.T) {
 				}
 				if round {
 					a.round10++
+				}
+				if visible {
+					a.visible10++
 				}
 				if q.Type == "knowledge-update" && len(dates) > 1 {
 					a.updated++
@@ -420,7 +453,7 @@ func TestLongMemEval(t *testing.T) {
 					"package": items, "omitted": pkg.Omitted, "candidates": cand, "bestSemantic": best, "answerRounds": nAnswer, "answerCandidates": answers,
 					"evidence": evidenceItems, "latestEvidence": latest.Format(time.RFC3339)})
 			}
-			tally(cfg.name, found5, found10, round, latest5, latest10)
+			tally(cfg.name, pkg.Items)
 			// IDP_EVAL_SESSION_CAPS: would the first 10 hold more of the evidence if one session could take only so many of
 			// them? A wider pool from the same resolver, at most c items per session, the first 10 of what is left
 			if len(caps) > 0 {
@@ -440,9 +473,16 @@ func TestLongMemEval(t *testing.T) {
 							break
 						}
 					}
-					f5, f10, r, l5, l10 := evidenceIn(kept)
-					tally(fmt.Sprintf("%s-cap%d", cfg.name, c), f5, f10, r, l5, l10)
+					tally(fmt.Sprintf("%s-cap%d", cfg.name, c), kept)
 				}
+			}
+			// IDP_EVAL_BUDGETS: the same question under other package budgets (items:tokens), e.g. the CMI's default 20:2000
+			for _, b := range budgets {
+				p, _, err := cfg.resolver.Resolve(ctx, tenant, v, cmictx.Request{Query: q.Question, Purpose: "evaluation", Budget: &cmi.Budget{MaxItems: b[0], MaxTokens: b[1]}})
+				if err != nil {
+					t.Fatal(q.ID, err)
+				}
+				tally(fmt.Sprintf("%s-budget%dx%d", cfg.name, b[0], b[1]), p.Items)
 			}
 		}
 		if n := sums["lexical"]["all"].n; n%25 == 0 {
@@ -460,13 +500,15 @@ func TestLongMemEval(t *testing.T) {
 		res := LMEResult{Configuration: cfg.name, Dataset: dataset, PerType: perType, Records: records, Abstention: abstention, Results: map[string]LMEStat{}}
 		for key, a := range sums[cfg.name] {
 			share := func(x int) float64 { return round(float64(x) / float64(a.n)) }
-			s := LMEStat{Questions: a.n, RecallAny5: share(a.any5), RecallAll5: share(a.all5), RecallAny10: share(a.any10), RecallAll10: share(a.all10), Round10: share(a.round10)}
+			s := LMEStat{Questions: a.n, RecallAny5: share(a.any5), RecallAll5: share(a.all5), RecallAny10: share(a.any10), RecallAll10: share(a.all10), Round10: share(a.round10),
+				Visible10: share(a.visible10), MeanItems: share(a.items), MeanTokens: float64(a.tokens) / float64(a.n)}
 			if a.updated > 0 && key != "all" {
 				l5, l10 := round(float64(a.latest5)/float64(a.updated)), round(float64(a.latest10)/float64(a.updated))
 				s.Updated, s.Latest5, s.Latest10 = a.updated, &l5, &l10
 			}
 			res.Results[key] = s
-			t.Logf("%s | %-25s n=%3d any@5 %.3f all@5 %.3f any@10 %.3f all@10 %.3f round@10 %.3f", cfg.name, key, s.Questions, s.RecallAny5, s.RecallAll5, s.RecallAny10, s.RecallAll10, s.Round10)
+			t.Logf("%s | %-25s n=%3d any@5 %.3f all@5 %.3f any@10 %.3f all@10 %.3f round@10 %.3f visible@10 %.3f items %.1f tokens %.0f", cfg.name, key, s.Questions,
+				s.RecallAny5, s.RecallAll5, s.RecallAny10, s.RecallAll10, s.Round10, s.Visible10, s.MeanItems, s.MeanTokens)
 			if s.Latest5 != nil {
 				t.Logf("%s | %-25s latest evidence @5 %.3f @10 %.3f of %d", cfg.name, key, *s.Latest5, *s.Latest10, s.Updated)
 			}
