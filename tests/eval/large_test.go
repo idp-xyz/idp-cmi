@@ -67,10 +67,23 @@ func TestRetrievalOnTheLargeSet(t *testing.T) { runSet(t, "large") }
 // nobody tuned against.
 func TestRetrievalOnTheHeldOutSet(t *testing.T) { runSet(t, "heldout") }
 
-func runSet(t *testing.T, set string) {
-	raw, err := os.ReadFile("dataset_" + set + ".json")
+// TestRetrievalOnAnExternalSet runs the same measurement on a dataset outside the repository (IDP_EVAL_DATASET=file in
+// this format, e.g. a real corpus that is not to be published). Nothing is compared with docs/eval or written there; with
+// IDP_EVAL_OUT=dir the results go to dir/external-<configuration>.json, and the log has them per category.
+func TestRetrievalOnAnExternalSet(t *testing.T) {
+	p := os.Getenv("IDP_EVAL_DATASET")
+	if p == "" {
+		t.Skip("IDP_EVAL_DATASET not set")
+	}
+	runFile(t, "external", p, true)
+}
+
+func runSet(t *testing.T, set string) { runFile(t, set, "dataset_"+set+".json", false) }
+
+func runFile(t *testing.T, set, file string, external bool) {
+	raw, err := os.ReadFile(file)
 	if os.IsNotExist(err) {
-		t.Skip("no dataset_" + set + ".json")
+		t.Skip("no " + file)
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -251,6 +264,20 @@ func runSet(t *testing.T, set string) {
 			out = append(out, '\n')
 			path := filepath.Join("..", "..", "docs", "eval", set+"-"+name+".json")
 			switch {
+			case external:
+				cats := make([]string, 0, len(m.ByCategory))
+				for c := range m.ByCategory {
+					cats = append(cats, c)
+				}
+				sort.Strings(cats)
+				for _, c := range cats {
+					t.Logf("%s | %-16s n=%3d R@5 %.3f MRR %.3f", name, c, m.ByCategory[c].Queries, m.ByCategory[c].Recall5, m.ByCategory[c].MRR)
+				}
+				if dir := os.Getenv("IDP_EVAL_OUT"); dir != "" {
+					if err := os.WriteFile(filepath.Join(dir, "external-"+name+".json"), out, 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
 			case *update:
 				if err := os.WriteFile(path, out, 0o644); err != nil {
 					t.Fatal(err)
@@ -262,7 +289,7 @@ func runSet(t *testing.T, set string) {
 			}
 		}
 	}
-	if *update {
+	if *update && !external {
 		if err := os.WriteFile(filepath.Join("..", "..", "docs", "eval", strings.ToUpper(set)+".md"), []byte(largeReport(set, ds.Version)), 0o644); err != nil {
 			t.Fatal(err)
 		}
