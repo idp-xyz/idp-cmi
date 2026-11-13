@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -315,10 +316,28 @@ func seed(t *testing.T, ds dataset, store *postgres.Store, tenant, owner string,
 		t.Fatal(err)
 	}
 	pin.Close(ctx)
+	// ADR-0001 D44: a thread's memory is its writer's unless the writer names its readers, as idp-host names the member whose
+	// thread it is. The evaluation writes as "eval", so a thread's records name the subjects that ask in that thread
+	threadReaders := map[string][]string{}
+	for _, q := range ds.Queries {
+		if q.Thread == "" {
+			continue
+		}
+		s := q.Subject
+		if s == "" {
+			s = "eval-reader"
+		}
+		if !slices.Contains(threadReaders[q.Thread], s) {
+			threadReaders[q.Thread] = append(threadReaders[q.Thread], s)
+		}
+	}
 	for _, m := range ds.Memories {
 		kind, id, _ := strings.Cut(m.Scope, ":")
 		rec := cmi.MemoryRecord{Scope: cmi.Scope{Kind: kind, ID: id}, Kind: m.Kind, Content: m.Content, Entities: m.Entities, Sensitivity: cmi.SensitivityInternal,
 			Provenance: cmi.Provenance{Source: m.Source, Ref: m.Ref, ObservedAt: now.Add(-time.Hour), RecordedBy: "eval"}, Validity: cmi.Validity{ValidFrom: now.Add(-48 * time.Hour)}}
+		if kind == cmi.ScopeThread {
+			rec.ACL.Subjects = threadReaders[id]
+		}
 		if m.ValidUntilDaysAgo > 0 {
 			rec.Validity.ValidUntil = now.Add(-time.Duration(m.ValidUntilDaysAgo) * 24 * time.Hour)
 		}
