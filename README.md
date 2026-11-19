@@ -23,6 +23,8 @@ bash deploy/build.sh    # 离线构建 scratch 镜像
 bash deploy/e2e.sh      # compose 拓扑端到端（CMI 镜像 + PostgreSQL）；HOST=1 再起 idp-host 镜像验证 D10 / HOST D32
 ```
 
+CI 与 `deploy/e2e.sh` 里的第三方镜像（PostgreSQL、pgvector、trivy）先由 `deploy/pull-image.sh` 显式拉取并重试（最多 5 次，间隔 15、30、60、120 秒；本机已有则跳过），因为公共 registry 对匿名拉取按来源地址限流，而 CI 的 runner 与许多项目共用地址。
+
 可选配置文件 `IDP_CMI_CONFIG`（见 `internal/config`）：
 
 ```yaml

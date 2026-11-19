@@ -42,6 +42,9 @@ printf 'pending\n' > .local/cmi.key; chmod 644 .local/cmi.key
 : > .local/host.yaml; chmod 644 .local/host.yaml
 umask 077
 
+# PostgreSQL, the one third-party image, named by the compose file and pulled here with retries so that compose has nothing to pull
+mapfile -t THIRD < <("${C[@]}" config --images postgres)
+bash deploy/pull-image.sh "${THIRD[@]}"
 "${C[@]}" up -d --wait postgres
 "${C[@]}" exec -T postgres psql -U postgres -q -c 'CREATE DATABASE idp_cmi' >/dev/null
 "${C[@]}" run --rm -T cmi-admin migrate
