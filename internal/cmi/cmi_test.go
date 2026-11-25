@@ -28,6 +28,53 @@ func TestChunkAndBigrams(t *testing.T) {
 	}
 }
 
+func TestKnowledgeBaseValidation(t *testing.T) {
+	ok := KnowledgeBase{Name: "handbook", DisplayName: "Handbook", Scope: Scope{Kind: ScopeTenant}, Source: "handbook",
+		DefaultSensitivity: SensitivityInternal, SensitivityCeiling: SensitivityRestricted}
+	if err := ok.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if ok.Status != KnowledgeBaseActive {
+		t.Fatal(ok.Status)
+	}
+	personal := ok
+	personal.Name = "bob-notes"
+	personal.Scope = Scope{Kind: ScopeSubject, ID: "bob"}
+	personal.Source = "member-notes"
+	if err := personal.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	thread := ok
+	thread.Scope = Scope{Kind: ScopeThread, ID: "thr-1"}
+	if err := thread.Validate(); err == nil {
+		t.Fatal("thread scope accepted")
+	}
+	over := ok
+	over.DefaultSensitivity = SensitivityRestricted
+	over.SensitivityCeiling = SensitivityInternal
+	if err := over.Validate(); err == nil {
+		t.Fatal("default above ceiling accepted")
+	}
+}
+
+func TestDocumentValidityWindow(t *testing.T) {
+	d := Document{Source: "handbook", URI: "handbook://rate", Title: "Rate", Sensitivity: SensitivityInternal}
+	if err := ValidateDocument(&d, "rate"); err != nil {
+		t.Fatal(err)
+	}
+	d.ValidFrom = time.Now()
+	d.ValidUntil = d.ValidFrom
+	if err := ValidateDocument(&d, "rate"); err == nil {
+		t.Fatal("validFrom equal to validUntil accepted")
+	}
+	d.ValidFrom = time.Time{}
+	d.ValidUntil = time.Time{}
+	d.DocType = "Rate Card"
+	if err := ValidateDocument(&d, "rate"); err == nil {
+		t.Fatal("docType with a space accepted")
+	}
+}
+
 func TestValidationAndSealing(t *testing.T) {
 	s := Source{Name: "orders", DisplayName: "Orders", Kind: SourceAgent, Trust: TrustAuthoritative}
 	if err := s.Validate(); err == nil {
@@ -73,5 +120,24 @@ func TestValidationAndSealing(t *testing.T) {
 	env.Digest = "sha256:" + strings.Repeat("0", 64)
 	if _, err := Open(env); err == nil {
 		t.Fatal("tampered digest accepted")
+	}
+}
+
+// A personal base's name is a safe encoding of the subject: valid for any subject, deterministic, never colliding
+// for subjects that fold alike, and never the name an administrator can register.
+func TestPersonalBaseNameIsSafeForAnySubject(t *testing.T) {
+	seen := map[string]string{}
+	for _, s := range []string{"bob", "Bob", "bob.", "BOB@Example.com", "a|b", "ü", "李雷", "", " ", strings.Repeat("x", 300), "Zoe.O'Neil@Example.com|x", "zoe-o-neil-example-com-x", "-", "--"} {
+		n := PersonalBaseName(s)
+		if !ValidName(n) || !strings.HasPrefix(n, PersonalBasePrefix) || n != PersonalBaseName(s) {
+			t.Errorf("%q -> %q", s, n)
+		}
+		if other, ok := seen[n]; ok {
+			t.Errorf("%q and %q share %q", s, other, n)
+		}
+		seen[n] = s
+	}
+	if got := BaseOfURI("kb://handbook/a/b"); got != "handbook" || BaseOfURI("handbook://a") != "" || BaseOfURI("kb://x") != "x" {
+		t.Errorf("BaseOfURI: %q", got)
 	}
 }

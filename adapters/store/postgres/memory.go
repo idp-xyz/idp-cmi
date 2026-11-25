@@ -53,6 +53,10 @@ type Visibility struct {
 	Roles          []string
 	Ceiling        string
 	ExcludeSources []string // a PDP obligation (D23): content of these sources is never returned
+	// NamedSubjects are the other members whose personal knowledge bases the request named (D53); the caller's right
+	// to name them was checked by the API. Client and Actor say who is asking, for the audit of such a read.
+	NamedSubjects []string
+	Client, Actor string
 }
 
 // visibleSQL is the predicate every read of memory and knowledge applies (D7): tenant rows only (RLS),
@@ -74,12 +78,17 @@ func memoryAsOfSQL(v, r string) string {
 	AND m.valid_from <= ` + v + ` AND (m.valid_until IS NULL OR m.valid_until > ` + v + `)` + aclSQL
 }
 
-// knowledgeAsOfSQL is the same for documents: a version counts until a newer version of its URI was
-// registered (by $r) or it was revoked (by $r), and while its validity covers $v.
+// knowledgeAsOfSQL returns the version whose validity window covers business time $v,
+// as known by registration time $r (D52): the highest version of its (base, uri) that was registered by $r,
+// not revoked at $r, not erased, and whose window contains $v. A newer version hides an older one when it was registered and not
+// revoked by $r and had started by $v, whether or not its window has ended since (an expired newest version leaves no
+// current one; an older one does not come back); a version dated in the future does not hide the one in force now. A version written
+// without validFrom is valid from the beginning.
 func knowledgeAsOfSQL(v, r string) string {
 	r = `coalesce(` + r + `::timestamptz, now())`
-	return ` AND d.erasure_id IS NULL AND d.created_at <= ` + r + ` AND (d.revoked_at IS NULL OR d.revoked_at > ` + r + `) AND (d.valid_until IS NULL OR d.valid_until > ` + v + `)
-	AND NOT EXISTS (SELECT 1 FROM knowledge_documents d2 WHERE d2.uri = d.uri AND d2.version > d.version AND d2.created_at <= ` + r + `)` + aclSQL
+	return ` AND d.erasure_id IS NULL AND d.created_at <= ` + r + ` AND (d.revoked_at IS NULL OR d.revoked_at > ` + r + `) AND ` + windowSQL("d", v) + `
+	AND NOT EXISTS (SELECT 1 FROM knowledge_documents d2 WHERE d2.knowledge_base_id = d.knowledge_base_id AND d2.uri = d.uri AND d2.version > d.version AND d2.created_at <= ` + r + `
+		AND d2.erasure_id IS NULL AND (d2.revoked_at IS NULL OR d2.revoked_at > ` + r + `) AND (d2.valid_from IS NULL OR d2.valid_from <= ` + v + `))` + aclSQL
 }
 
 func rank(sensitivity string) int {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"idp-cmi/adapters/blob"
 	"idp-cmi/internal/canonical"
 	"idp-cmi/internal/cmi"
 )
@@ -23,7 +24,7 @@ type ErasureSelector struct {
 	RecordIDs   []string    `json:"recordIds,omitempty"`
 	DocumentIDs []string    `json:"documentIds,omitempty"`
 	Ref         string      `json:"ref,omitempty"`     // provenance reference of records
-	Subject     string      `json:"subject,omitempty"` // records in that subject's scope
+	Subject     string      `json:"subject,omitempty"` // records in that subject's scope, the documents of their personal knowledge base, and the owner fields that name them (D57)
 	Entity      *cmi.Entity `json:"entity,omitempty"`  // records and documents referencing it
 	Reason      string      `json:"reason"`
 }
@@ -61,7 +62,7 @@ type Domain struct {
 }
 
 // Domains the purge covers, in order.
-var Domains = []string{"content", "vectors", "index", "entities", "packages", "audit"}
+var Domains = []string{"content", "vectors", "index", "entities", "packages", "audit", "originals"}
 
 // Erasure is a request with its progress.
 type Erasure struct {
@@ -143,6 +144,12 @@ func (s *Store) RequestErasure(ctx context.Context, tenant string, sel ErasureSe
 		}
 		if sel.Subject != "" {
 			if err := add(&recordIDs, `SELECT id::text FROM memory_records WHERE scope_kind = 'subject' AND scope_id = $1 AND erasure_id IS NULL`, sel.Subject); err != nil {
+				return err
+			}
+		}
+		if sel.Subject != "" {
+			if err := add(&documentIDs, `SELECT d.id::text FROM knowledge_documents d JOIN knowledge_bases kb ON kb.id = d.knowledge_base_id
+				WHERE kb.scope_kind = 'subject' AND kb.scope_id = $1 AND d.erasure_id IS NULL`, sel.Subject); err != nil {
 				return err
 			}
 		}
@@ -293,7 +300,8 @@ func (s *Store) purgeOne(ctx context.Context, tenant, id string) error {
 	}); err != nil {
 		return err
 	}
-	failed := false
+	failed, transient := false, false
+	var cause error
 	for _, domain := range Domains {
 		if d := e.Domains[domain]; d.Status == "done" {
 			continue
@@ -302,7 +310,7 @@ func (s *Store) purgeOne(ctx context.Context, tenant, id string) error {
 		d := Domain{Status: "done", Rows: rows, At: s.now().UTC()}
 		if derr != nil {
 			d = Domain{Status: "failed", At: s.now().UTC(), Error: derr.Error()}
-			failed = true
+			failed, transient, cause = true, blob.Transient(derr), derr
 		}
 		e.Domains[domain] = d
 		raw, _ := json.Marshal(e.Domains)
@@ -320,6 +328,16 @@ func (s *Store) purgeOne(ctx context.Context, tenant, id string) error {
 	if failed {
 		status = "failed"
 	}
+	if transient {
+		s.noteWaiting(id, cause)
+		// the object store is away or overloaded: that is not a failed attempt. The erasure stays pending, its attempt is
+		// given back, and the worker tries again on its next round - however long the store is away (D54)
+		return s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE erasures SET status = 'pending', attempts = greatest(attempts - 1, 0), updated_at = now() WHERE id = $1`, id)
+			return err
+		})
+	}
+	s.noteNotWaiting(id)
 	return s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE erasures SET status = $2, updated_at = now() WHERE id = $1`, id, status); err != nil {
 			return err
@@ -330,6 +348,9 @@ func (s *Store) purgeOne(ctx context.Context, tenant, id string) error {
 
 // purgeDomain erases one domain for the erasure's targets; returns rows affected.
 func (s *Store) purgeDomain(ctx context.Context, tenant, domain string, e *Erasure) (int, error) {
+	if domain == "originals" {
+		return s.deleteOriginals(ctx, tenant, e.DocumentIDs)
+	}
 	n := 0
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		count := func(q string, args ...any) error {
@@ -345,10 +366,55 @@ func (s *Store) purgeDomain(ctx context.Context, tenant, domain string, e *Erasu
 			if err := count(`UPDATE memory_records SET content = $2, structured = NULL, tags = '{}', prov_ref = $2 WHERE id = ANY($1::uuid[])`, e.RecordIDs, Erased); err != nil {
 				return err
 			}
-			if err := count(`UPDATE knowledge_documents SET title = $2 WHERE id = ANY($1::uuid[])`, e.DocumentIDs, Erased); err != nil {
+			var baseIDs []string
+			if e.Selector.Subject != "" {
+				rows, err := tx.Query(ctx, `SELECT id::text FROM knowledge_bases WHERE scope_kind = 'subject' AND scope_id = $1`, e.Selector.Subject)
+				if err != nil {
+					return err
+				}
+				for rows.Next() {
+					var id string
+					if err := rows.Scan(&id); err != nil {
+						rows.Close()
+						return err
+					}
+					baseIDs = append(baseIDs, id)
+				}
+				rows.Close()
+				if err := rows.Err(); err != nil {
+					return err
+				}
+				if err := s.claimPersonalDocuments(ctx, tx, e); err != nil {
+					return err
+				}
+				// a document the subject withdrew names them as the one who did
+				if err := count(`UPDATE knowledge_documents SET revoked_by = $2 WHERE revoked_by = $1`, e.Selector.Subject, Erased); err != nil {
+					return err
+				}
+				// the owner field of any document that names the subject
+				if err := count(`UPDATE knowledge_documents SET owner = '' WHERE owner = $1`, e.Selector.Subject); err != nil {
+					return err
+				}
+				// the personal base itself names the subject (its scope, and its name is a slug of the subject): it is renamed
+				// to something derived from its id and closed. A member who is still around gets a new base on their next upload
+				if err := count(`UPDATE knowledge_bases SET name = 'personal-erased-' || substr(replace(id::text, '-', ''), 1, 12), scope_id = 'erased-' || id::text,
+					display_name = 'Erased', manager_subjects = '{}', created_by = $2, status = 'archived' WHERE id = ANY($1::uuid[])`, baseIDs, Erased); err != nil {
+					return err
+				}
+			}
+			if err := count(`UPDATE knowledge_documents SET title = $2, owner = '' WHERE id = ANY($1::uuid[])`, e.DocumentIDs, Erased); err != nil {
 				return err
 			}
-			return count(`UPDATE knowledge_chunks SET content = $2 WHERE document_id = ANY($1::uuid[])`, e.DocumentIDs, Erased)
+			// a document of a personal base keeps no path the member chose (it may say what the document is about): the uri
+			// becomes kb://<base>/erased-<id>, and the maker's name goes
+			if err := count(`UPDATE knowledge_documents d SET uri = 'kb://' || kb.name || '/erased-' || d.id::text, created_by = $2
+				FROM knowledge_bases kb WHERE kb.id = d.knowledge_base_id AND kb.scope_kind = 'subject' AND d.id = ANY($1::uuid[])`, e.DocumentIDs, Erased); err != nil {
+				return err
+			}
+			if err := count(`UPDATE knowledge_chunks SET content = $2, index_text = $2, heading_path = '', table_name = '' WHERE document_id = ANY($1::uuid[])`, e.DocumentIDs, Erased); err != nil {
+				return err
+			}
+			return s.verifyPersonalErased(ctx, tx, e, baseIDs)
 		case "vectors":
 			if err := count(`UPDATE memory_records SET embedding = NULL, embedding_model = 'erased' WHERE id = ANY($1::uuid[])`, e.RecordIDs); err != nil {
 				return err
@@ -362,7 +428,13 @@ func (s *Store) purgeDomain(ctx context.Context, tenant, domain string, e *Erasu
 		case "entities":
 			return count(`DELETE FROM entity_refs WHERE (object_kind = 'memory' AND object_id = ANY($1::uuid[])) OR (object_kind = 'knowledge' AND object_id = ANY($2::uuid[]))`, e.RecordIDs, e.DocumentIDs)
 		case "packages":
-			return s.redactPackages(ctx, tx, e, &n)
+			if err := s.redactPackages(ctx, tx, e, &n); err != nil {
+				return err
+			}
+			if e.Selector.Subject != "" {
+				return s.redactSubjectPackages(ctx, tx, e, &n)
+			}
+			return nil
 		case "audit":
 			// audit rows keep action, subject, time and ids; the detail that may carry content is reduced
 			return count(`UPDATE audit_events SET detail = jsonb_build_object('erased', true, 'erasureId', $2::text) WHERE resource_id = ANY($1::text[]) AND action IN ('memory.create', 'knowledge.create')`,
@@ -371,6 +443,114 @@ func (s *Store) purgeDomain(ctx context.Context, tenant, domain string, e *Erasu
 		return fmt.Errorf("unknown domain %s", domain)
 	})
 	return n, err
+}
+
+// claimPersonalDocuments puts under the erasure's barrier the documents that reached the subject's personal base after the
+// request was made, and records them with the erasure so every later domain covers them.
+func (s *Store) claimPersonalDocuments(ctx context.Context, tx pgx.Tx, e *Erasure) error {
+	rows, err := tx.Query(ctx, `UPDATE knowledge_documents d SET erasure_id = $1, revision = d.revision + 1, status = 'revoked',
+		revoked_at = coalesce(d.revoked_at, now()), revoked_by = coalesce(d.revoked_by, $2), revoked_reason = coalesce(d.revoked_reason, 'erasure')
+		FROM knowledge_bases kb WHERE kb.id = d.knowledge_base_id AND kb.scope_kind = 'subject' AND kb.scope_id = $3 AND d.erasure_id IS NULL
+		RETURNING d.id::text`, e.ID, e.RequestedBy, e.Selector.Subject)
+	if err != nil {
+		return err
+	}
+	var late []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		late = append(late, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(late) == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `UPDATE erasures SET document_ids = document_ids || $2::uuid[] WHERE id = $1`, e.ID, late); err != nil {
+		return err
+	}
+	e.DocumentIDs = append(e.DocumentIDs, late...)
+	return nil
+}
+
+// verifyPersonalErased fails the content domain while any document of the subject's personal base is not under the
+// erasure or any of its chunks still holds text: "verified" means they are gone.
+func (s *Store) verifyPersonalErased(ctx context.Context, tx pgx.Tx, e *Erasure, baseIDs []string) error {
+	if e.Selector.Subject == "" {
+		return nil
+	}
+	var open, text int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE d.erasure_id IS NULL), count(c.document_id) FILTER (WHERE c.content <> $2 OR c.index_text <> $2)
+		FROM knowledge_documents d JOIN knowledge_bases kb ON kb.id = d.knowledge_base_id LEFT JOIN knowledge_chunks c ON c.document_id = d.id
+		WHERE kb.id = ANY($1::uuid[])`, baseIDs, Erased).Scan(&open, &text); err != nil {
+		return err
+	}
+	if open > 0 || text > 0 {
+		return fmt.Errorf("the personal knowledge base of the subject still holds %d documents outside the erasure and %d chunks with text", open, text)
+	}
+	return nil
+}
+
+// redactSubjectPackages is for the erasure of a subject (D57): the packages they asked for keep neither the question nor
+// who asked. The query and purpose become the tombstone, requestedBy (and the scope that names them) a marker that is the
+// same in all of this erasure's packages and is derived from the erasure, not from the subject, so it cannot be
+// recomputed from a guessed name. What the packages cited is redacted by redactPackages when it is theirs to erase.
+func (s *Store) redactSubjectPackages(ctx context.Context, tx pgx.Tx, e *Erasure, n *int) error {
+	marker := "erased-" + e.ID[:8]
+	rows, err := tx.Query(ctx, `SELECT id::text, document FROM context_packages WHERE requested_by = $1`, e.Selector.Subject)
+	if err != nil {
+		return err
+	}
+	type pkg struct{ id, doc string }
+	var pkgs []pkg
+	for rows.Next() {
+		var p pkg
+		if err := rows.Scan(&p.id, &p.doc); err != nil {
+			rows.Close()
+			return err
+		}
+		pkgs = append(pkgs, p)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rescope := func(m map[string]any) {
+		if sc, ok := m["scope"].(map[string]any); ok && sc["id"] == e.Selector.Subject {
+			sc["id"] = marker
+		}
+	}
+	for _, p := range pkgs {
+		var doc map[string]any
+		if err := json.Unmarshal([]byte(p.doc), &doc); err != nil {
+			return err
+		}
+		doc["query"], doc["requestedBy"] = Erased, marker
+		if _, ok := doc["purpose"]; ok {
+			doc["purpose"] = Erased
+		}
+		rescope(doc)
+		items, _ := doc["items"].([]any)
+		for _, it := range items {
+			if m, ok := it.(map[string]any); ok {
+				rescope(m)
+			}
+		}
+		raw, err := canonical.Canonical(doc)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE context_packages SET document = $2, requested_by = $3, redacted = true WHERE id = $1`, p.id, string(raw), marker); err != nil {
+			return err
+		}
+		*n++
+	}
+	return nil
 }
 
 // redactPackages rewrites the stored document of every package citing an erased item: the item's
@@ -385,6 +565,25 @@ func (s *Store) redactPackages(ctx context.Context, tx pgx.Tx, e *Erasure, n *in
 		targets[id] = true
 	}
 	all := append(append([]string{}, e.RecordIDs...), e.DocumentIDs...)
+	uris := map[string]string{} // the uri a document has now (a personal one was rewritten by the content domain)
+	if len(e.DocumentIDs) > 0 {
+		ur, err := tx.Query(ctx, `SELECT id::text, uri FROM knowledge_documents WHERE id = ANY($1::uuid[])`, e.DocumentIDs)
+		if err != nil {
+			return err
+		}
+		for ur.Next() {
+			var id, uri string
+			if err := ur.Scan(&id, &uri); err != nil {
+				ur.Close()
+				return err
+			}
+			uris[id] = uri
+		}
+		ur.Close()
+		if err := ur.Err(); err != nil {
+			return err
+		}
+	}
 	rows, err := tx.Query(ctx, `SELECT id::text, document FROM context_packages WHERE item_refs @> ANY(SELECT jsonb_build_array(jsonb_build_object('id', x)) FROM unnest($1::text[]) AS x)`, all)
 	if err != nil {
 		return err
@@ -414,6 +613,13 @@ func (s *Store) redactPackages(ctx context.Context, tx pgx.Tx, e *Erasure, n *in
 			m, _ := it.(map[string]any)
 			if id, _ := m["id"].(string); targets[id] {
 				m["excerpt"] = Erased
+				if ref, _ := m["ref"].(string); ref != "" && uris[id] != "" {
+					if i := strings.LastIndex(ref, "#"); i >= 0 {
+						m["ref"] = uris[id] + ref[i:]
+					} else {
+						m["ref"] = uris[id]
+					}
+				}
 				if _, ok := m["title"]; ok {
 					m["title"] = Erased
 				}

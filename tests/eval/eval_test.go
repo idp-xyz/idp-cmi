@@ -127,6 +127,11 @@ func scratch(t *testing.T) (*postgres.Store, string, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(store.Close)
+	// the title and heading prefix of the index text is off by default and was measured, not adopted (ADR-0001 D56);
+	// IDP_EVAL_INDEX_CONTEXT=1 repeats that measurement (the gate then compares with the numbers of the default and fails)
+	if os.Getenv("IDP_EVAL_INDEX_CONTEXT") == "1" {
+		store.Knowledge.IndexContext = true
+	}
 	return store, tenant, owner
 }
 
@@ -377,7 +382,7 @@ func trace(ctx context.Context, store *postgres.Store, tenant string, v postgres
 			return "record is " + rec.Status
 		}
 	case cmi.ItemKnowledge:
-		doc, err := store.GetDocument(ctx, tenant, it.ID)
+		doc, err := store.GetDocument(ctx, tenant, it.ID, v)
 		if err != nil {
 			return "document not found: " + err.Error()
 		}

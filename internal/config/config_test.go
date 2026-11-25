@@ -72,3 +72,20 @@ func TestRerank(t *testing.T) {
 		}
 	}
 }
+
+func TestKnowledgeSettings(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cmi.yaml")
+	_ = os.WriteFile(p, []byte("knowledge:\n  indexContext: true\n  personalQuotaDocuments: 0\n  personalQuotaBytes: 1048576\n"), 0o600)
+	f, err := Load(p)
+	if err != nil || !f.Knowledge.IndexContext || f.Knowledge.PersonalQuotaDocuments == nil || *f.Knowledge.PersonalQuotaDocuments != 0 || *f.Knowledge.PersonalQuotaBytes != 1<<20 {
+		t.Fatalf("%+v %v", f.Knowledge, err)
+	}
+	_ = os.WriteFile(p, []byte("knowledge:\n  personalQuotaBytes: -1\n"), 0o600)
+	if _, err := Load(p); err == nil {
+		t.Fatal("a negative quota was accepted")
+	}
+	_ = os.WriteFile(p, []byte("knowledge:\n  indexContext: false\n"), 0o600)
+	if f, err := Load(p); err != nil || f.Knowledge.IndexContext || f.Knowledge.PersonalQuotaDocuments != nil {
+		t.Fatalf("unset quotas must stay unset (the defaults apply): %+v %v", f.Knowledge, err)
+	}
+}

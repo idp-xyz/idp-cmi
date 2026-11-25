@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:idp:telos:cmi:1.4.0",
-  "title": "idp.telos.cmi 1.4.0",
-  "description": "idp-cmi（Context, Memory & Knowledge Infrastructure）对外发布的契约：ContextPackage（解析上下文得到的不可变、内容寻址的包，ADR-0001 D5）、ContextItem、MemoryRecord（记忆记录，D3）、Source（来源，D2）、KnowledgeDocument（知识文档的元数据，D4）、Envelope（包加摘要）、Entity（显式的业务对象引用，D13）。1.1.0 相对 1.0.0 只做新增：MemoryRecord 与 KnowledgeDocument 的 entities 与 flags（D12 写入时扫描的标记）、ContextItem 的 entities / match（D11 混合检索的命中方式）/ flags。生产者是 idp-cmi，权威副本在 idp-cmi/api/contracts/，由 go test ./internal/cmi -run TestContract 保证与实现一致；idp-contracts 中的副本只能与之逐字节相同。JSON Schema 只描述形状与可本地判定的规则；摘要是否匹配由 cmi.Open 判定，可见性与时效由 CMI 的查询判定。 1.2.0 相对 1.1.0 只做新增（M5）：MemoryRecord 的 version 与 KnowledgeDocument 的 revision（D19 预期版本）；MemoryRecord 的 status 增 candidate / disputed 与 disputedBy（D21）；Scope kind 增 organization / team / project、MemoryRecord 增 sharedFrom、ContextItem 增 scope（D22）；新定义 Verification 与 ItemStatus（D24 消费时复验）。 1.3.0 相对 1.2.0 只做新增：ContextPackage 的 asOf 与定义 AsOf（D25）、ContextPackage 的 projectionLag（D26）。 1.4.0 相对 1.3.0 只做新增：ContextPackage 的 omitted 与定义 Omitted（D28）。",
+  "$id": "urn:idp:telos:cmi:1.5.0",
+  "title": "idp.telos.cmi 1.5.0",
+  "description": "idp-cmi（Context, Memory & Knowledge Infrastructure）对外发布的契约：ContextPackage（解析上下文得到的不可变、内容寻址的包，ADR-0001 D5）、ContextItem、MemoryRecord（记忆记录，D3）、Source（来源，D2）、KnowledgeDocument（知识文档的元数据，D4）、Envelope（包加摘要）、Entity（显式的业务对象引用，D13）。1.1.0 相对 1.0.0 只做新增：MemoryRecord 与 KnowledgeDocument 的 entities 与 flags（D12 写入时扫描的标记）、ContextItem 的 entities / match（D11 混合检索的命中方式）/ flags。生产者是 idp-cmi，权威副本在 idp-cmi/api/contracts/，由 go test ./internal/cmi -run TestContract 保证与实现一致；idp-contracts 中的副本只能与之逐字节相同。JSON Schema 只描述形状与可本地判定的规则；摘要是否匹配由 cmi.Open 判定，可见性与时效由 CMI 的查询判定。 1.2.0 相对 1.1.0 只做新增（M5）：MemoryRecord 的 version 与 KnowledgeDocument 的 revision（D19 预期版本）；MemoryRecord 的 status 增 candidate / disputed 与 disputedBy（D21）；Scope kind 增 organization / team / project、MemoryRecord 增 sharedFrom、ContextItem 增 scope（D22）；新定义 Verification 与 ItemStatus（D24 消费时复验）。 1.3.0 相对 1.2.0 只做新增：ContextPackage 的 asOf 与定义 AsOf（D25）、ContextPackage 的 projectionLag（D26）。 1.4.0 相对 1.3.0 只做新增：ContextPackage 的 omitted 与定义 Omitted（D28）。 1.5.0 相对 1.4.0 只做新增：新定义 KnowledgeBase；KnowledgeDocument 增 knowledgeBase、validFrom、docType、owner、reviewDue、original（对象键不在契约里）；ContextItem 增 locator。",
   "oneOf": [
     {
       "$ref": "#/$defs/ContextPackage"
@@ -15,6 +15,9 @@
     },
     {
       "$ref": "#/$defs/KnowledgeDocument"
+    },
+    {
+      "$ref": "#/$defs/KnowledgeBase"
     },
     {
       "$ref": "#/$defs/Envelope"
@@ -193,6 +196,16 @@
             "both"
           ],
           "description": "哪个检索器命中（D11）：全文、向量或两者"
+        },
+        "locator": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "知识块在文档里的位置：标题路径、页码、表名（D49）。excerpt 只是这一块的正文，它所在的章节在这里",
+          "properties": {
+            "headings": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "page": {"type": "integer", "minimum": 1},
+            "table": {"type": "string", "minLength": 1}
+          }
         },
         "flags": {
           "type": "array",
@@ -649,6 +662,123 @@
           "type": "integer",
           "minimum": 1,
           "description": "该文档行每次状态变化加一（D19）；version 是同一 URI 的第几版"
+        },
+        "knowledgeBase": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$",
+          "description": "所属知识库的名字。管理员省略时归入来源同名的企业级知识库；成员省略时归入本人的个人库。一个版本的身份是（租户、知识库、uri）：不同知识库里相同的 uri 是两份文档。指明知识库的上传用 kb://<知识库名>/<路径> 作 uri"
+        },
+        "validFrom": {
+          "type": "string",
+          "format": "date-time",
+          "description": "这一版开始生效的业务时间。晚于现在的版本不取代当前有效的那一版；没有这个字段表示从一开始就有效"
+        },
+        "docType": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$",
+          "description": "文档类别，用于过滤和以后按类别分块"
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]{1,256}$",
+          "description": "负责这份文档的主体"
+        },
+        "reviewDue": {
+          "type": "string",
+          "format": "date-time",
+          "description": "应复核的时间"
+        },
+        "original": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "这一版的原件。对象键不在契约里",
+          "required": ["mediaType", "byteSize", "sha256"],
+          "properties": {
+            "mediaType": {"type": "string", "minLength": 1},
+            "byteSize": {"type": "integer", "minimum": 1},
+            "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+          }
+        }
+      }
+    },
+    "KnowledgeBase": {
+      "title": "KnowledgeBase",
+      "description": "知识库：谁管、谁能看、缺省敏感级别与配额。作用域是 tenant（企业）、organization / team / project（部门，指向单元目录）或 subject（个人）。thread 与 agent 不用于知识库。个人库的来源是 user，信任级别因此是 informational。",
+      "x-idp-telos-owner": "idp.telos.cmi",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "knowledgeBaseId",
+        "name",
+        "displayName",
+        "scope",
+        "managers",
+        "defaultSensitivity",
+        "sensitivityCeiling",
+        "source",
+        "quotaDocuments",
+        "quotaBytes",
+        "ocr",
+        "status",
+        "createdBy",
+        "createdAt"
+      ],
+      "properties": {
+        "knowledgeBaseId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "managers": {
+          "$ref": "#/$defs/ACL",
+          "description": "管理者的主体与角色。空表示只有管理员能管理"
+        },
+        "defaultSensitivity": {
+          "enum": ["public", "internal", "confidential", "restricted"]
+        },
+        "sensitivityCeiling": {
+          "enum": ["public", "internal", "confidential", "restricted"]
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$",
+          "description": "这个库里上传文档使用的来源"
+        },
+        "quotaDocuments": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "文档数上限，0 表示不限"
+        },
+        "quotaBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "索引文本与原件的字节上限，0 表示不限（个人库为 0 时用成员缺省配额）"
+        },
+        "ocr": {
+          "type": "boolean",
+          "description": "入库时是否对没有文字层的页做识别"
+        },
+        "status": {
+          "enum": ["active", "archived"]
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },

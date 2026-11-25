@@ -264,6 +264,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 	}
 	var cands []candidate
 	var memoryScopes []cmi.Scope
+	vk := v // the view for knowledge: v, plus the other members' personal bases the request names (D53)
 	if q.TSQuery != "" || len(q.Vector) > 0 {
 		if wantMemory {
 			// D22: tenant, the caller, the caller's units, and what the request names (unit scopes it names
@@ -315,7 +316,17 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 			}
 		}
 		if wantKnowledge {
-			hits, err := r.Store.SearchKnowledge(ctx, tenant, q, req.Sources, v)
+			// D53: the default scope is the enterprise bases, the caller's units and the caller's own personal base. Another
+			// member's personal base is read only when the request names that member's subject scope (the API
+			// has checked the caller may, and audits the read of its chunks).
+			named := map[string]bool{}
+			for _, sc := range append(append([]cmi.Scope{}, req.Scopes...), scopeList(req.Scope)...) {
+				if sc.Kind == cmi.ScopeSubject && sc.ID != v.Subject && !named[sc.ID] {
+					named[sc.ID] = true
+					vk.NamedSubjects = append(vk.NamedSubjects, sc.ID)
+				}
+			}
+			hits, err := r.Store.SearchKnowledge(ctx, tenant, q, req.Sources, vk)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -327,8 +338,8 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 				if !d.ValidUntil.IsZero() && !d.ValidUntil.After(at) {
 					continue
 				}
-				item := cmi.Item{Kind: cmi.ItemKnowledge, ID: d.ID, Source: d.Source, Trust: h.Trust, Ref: d.URI + "#" + itoa(h.Seq), Title: d.Title, Excerpt: excerpt(h.Content, 1500),
-					ObservedAt: d.CreatedAt, ValidUntil: d.ValidUntil, Sensitivity: d.Sensitivity, Entities: d.Entities, Match: h.Match}
+				item := cmi.Item{Kind: cmi.ItemKnowledge, ID: d.ID, Source: d.Source, Trust: h.Trust, Ref: d.URI + "#" + itoa(h.Seq), Title: d.Title, Excerpt: sectionLine(h.Locator) + excerpt(h.Content, 1500),
+					ObservedAt: d.CreatedAt, ValidUntil: d.ValidUntil, Sensitivity: d.Sensitivity, Entities: d.Entities, Match: h.Match, Locator: h.Locator}
 				if policy.IncludeFlagged {
 					item.Flags = h.Flags
 				}
@@ -340,7 +351,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 	// what was matched but is not usable: counted for the package (D28)
 	omitted := cmi.Omitted{}
 	{
-		if ex, err := r.Store.Excluded(ctx, tenant, q, memoryScopes, req.Sources, v); err == nil {
+		if ex, err := r.Store.Excluded(ctx, tenant, q, memoryScopes, req.Sources, vk); err == nil {
 			omitted = ex
 			if policy.IncludeFlagged {
 				omitted.Flagged = 0
@@ -483,6 +494,22 @@ func freshness(now, at time.Time) float64 {
 		days = 0
 	}
 	return 1 / (1 + days/30)
+}
+
+// sectionLine is the heading path of a knowledge chunk as a line in front of its excerpt, so a model sees the section the
+// text is from (the headings are not part of the chunk's body).
+func sectionLine(l *cmi.Locator) string {
+	if l == nil || len(l.Headings) == 0 {
+		return ""
+	}
+	return strings.Join(l.Headings, " › ") + "\n"
+}
+
+func scopeList(s *cmi.Scope) []cmi.Scope {
+	if s == nil {
+		return nil
+	}
+	return []cmi.Scope{*s}
 }
 
 func excerpt(s string, n int) string {

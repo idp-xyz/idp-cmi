@@ -5,6 +5,7 @@ package postgres
 
 import (
 	"log/slog"
+	"sync"
 
 	"context"
 	"crypto/rand"
@@ -44,12 +45,21 @@ func fail(code, format string, a ...any) error {
 
 // Store is the HOST database.
 type Store struct {
-	Pool     *pgxpool.Pool
-	Now      func() time.Time   // injectable clock (tests)
-	Embedder embedding.Embedder // optional second retriever (D11); nil = lexical only
-	Log      *slog.Logger       // optional
+	Pool      *pgxpool.Pool
+	Now       func() time.Time   // injectable clock (tests)
+	Embedder  embedding.Embedder // optional second retriever (D11); nil = lexical only
+	Log       *slog.Logger       // optional
+	Originals OriginalStore      // knowledge-document files; nil = originals are not accepted
+	// TempDir is where a download is verified before it is sent (a writable directory when the root file system is read-only; "" = the OS temp directory).
+	TempDir string
+	// OnEmbedFailure, when set, is told of every embedding failure of a chunk: "permanent" (the text was refused), "transient" or "refused" (the endpoint answered 4xx that is not an input error: a credential or configuration problem).
+	OnEmbedFailure func(kind string)
+	Knowledge      KnowledgeSettings // the operator's knowledge-base settings (config file section knowledge)
 
 	vec vectorState
+
+	waitMu  sync.Mutex
+	waiting map[string]*waitingErasure // erasures held up by an object store that cannot be reached (D54)
 }
 
 // Open connects as the service role and verifies that RLS applies to it.
@@ -82,7 +92,7 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		pool.Close()
 		return nil, fmt.Errorf("schema at version %d, binary needs %d (run idp-cmi migrate)", version, want)
 	}
-	return &Store{Pool: pool, Now: time.Now}, nil
+	return &Store{Pool: pool, Now: time.Now, Knowledge: DefaultKnowledgeSettings()}, nil
 }
 
 // Close releases the pool.
@@ -127,6 +137,12 @@ func latest() int {
 // Migrate applies pending migrations as the schema owner, one transaction each, serialized by an
 // advisory lock.
 func Migrate(ctx context.Context, ownerURL string) (applied []string, err error) {
+	return MigrateUpTo(ctx, ownerURL, 0)
+}
+
+// MigrateUpTo is Migrate stopped after migration number maxVersion (0 = all). The tests use it to build a
+// database as an earlier release left it, with data in it, and then upgrade that database.
+func MigrateUpTo(ctx context.Context, ownerURL string, maxVersion int) (applied []string, err error) {
 	conn, err := pgx.Connect(ctx, ownerURL)
 	if err != nil {
 		return nil, err
@@ -146,6 +162,9 @@ func Migrate(ctx context.Context, ownerURL string) (applied []string, err error)
 	for _, m := range load() {
 		if m.version <= current {
 			continue
+		}
+		if maxVersion > 0 && m.version > maxVersion {
+			return applied, nil // a partial upgrade stops before the optional pgvector setup too
 		}
 		tx, err := conn.Begin(ctx)
 		if err != nil {
@@ -323,4 +342,49 @@ var errRetry = errors.New("retry transaction")
 func isRLSViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "42501"
+}
+
+type waitingErasure struct {
+	since, warned time.Time
+}
+
+// noteWaiting records that an erasure could not finish because the object store is away, and warns - at most once a minute for
+// each erasure - how long it has been waiting.
+func (s *Store) noteWaiting(id string, cause error) {
+	s.waitMu.Lock()
+	defer s.waitMu.Unlock()
+	if s.waiting == nil {
+		s.waiting = map[string]*waitingErasure{}
+	}
+	w := s.waiting[id]
+	now := time.Now()
+	if w == nil {
+		w = &waitingErasure{since: now}
+		s.waiting[id] = w
+	}
+	if now.Sub(w.warned) >= time.Minute {
+		w.warned = now
+		if s.Log != nil {
+			s.Log.Warn("an erasure is waiting for the object store", "erasure", id, "waiting", now.Sub(w.since).Round(time.Second).String(), "cause", cause)
+		}
+	}
+}
+
+func (s *Store) noteNotWaiting(id string) {
+	s.waitMu.Lock()
+	defer s.waitMu.Unlock()
+	delete(s.waiting, id)
+}
+
+// WaitingErasures is how many erasures are held up by the object store being away, and for how many seconds the longest has been.
+func (s *Store) WaitingErasures() (n int, oldestSeconds float64) {
+	s.waitMu.Lock()
+	defer s.waitMu.Unlock()
+	for _, w := range s.waiting {
+		n++
+		if d := time.Since(w.since).Seconds(); d > oldestSeconds {
+			oldestSeconds = d
+		}
+	}
+	return n, oldestSeconds
 }

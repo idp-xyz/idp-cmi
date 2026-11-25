@@ -117,7 +117,12 @@ spec:
                 secretKeyRef:
                   name: idp-cmi-db
                   key: service-url
+            # downloads of originals are verified through an (unlinked) file here; the root file system is read-only
+            - name: IDP_CMI_TEMP_DIR
+              value: /var/cache/idp-cmi
           volumeMounts:
+            - name: scratch
+              mountPath: /var/cache/idp-cmi
             - name: config
               mountPath: /etc/idp/config
               readOnly: true
@@ -154,6 +159,10 @@ spec:
             capabilities:
               drop: ["ALL"]
       volumes:
+        # 8 concurrent downloads (knowledge.maxConcurrentDownloads) of at most 50 MiB, plus room: 512Mi
+        - name: scratch
+          emptyDir:
+            sizeLimit: 512Mi
         - name: config
           configMap:
             name: idp-cmi-config

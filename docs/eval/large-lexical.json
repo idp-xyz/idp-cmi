@@ -2,12 +2,12 @@
   "configuration": "lexical",
   "queries": 88,
   "scoredQueries": 78,
-  "recallAt1": 0.5641,
+  "recallAt1": 0.5513,
   "recallAt3": 0.609,
-  "recallAt5": 0.6346,
+  "recallAt5": 0.6282,
   "recallAt10": 0.6603,
-  "mrr": 0.6239,
-  "ndcgAt10": 0.6226,
+  "mrr": 0.6147,
+  "ndcgAt10": 0.6152,
   "noAnswerQueries": 10,
   "noAnswerReturnedNothing": 4,
   "forbiddenReturned": 0,
@@ -34,13 +34,13 @@
     },
     "multi": {
       "queries": 6,
-      "recallAt5": 0.8333,
+      "recallAt5": 0.75,
       "mrr": 1
     },
     "paraphrase": {
       "queries": 20,
       "recallAt5": 0.375,
-      "mrr": 0.3292
+      "mrr": 0.2933
     },
     "personal": {
       "queries": 8,
@@ -86,6 +86,7 @@
     "L44 [cross_lingual]: en-tracking,en-customs-hold",
     "L56 [multi]: en-customs-hold",
     "L57 [multi]: zh-sop2057",
+    "L58 [multi]: zh-damage",
     "L71 [personal]: m-dan-cold",
     "L73 [personal]: m-erin-proxy",
     "L78 [thread]: m-thread-2"

@@ -2,12 +2,12 @@
   "configuration": "lexical",
   "queries": 321,
   "scoredQueries": 291,
-  "recallAt1": 0.3814,
+  "recallAt1": 0.378,
   "recallAt3": 0.5017,
-  "recallAt5": 0.5361,
+  "recallAt5": 0.5395,
   "recallAt10": 0.5773,
-  "mrr": 0.4484,
-  "ndcgAt10": 0.4797,
+  "mrr": 0.4481,
+  "ndcgAt10": 0.4796,
   "noAnswerQueries": 30,
   "noAnswerReturnedNothing": 6,
   "forbiddenReturned": 0,
@@ -19,13 +19,13 @@
     },
     "keyword": {
       "queries": 97,
-      "recallAt5": 0.9381,
-      "mrr": 0.859
+      "recallAt5": 0.9485,
+      "mrr": 0.851
     },
     "paraphrase": {
       "queries": 97,
       "recallAt5": 0.6701,
-      "mrr": 0.4862
+      "mrr": 0.4933
     }
   },
   "missesAt5": [
@@ -76,7 +76,6 @@
     "H099 [cross_lingual]: h033",
     "H102 [cross_lingual]: h034",
     "H103 [paraphrase]: h035",
-    "H104 [keyword]: h035",
     "H105 [cross_lingual]: h035",
     "H108 [cross_lingual]: h036",
     "H111 [cross_lingual]: h037",
@@ -88,7 +87,6 @@
     "H126 [cross_lingual]: h042",
     "H129 [cross_lingual]: h043",
     "H132 [cross_lingual]: h044",
-    "H133 [paraphrase]: h045",
     "H135 [cross_lingual]: h045",
     "H138 [cross_lingual]: h046",
     "H141 [cross_lingual]: h047",
@@ -117,6 +115,7 @@
     "H187 [paraphrase]: h063",
     "H189 [cross_lingual]: h063",
     "H192 [cross_lingual]: h064",
+    "H193 [paraphrase]: h065",
     "H194 [keyword]: h065",
     "H195 [cross_lingual]: h065",
     "H198 [cross_lingual]: h066",

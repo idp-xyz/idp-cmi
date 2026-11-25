@@ -47,6 +47,12 @@ Kubernetes 清单在 `deploy/kubernetes`（未在集群上应用；`tests/deploy
 
 与 HOST 的联调（HOST 作为 `cmi-reader` 解析上下文并记录 `contextPackageId`）在 HOST 侧实现，见 HOST ADR-0001 的后续章节。
 
+## 升级到有知识库的版本（ADR-0001 第 24 节）
+
+- **迁移 0013–0016 要当停机处理**：0013 与 0015 取 ACCESS EXCLUSIVE 锁并改写每个 chunk 行，停机随语料增长（本机 30 万 chunk 约 7 秒，估算与测量办法见 ADR D47 之后的"迁移"一段）；事后对 `knowledge_chunks` 做 VACUUM。
+- **被取代的旧版本要重新解读**：旧发布把被取代的文档版本存成 `superseded`；升级后"现行"按 D52 推导，撤回更新的一版会让上一版重新现行（之前什么都不返回）。一个版本到期不会让更早的版本复活。
+- 对象存储（可选）在后台连：CMI 不等它，原件在它可达之前答 503；`IDP_CMI_ORIGINALS_CA_FILE`、`_TIMEOUT` 见 `cmd/idp-cmi/main.go`。配置文件新增 `knowledge` 一节（`indexContext`、`personalQuotaDocuments`、`personalQuotaBytes`、`maxInFlightUploadBytes`、`maxConcurrentDownloads`、`maxDownloadsPerCaller`、`transferTimeout`）。**原件下载需要一个可写的临时目录**（`IDP_CMI_TEMP_DIR`；根文件系统只读时用 emptyDir / tmpfs，`deploy/kubernetes/cmi.yaml` 已带，compose 要加 tmpfs，见 `deploy/compose.yaml` 头部）。
+
 ## 许可证
 
 本仓库采用 [PolyForm Noncommercial License 1.0.0](LICENSE)：允许非商业用途，禁止任何商业使用。

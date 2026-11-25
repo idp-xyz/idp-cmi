@@ -30,6 +30,9 @@ func (s *Store) Excluded(ctx context.Context, tenant string, q Query, scopes []c
 		entities = []string{}
 	}
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+		if err := bindView(ctx, tx, v); err != nil {
+			return err
+		}
 		var cand, disp, flagged, forbidden int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE m.status = 'candidate'), count(*) FILTER (WHERE m.status = 'disputed'),
 			count(*) FILTER (WHERE m.status = 'active' AND cardinality(m.flags) > 0), count(*) FILTER (WHERE m.status = 'active' AND cardinality(m.flags) = 0 AND s.name = ANY($8::text[]))
@@ -42,8 +45,8 @@ func (s *Store) Excluded(ctx context.Context, tenant string, q Query, scopes []c
 		var kFlagged, kForbidden int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE cardinality(c.flags) > 0), count(*) FILTER (WHERE cardinality(c.flags) = 0 AND s.name = ANY($7::text[]))
 			FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id JOIN sources s ON s.id = d.source_id, to_tsquery('simple', $4) q, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x
-			WHERE c.search @@ q AND d.status = 'active' AND d.erasure_id IS NULL AND (d.valid_until IS NULL OR d.valid_until > now()) AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))`+aclSQL+entityFilterSQL("knowledge", "d.id", "$6"),
-			v.Subject, v.Roles, rank(v.Ceiling), q.TSQuery, sources, entities, excluded(v)).Scan(&kFlagged, &kForbidden); err != nil {
+			WHERE c.search @@ q AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))`+aclSQL+kbScopeSQL+knowledgeCurrentSQL+entityFilterSQL("knowledge", "d.id", "$6"),
+			v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), q.TSQuery, sources, entities, excluded(v)).Scan(&kFlagged, &kForbidden); err != nil {
 			return err
 		}
 		out.Flagged += kFlagged

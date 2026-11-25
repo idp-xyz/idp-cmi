@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"idp-cmi/internal/cmi"
 )
 
 // enqueueProjection records, inside the writer's transaction, that a row needs its vector projected
@@ -125,8 +127,8 @@ func (s *Store) Project(ctx context.Context, limit int) (int, error) {
 				err = tx.QueryRow(ctx, `SELECT m.content, m.version, m.status = 'active' AND m.erasure_id IS NULL AND `+sensitivityRankSQL("m.sensitivity")+` <= `+ceiling+`
 					FROM memory_records m LEFT JOIN tenant_policies tp ON tp.tenant_id = m.tenant_id WHERE m.id = $1`, e.objectID).Scan(&text, &current, &active)
 			} else {
-				err = tx.QueryRow(ctx, `SELECT c.content, d.revision, d.status = 'active' AND d.erasure_id IS NULL AND `+sensitivityRankSQL("d.sensitivity")+` <= `+ceiling+`
-					FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id LEFT JOIN tenant_policies tp ON tp.tenant_id = d.tenant_id WHERE c.document_id = $1 AND c.seq = $2`, e.objectID, e.seq).Scan(&text, &current, &active)
+				err = tx.QueryRow(ctx, `SELECT c.index_text, d.revision, d.status IN ('active', 'superseded') AND (c.embed_error IS NULL OR c.embed_error_model IS DISTINCT FROM $3) AND d.erasure_id IS NULL AND `+sensitivityRankSQL("d.sensitivity")+` <= `+ceiling+`
+					FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id LEFT JOIN tenant_policies tp ON tp.tenant_id = d.tenant_id WHERE c.document_id = $1 AND c.seq = $2`, e.objectID, e.seq, model).Scan(&text, &current, &active)
 			}
 			if err != nil || !active || current != e.version {
 				continue // gone, superseded by a newer version, or no longer active: nothing to project
@@ -136,9 +138,38 @@ func (s *Store) Project(ctx context.Context, limit int) (int, error) {
 			texts = append(texts, text)
 			toEmbed = append(toEmbed, e)
 		}
-		var vecs [][]float32
+		vecs := make([][]float32, len(toEmbed))
+		fails := make([]embedFail, len(toEmbed))
 		if len(texts) > 0 {
-			vecs, err = s.Embedder.Embed(ctx, texts)
+			// memory texts go in one call: a failure there is the endpoint's. Chunks go through embedEach, so
+			// one chunk the embedder cannot take does not keep every other event pending.
+			var memIdx, chunkIdx []int
+			var memTexts, chunkTexts []string
+			for i, e := range toEmbed {
+				if e.kind == "memory" {
+					memIdx, memTexts = append(memIdx, i), append(memTexts, texts[i])
+				} else {
+					chunkIdx, chunkTexts = append(chunkIdx, i), append(chunkTexts, cutUTF8(texts[i], cmi.MaxIndexTextBytes))
+				}
+			}
+			var err error
+			if len(memTexts) > 0 {
+				var mv [][]float32
+				if mv, err = s.Embedder.Embed(ctx, memTexts); err == nil {
+					for j, i := range memIdx {
+						vecs[i] = mv[j]
+					}
+				}
+			}
+			if err == nil && len(chunkTexts) > 0 {
+				var cv [][]float32
+				var cr []embedFail
+				if cv, cr, err = s.embedEach(ctx, chunkTexts); err == nil {
+					for j, i := range chunkIdx {
+						vecs[i], fails[i] = cv[j], cr[j]
+					}
+				}
+			}
 			if err != nil {
 				// leave the events pending; count the attempt so a dead endpoint is visible
 				ids := make([]int64, 0, len(events))
@@ -153,8 +184,10 @@ func (s *Store) Project(ctx context.Context, limit int) (int, error) {
 		for i, e := range toEmbed {
 			if e.kind == "memory" {
 				b.Queue(`UPDATE memory_records SET embedding = $2, embedding_model = $3 WHERE id = $1 AND version = $4`, e.objectID, vecs[i], model, e.version)
+			} else if vecs[i] == nil { // a chunk the embedder did not take: recorded, its event is done, the backfill retries a transient one
+				s.queueChunkEmbedding(b, e.objectID, e.seq, nil, fails[i], model)
 			} else {
-				b.Queue(`UPDATE knowledge_chunks c SET embedding = $3, embedding_model = $4 FROM knowledge_documents d WHERE c.document_id = $1 AND c.seq = $2 AND d.id = c.document_id AND d.revision = $5`, e.objectID, e.seq, vecs[i], model, e.version)
+				b.Queue(`UPDATE knowledge_chunks c SET embedding = $3, embedding_model = $4, embed_error = NULL, embed_error_model = NULL, embed_attempts = 0, embed_retry_at = NULL FROM knowledge_documents d WHERE c.document_id = $1 AND c.seq = $2 AND d.id = c.document_id AND d.revision = $5`, e.objectID, e.seq, vecs[i], model, e.version)
 			}
 		}
 		for _, e := range events {
@@ -162,7 +195,7 @@ func (s *Store) Project(ctx context.Context, limit int) (int, error) {
 				if e.kind == "memory" {
 					b.Queue(`UPDATE memory_records SET embedding = NULL WHERE id = $1 AND status <> 'active'`, e.objectID)
 				} else {
-					b.Queue(`UPDATE knowledge_chunks c SET embedding = NULL FROM knowledge_documents d WHERE c.document_id = $1 AND d.id = c.document_id AND d.status <> 'active'`, e.objectID)
+					b.Queue(`UPDATE knowledge_chunks c SET embedding = NULL FROM knowledge_documents d WHERE c.document_id = $1 AND d.id = c.document_id AND d.status NOT IN ('active', 'superseded')`, e.objectID)
 				}
 			}
 			b.Queue(`UPDATE projection_events SET processed_at = now(), attempts = attempts + 1 WHERE id = $1`, e.id)

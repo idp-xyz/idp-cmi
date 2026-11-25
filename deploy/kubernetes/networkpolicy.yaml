@@ -85,6 +85,11 @@ spec:
       ports:
         - {protocol: TCP, port: 443}
     - to:
+        - ipBlock:
+            cidr: 203.0.113.40/32       # knowledge originals on kind: the host RustFS; tests/kind replaces this address
+      ports:
+        - {protocol: TCP, port: 19510}
+    - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability

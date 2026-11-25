@@ -342,3 +342,152 @@ O1 的实际暴露面：现在写线程作用域的只有 EER（每个决策一�
 - 无答案问题只有 3 个，"返回空"的数字只能说明方向。
 - 标注以每题 3 个左右章节为准，语料里可能还有别的章节也能回答，所以命中率会被低估。
 - 英文问法是中文问题的翻译，不是独立写的；而且有不少标注章节本身就是英文，所以英文问法并不全是跨语言检索。
+
+## 24. 知识库（2026-11-24；2026-11-25 评审后按决策人的裁定修订）
+
+企业知识库计划在平台仓库 `docs/adr/knowledge-base-plan.md`。这一刀做库本身、三级可见、成员写入、生效窗口、结构分块和原件，契约 `idp.telos.cmi` 1.5.0 只做新增（新定义 KnowledgeBase；KnowledgeDocument 增 `knowledgeBase`、`validFrom`、`docType`、`owner`、`reviewDue`、`original`；ContextItem 增 `locator`）。D47–D50 是这一刀的基本决定，D51–D58 是评审后补写的语义规则：每一条都有对应的回归测试（见本节末的删除表）。
+
+| # | 决策 | 理由 |
+|---|---|---|
+| D47 | **知识库是新对象**：`knowledge_bases`，作用域为企业、单元或个人。已有文档在迁移时归入以其来源为名的企业库，可见性不变（迁移的做法见下）。管理员不指明库的文档归入来源同名的企业库，库在第一次用到时建立。个人库必须用 `user` 来源；**一个成员只有一个个人库，按所有者（作用域）查找而不按名字**（`(租户, 作用域 id)` 在个人库上唯一）；`personal-` 前缀留给服务为成员建的库，管理员登记不得用。别人读不到的个人库，读取返回 404。归档后不再检索、不再接收文档，归档库里的文档在包的复验里是陈旧的；管理员可以重开任何库，成员只能重开自己的个人库（`POST /api/v1/knowledge/bases/{name}/unarchive`）。审计一律用库的 id 作资源 id（创建、归档、重开、读取），名字放在 detail 里 | 权限按库生效，而不是逐份文档配 ACL。按名字找个人库会让管理员建一个同名的库把成员锁在外面 |
+| D48 | **成员写入**：`POST /v1/knowledge/documents` 允许读者与写入者往自己能写的库里写文档：个人库只有所有者能写（管理员也不能往成员的个人库里写，能撤回里面的文档）；企业库和单元库要求是该库的管理者（主体或角色）——是单元成员却不是管理者得 403，读不到的库是 404。不指明库时，第一次上传建立本人的个人库。文档的敏感级别不得高于写入者的上限和库的上限；没写敏感级别时用库的 `defaultSensitivity`。**每条成员路由都像管理员路由一样先问 PDP（D23）**：`knowledge.read`（列表、读取、下载）、`knowledge.write`（上传、存原件）、`knowledge.revoke`；PDP 的 `maxSensitivity` 与 `excludeSources` 对成员的列表、读取、撤回和原件下载同样生效。成员的列表与撤回用和读取相同的可见性（ACL、敏感级别、擦除、范围）：管理者撤不了自己读不到的文档；`If-Match` 不符在两条撤回路径上都是 409 | 成员不是管理员。写权限不等于读权限，两个都要过 |
+| D49 | **知识文档按结构分块**：标题另起一块；表格放得下 1500 字节（`cmi.KnowledgeChunkBytes`）就整块，放不下就按行分组，每组重复表头和分隔行且不超过 1500 字节，单行超过 1500 字节的像文本一样切；围栏代码块（\`\`\` 与 ~~~）对结构解析不透明（里面的 `#`、`\|`、页标记都不算），整块一个 chunk，超过 1500 字节才按行切、每块重复围栏。没有标题、表格、围栏和页码标记的文本与原来的 `Chunk` 相同。每块带标题路径、页码、表名，经 `ContextItem.locator` 给出；**标题路径与表名永远在索引和向量的文本里**（标题不在正文里，章节要能按它的标题词找到——HEAD 能，第一版草稿不能），摘录是正文，前面加一行标题路径（`A › B`），模型看得见它在哪一节；**写入时的注入扫描（D12）扫的是模型会看到、索引会匹配的全部：标题路径、表名和正文**，标题里的"忽略之前的指令"和正文里的一样被打标、不进包；没有标题的块与原来逐字相同。建索引和取向量的文本最多 8192 字节（`MaxIndexTextBytes`，切的是上下文不是正文），交给嵌入服务时 64 条一批；一块嵌入服务不收（单独重试时仍失败）就记下原因跳过（`knowledge_chunks.embed_error`，D58）。记忆不走这条路径 | 一条条款要能按它所在的章节被找到，一行表格要能被找到并且摘录里就是这一行 |
+| D50 | **原件单独存放**：文档版本可以另存一份原件，库里只留对象键、摘要、大小和媒体类型，键不出契约；读出时按摘要核对，不符是 500 并写日志。擦除域 `originals` 删掉对象之后，这次擦除才标 verified。没配对象存储时文本入库照旧，存原件得到 503；对象存储在后台连，CMI 不等它（D54）。键、竞态、下载头、配额见 D54、D55 | 原件不是检索用的正文 |
+| D51 | **版本的身份是（租户、知识库、uri）**。版本号、取代、"现行"判断、as-of 都只在一个库之内比较；`(knowledge_base_id, uri, version)` 唯一。成员的上传和管理员指名了库的上传，uri 必须是 `kb://<库名>/<路径>`，否则 422，信息里说明应有的写法（拒绝，不改写）；uri 指着另一个库的 `kb://` 也是 422。成员没指名库时（本人个人库的名字带哈希，上传前无法知道）可以写 `kb://me/<路径>`，存入的是规范的 `kb://<个人库名>/<路径>`，返回的文档里就是规范写法；`me` 因此是保留名，不能登记同名的库或来源。管理员不指名库的上传（旧路径）与连接器一样保留各自的 uri，落在来源同名的企业库里：不同来源的库里相同的 uri 是两份文档，谁也取代不了谁。连接器的未变化检查（`ActiveDocumentDigest`）也按来源的库 | 审查里：成员往个人库传 `handbook://travel-policy`，企业库的 v1 被取代、全员读不到。三个方向（个人→企业、企业→个人、单元→企业）都有测试 |
+| D52 | **"现行"只有一个定义**，检索、实体列表、omitted 统计、配额、管理员列表和 `VerifyPackage` 用同一条：一个文档是它的（库、uri）里最高的、没有被撤回、没有过期、没有被擦除、有效窗口含"现在"的那一版，并且所在的库是活动的。`validFrom` 缺省（NULL）表示"从一开始就有效"，不是 created_at；as-of 对没有 `validFrom` 的文档与这次改动之前完全一样（有效时间不受它的登记时间限制；已知时间不得早于它的登记时间）。**一个版本开始之后，它的结束不会让更早的版本复活**：在没有被撤回、没有被擦除、已经开始（`validFrom` ≤ 现在）的版本里取最高的；它的窗口含现在才是现行，不含就没有现行版本，不回退到更早的。检索、as-of、配额、列表、包复验同一条规则。理由：一个没有人重新确认过的旧版本，不该在更新的一版到期时悄悄回来（2025 年的费率表不能在 2027-01-01 重新生效）；到期是一个事实，撤回才是"这一版作废、回到上一版"的明确动作。**取代是推导的，不再写库**：新版本一开始，旧版本就不是现行，管理员列表里显示 superseded，旧行的存储状态不变（旧发布留下的 `superseded` 行按同一规则解读）。后果：撤回最新一版（回滚），上一版重新成为现行，检索、"现在"的 as-of 视图、包的复验同时给出同一个答案（之前 as-of 返回旧版而检索什么都不返回）；定为未来生效的版本不取代现行版本；一个有 `validUntil` 的新版本到期后，上一版**不**回来。**升级说明**：旧发布把被取代的版本存成 `superseded`，升级后这些行按这一条重新解读——被取代的版本在更新的一版被撤回之后会重新现行，这是和升级之前不同的地方（之前什么都不返回）；要让某份文档整个下线，撤回它的所有版本。包里引用的版本不再现行（有更新的版本已生效、撤回、过期、库归档、被擦除）就在复验里是陈旧的 | 审查 S6、S7：取代曾经是写入时的一次 UPDATE，与生效窗口、撤回不一致 |
+| D53 | **个人库的范围与审计**：解析的缺省范围对每个人（管理员也一样）是：企业库、调用者所属单元的库、调用者自己的个人库。管理员读别人的个人库只能指名：解析时在 `scope`/`scopes` 里指名该成员的主体作用域（与个人记忆同一规则 D42：写入服务和管理员可以指名，读者不行），或按文档 id 读、按 `knowledgeBase` 列出、按名字读库。每次这样的读取记审计 `knowledge.read_other`（资源 id 是库 id；detail 有 via＝resolve／document／original／list、subject、client、actor；resolve 里按有 chunk 返回的库各记一条），读库的元数据记 `knowledge_base.read`；管理员的库列表也不含别人的个人库。别人读不到的文档是 404 | 计划选择点 5 (a)：管理员能读，每次读审计 |
+| D54 | **原件的键、竞态与交付**：每次上传有自己的对象键 `kb/<租户>/<数据库里的文档 id>/<版本>/<上传 id>`（不用调用者写的 id 拼写）。流程：PDP → 权限（读得到且能写该库，**在读请求体之前**）→ 请求体边读边算 SHA-256、按媒体类型限长（25 MiB，pdf／pptx／图片 50 MiB，不另存一份拷贝）→ 写对象 → 在事务里锁库行、再锁文档行，**条件更新**（行仍指着本次上传开始时的对象、文档没有被擦除，否则 409／404 并删掉新对象）→ 提交之后再删旧对象（删失败只记日志）。写对象失败时库里不变，上一份原件仍在。擦除的屏障（`erasure_id`）在事务里重查，所以擦除开始之后不会再记入新键。上传不增加文档的 `revision`（它管撤回的 If-Match 与投影事件）。每个调用者同时最多 2 个上传（429）。下载一律是附件：`Content-Disposition: attachment; filename="original-<id 前八位>.<扩展名>"`、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: sandbox`、`Cache-Control: private, no-store`；存的媒体类型每次下载前再按白名单核对，不在白名单里的按 `application/octet-stream` 给。对象存储配置 `IDP_CMI_ORIGINALS_CA_FILE`、`_TIMEOUT`（默认 2 分钟），桶检查每次 20 秒（`blob.CheckTimeout`），CMI 启动不等它：后台每 30 秒重试，之前原件一律 503；检查得到 403 不再当成桶不存在去建桶，只有 404 才建。**擦除按前缀清扫**：`originals` 域列出并删除 `kb/<租户>/<文档 id>/` 下的全部对象（`ListKeys`），不只删行里指着的那一个，删完再列一遍，还有剩的就让该域失败；所以替换时没删掉的旧对象、写了对象却没来得及提交（崩溃）留下的对象，都随文档的擦除一起消失。（崩溃留下的对象在它所属的文档被擦除时才被找到；文档一直没有被擦除时它只是占着存储，没有后台清扫，这是成本问题。）**对象存储不可达不算一次失败的尝试**：关着的门（`ErrUnavailable`）、5xx、429、超时、网络错误都归还这次尝试，擦除保持 pending，存储回来后完成，等多久都行；存储拒绝（403 等）才算失败。**记录时在事务里再核对**：锁了库行和文档行之后，库是否归档、调用者是否仍是管理者再判一次（归档了是 409，不再是管理者是 404，两种情况都删掉刚写的对象）。**对象键用数据库里的租户 id**（令牌里写成大写也一样），擦除的前缀因此总能找到它们。**全局的上传字节上限**：所有调用者同时在途的上传预留 `min(Content-Length, 类型上限)`（没有长度的按类型上限，长度超过类型上限在读之前就 422），合计不超过 `knowledge.maxInFlightUploadBytes`（缺省 256 MiB，至少要有最大的原件 50 MiB，否则启动失败），超出 429。**下载经临时文件**：边读边算摘要写进 `IDP_CMI_TEMP_DIR`（缺省系统临时目录，配了原件存储就在启动时检查它可写）里的文件，创建后立刻 unlink（保留文件描述符，崩溃不留东西），核对通过才发出，不整份读进内存；同时的下载不超过 `knowledge.maxConcurrentDownloads`（缺省 8），其中一个调用者至多 `knowledge.maxDownloadsPerCaller`（缺省 2），超出 429。上传和下载这两条路由有自己的截止时间 `knowledge.transferTimeout`（缺省 10 分钟），不受服务器 60 秒读写超时的限制（否则 50 MiB 的传输被卡在约 7 Mbit/s）。发布物的根文件系统是只读的，所以 `deploy/kubernetes/cmi.yaml` 给了一个 `emptyDir`（`sizeLimit: 512Mi` = 8 × 50 MiB 加余量）挂在 `/var/cache/idp-cmi`，`IDP_CMI_TEMP_DIR` 指向它；compose 需要给 cmi 服务一个同样位置的 tmpfs（`tmpfs: ["/var/cache/idp-cmi:size=512m"]`，见 `deploy/compose.yaml` 头部的说明）。**监控**：等对象存储的擦除有指标 `idp_cmi_erasures_waiting_for_store` 与 `idp_cmi_erasures_waiting_oldest_seconds`，并且每分钟至多一条警告日志写明等了多久 | 审查 S5、S11、S13 |
+| D55 | **配额**：文档数是有现行版本的文档个数（一份文档不论几个版本只算一次），字节是索引文本加原件，只计没有被更新版本取代、没有撤回／过期／擦除的版本；定为未来生效的版本另计（防止用未来日期绕过）。新版本立即生效时扣掉它取代的那一版的字节；替换原件时旧原件只算一次；检查和写入在同一个事务里，锁库行（`FOR UPDATE`），并发突发不会超出。个人库自己的配额为 0 时用成员缺省，来自配置 `knowledge.personalQuotaDocuments`／`personalQuotaBytes`（缺省 **500 份文档、200 MiB**；写 0 表示不限）；企业库和单元库为 0 仍表示不限。超出 429 `QUOTA_EXCEEDED`。**已知的代价**：配额检查在持有库行锁时扫描该库里现行的文档，开销与库的大小成正比，同一个库的上传因此串行；现在不优化，库大到上传变慢时改成计数器 | 审查 S8：满库拒绝已有文档的新版本、个人库无限、原件不计、先查后写 |
+| D56 | **文档标题进索引文本是一个设置，缺省关**（`knowledge.indexContext`；标题路径不在设置里，见 D49，永远在）。关着时没有标题的块的索引文本就是正文，评测语料没有 Markdown 标题，所以 `make test-eval` 不受 H1 的影响。**量过，没采纳——在这个知识库自己的标注题上重新决定（计划 2.6 节）**：在评测集上打开标题前缀（语料没有标题，所以量到的就是文档标题的作用）：大集词面 R@1 0.5641→0.5513（评审那次的草稿 0.5385），MRR 0.6239→0.6175（草稿 0.6122），R@5 0.6346→0.6346（草稿 0.6282），R@10 0.6603→0.6667，nDCG@10 0.6226→0.6205；留出集词面 R@1 0.3814→0.3918，R@5 0.5361→0.5326，MRR 0.4484→0.4552，nDCG@10 0.4797→0.4849；标注集混合 R@5 0.9444→1.0（旧并列顺序下；换成显式顺序之后这一项没有变化）。有升有降，差别在几道题之内，样本不够下结论。**并列分数的顺序**：词面检索里并列很多（中文按 bigram）。之前的顺序是查询计划碰巧留下的（HEAD 按 uri 索引扫描），换一个计划结果就变；现在写明：`ORDER BY r DESC, d.uri, d.version, c.seq`（外层，不再有内层排序，内层排序曾使大库上的词面解析慢一倍）。这把 `docs/eval` 重新定了一次基线（大集词面 R@1 0.5641→0.5513，MRR 0.6239→0.6147；留出集 R@1 0.3814→0.378，MRR 0.4484→0.4481），**并列的顺序本身就让 R@1 与 MRR 移动约一个百分点，上面打开上下文的差别（新基线上：大集 R@1 0.5513→0.5385，MRR 0.6147→0.6083；留出集 R@1 0.378→0.3883，MRR 0.4481→0.4547）都在这个噪声之内**。`IDP_EVAL_INDEX_CONTEXT=1 make test-eval UPDATE=1` 重复这次测量（会改 docs/eval，别提交） | 审查 B2：门禁不得因为一个没量过的默认值失败 |
+| D57 | **擦除主体也擦掉他的个人库**：`subject` 选择器除了记忆，还选中他个人库里的所有文档，其文本块、原件（`originals` 域）、实体、包里的摘录按 D20 净化；其他文档里的 `owner` 若是该主体则清空。个人库里的文档不再留着成员自己起的路径：uri 改成 `kb://<库名>/erased-<文档 id>`、`created_by` 改成 `[erased]`，已存的包里引用这些文档的 `ref` 同步改写；主体被擦除的个人库改名为 `personal-erased-<库 id 前 12 位>`、`scope_id` 改成 `erased-<库 id>`、管理者清空并归档（成员若还在，下一次上传会建一个新库）。**主体擦除**（设计决定，评审时定的，不是别的擦除的做法）还处理该成员自己请求的包：`query` 与 `purpose` 换成墓碑，`requestedBy` 与指着他的 `scope` 换成一个只由这次擦除派生的稳定标记（`erased-<擦除 id 前 8 位>`，不是主体的哈希，猜名字也还原不了），列 `requested_by` 同样，包标 `redacted`；他撤回的文档的 `revoked_by` 也清掉。别的擦除（按记录、文档、引用、实体）不动提问人和提问原文：D20 擦除的是被引用的内容，不是谁问过。栅栏设在请求的事务里；请求之后才传进个人库的文档在 `content` 域开始时一并归入同一次擦除。`content` 域结束前核对：个人库里没有不在擦除之下的文档、没有还留着文本的块，否则该域失败、擦除不标 verified | 审查 S3：擦除标了 verified，个人库的文档、原件还在 |
+| D58 | **一个无法索引的块不拖住回填，但只有输入错误才是永久的**：嵌入服务整批失败时逐条重试。只有嵌入服务拒绝文本本身（400、413"太长"、422）才算永久；401、403、404、405 这类是凭据或地址不对，不是文本的问题，按暂时的处理，并且记一条错误日志、计入 `idp_cmi_embed_failures_total{kind="refused"}`（`permanent`、`transient` 也在这个指标里）：记 `embed_error` 与当时的模型（原因最多 300 字符，另写一条警告日志），在换了嵌入模型之前跳过，管理员也可以清除（`POST /api/v1/knowledge/embed-errors/clear`）；它仍在词面索引里。无应答、5xx、429、超时、格式不对都是暂时的：计一次尝试（`embed_attempts`），下一次尝试的时间按 10 秒翻倍、至多一小时（`embed_retry_at`），成功后清零，等待期间不挡别的块。一个块都没成功而有暂时性错误，是服务端的问题，整批留给下一轮、什么也不记；每一条都是永久错误则都记下。投影事件同样处理，事件照常标为已处理（暂时失败的块由回填接着做） | 一块永远失败的内容不能让后面的内容永远嵌入不了 |
+
+**迁移**（0013–0016）：迁移由模式所有者运行；所有者不是超级用户时 FORCE 行级安全对它同样生效，回填读不到任何行。所以每个读写了现有行的迁移在**同一事务里对相关表 `NO FORCE ROW LEVEL SECURITY`，回填，再 `FORCE`**（`sources`、`knowledge_documents`、`knowledge_chunks`；新表 `knowledge_bases` 在回填之后才启用 RLS）。没有选择"逐租户设置租户再分批"，因为回填要跨所有租户而且是一条语句。`valid_from` 对存量文档保持 NULL（D52）；旧的 `(tenant_id, uri, version)` 唯一约束换成 `(knowledge_base_id, uri, version)`。**升级的代价（0013、0015）**：0013 对 `sources`、`knowledge_documents` 取 ACCESS EXCLUSIVE 锁（改约束、加列），0015 对 `knowledge_chunks` 取同样的锁，并且 `UPDATE ... SET index_text = content` **改写每一个 chunk 行**（一个事务；表和 GIN 索引暂时涨一倍，事后要 VACUUM）。停机时间随语料大小增长：在本机（SSD，PostgreSQL 17）上 30 万个 chunk、620 MB（表加索引）约 7 秒，即每个 chunk 约 25 微秒、每 100 MB 约 1 秒；估算办法是 `SELECT count(*), pg_size_pretty(pg_total_relation_size('knowledge_chunks')) FROM knowledge_chunks`，再用上面的比例，并且在生产库的恢复副本上量一次再定窗口。升级期间服务读写同一批表会等锁，所以按停机处理。测试 `TestMigrationOnAPopulatedDatabase` 在模式 12 的库里放进数据再升级，分别用超级用户和非超级用户的所有者各跑一遍。
+
+**配置**：`knowledge.indexContext`、`knowledge.personalQuotaDocuments`、`knowledge.personalQuotaBytes`、`knowledge.maxInFlightUploadBytes`、`knowledge.maxConcurrentDownloads`、`knowledge.maxDownloadsPerCaller`、`knowledge.transferTimeout`（配置文件）；`IDP_CMI_ORIGINALS_CA_FILE`、`IDP_CMI_ORIGINALS_TIMEOUT`、`IDP_CMI_TEMP_DIR`（环境变量）。
+
+**验证**：契约测试；`make test`、`make test-integration`、`make test-integration-pgvector`、`make test-eval`（见下表对应的测试）。
+
+**删除表**：每个控制各删一次，下面的测试必须失败（`tests/integration/` 里的测试用 `make test-integration` 的方式运行，单元测试在各自的包里）。
+
+| # | 删掉的控制（每行只删这一处） | 失败的测试 |
+|---|---|---|
+| R01 | version identity per base: the replacement/in-force checks compare uri across bases | `TestConnectorURIsNeverCrossBases` |
+| R02 | kb://<base>/ uri required for uploads into a base | `TestPersonalBaseNamingAndUnarchive`、`TestVersionIdentityIsPerBase` |
+| R03 | a uri naming another base is refused | `TestVersionIdentityIsPerBase` |
+| R04 | index context setting off by default | `TestKnowledgeHeadingIndexSetting`、`TestRetrievalOnTheHeldOutSet`、`TestRetrievalOnTheLargeSet` |
+| R05 | equal scores are ordered by uri, version and chunk (outer tie-break) | `TestRetrievalOnTheHeldOutSet`、`TestRetrievalOnTheLargeSet` |
+| R06 | large tables are cut into row groups | `TestLargeTableIsSplitIntoRowGroupsThatRepeatTheHeader`、`TestHugeTableIsAccepted`、`TestLargeTableRowIsRetrievableAndExcerpted` |
+| R07 | a row longer than the cap is cut like text | `TestRowLongerThanTheCapIsCutLikeText` |
+| R08 | fenced code is opaque to the structure parser | `TestFencedCodeIsOpaque`、`TestLongFencedCodeIsCutWithTheFenceRepeated` |
+| R09 | a long fence is cut with the fence repeated | `TestLongFencedCodeIsCutWithTheFenceRepeated` |
+| R10 | the indexed and embedded text is bounded | `TestIndexTextIsBounded` |
+| R13 | default scope: administrators see only enterprise, their units and themselves | `TestAdministratorReadsAPersonalBaseOnlyByNamingIt` |
+| R14 | a resolve that reads another member's chunks is audited | `TestAdministratorReadsAPersonalBaseOnlyByNamingIt` |
+| R15 | a read of another member's document or original by id is audited | `TestAdministratorReadsAPersonalBaseOnlyByNamingIt` |
+| R16 | an administrator does not write into a member's personal base | `TestAdministratorReadsAPersonalBaseOnlyByNamingIt` |
+| R17 | member routes ask the PDP | `TestMemberKnowledgeRoutesAskThePDP` |
+| R18 | the PDP's obligations narrow member reads | `TestMemberKnowledgeRoutesAskThePDP` |
+| R19 | excluded sources apply to member reads of documents and originals | `TestMemberKnowledgeRoutesAskThePDP` |
+| R20 | erasure of a subject covers their personal base | `TestSubjectErasureCoversThePersonalBase` |
+| R21 | documents that reach the base after the request are claimed | `TestSubjectErasureCoversThePersonalBase` |
+| R22 | owner fields naming the subject are erased | `TestSubjectErasureCoversThePersonalBase` |
+| R23 | first use of a base: INSERT ... ON CONFLICT DO NOTHING then SELECT | `TestConcurrentFirstUseNeverFails` |
+| R24 | source base: ON CONFLICT DO NOTHING | `TestConcurrentFirstUseNeverFails` |
+| R25 | the base row lock serializes version numbers and quota checks | `TestConcurrentFirstUseNeverFails`、`TestQuotaHoldsUnderConcurrency` |
+| R27 | the row is updated only if it still points to what the upload started from | `TestOriginalReplacementRacesAndFailures` |
+| R28 | erasure is re-checked inside the transaction that records the key | `TestOriginalAttachedWhileTheDocumentIsErased` |
+| R30 | the replaced object is deleted only after the commit | `TestOriginalReplacementRacesAndFailures` |
+| R31 | an object whose row was not updated is deleted | `TestOriginalAttachedWhileTheDocumentIsErased`、`TestOriginalReplacementRacesAndFailures` |
+| R32 | package verification uses the one definition of current | `TestNewVersionInForceCondition`、`TestPackageStaleness` |
+| R33 | a version not yet in force does not hide the one in force | `TestNewVersionInForceCondition` |
+| R34 | an archived base makes its documents not current | `TestPackageStaleness` |
+| R35 | a document written without validFrom has none (NULL = from the beginning) | `TestAsOfOfADocumentWithoutValidFrom`、`TestNewVersionInForceCondition` |
+| R36 | as-of: a revoked newer version no longer hides the older one | `TestRevokedSuccessorLeavesOneAnswer` |
+| R37 | a new version of a document the base holds does not count twice | `TestQuotaCounting` |
+| R38 | a version in force frees the bytes of the one it replaces | `TestQuotaCounting` |
+| R39 | originals count toward the bytes of a base | `TestQuotaCounting` |
+| R40 | a personal base has the member default quota | `TestQuotaCounting` |
+| R41 | an original on a replaced or revoked version is not counted, a replacement counts once | `TestQuotaCounting` |
+| R42 | downloads are attachments | `TestOriginalDownloadHeaders` |
+| R43 | downloads are sandboxed | `TestOriginalDownloadHeaders` |
+| R44 | downloads are nosniff | `TestOriginalDownloadHeaders` |
+| R45 | the stored media type is checked against the allow-list on download | `TestOriginalDownloadHeaders` |
+| R46 | uploads of originals are limited to the allow-list of media types (checked in the route, in CheckOriginalWrite and in PutOriginal) | `TestOriginalDownloadHeaders` |
+| R47 | the permission is checked before the body is read (in the route and in PutOriginal; removed together) | `TestOriginalPermissionBeforeBodyAndSizeLimit`、`TestOriginalRouteAnswersBeforeTheBodyArrives` |
+| R48 | the body is bounded as it is read | `TestOriginalPermissionBeforeBodyAndSizeLimit` |
+| R49 | concurrent uploads per caller are bounded | `TestOriginalUploadsPerCallerAreBounded` |
+| R50 | the digest of a stored original is checked on download | `TestOriginalDigestMismatchIsAServerError` |
+| R51 | list of member documents applies ACL and sensitivity | `TestMemberListAndRevokeFollowReadVisibility` |
+| R52 | a manager cannot revoke what they cannot read | `TestMemberListAndRevokeFollowReadVisibility` |
+| R53 | a stale If-Match is a conflict on both routes | `TestMemberListAndRevokeFollowReadVisibility` |
+| R54 | a missing bucket (404) is created, anything else is an error | `TestEnsureBucketCreatesOnlyAMissingBucket` |
+| R55 | originals answer unavailable until the store is reached | `TestGateAnswersUnavailableUntilTheStoreIsReached`、`TestOriginalStoreGate` |
+| R56 | the migration sees the rows as a schema owner without superuser (sources) | `TestMigrationOnAPopulatedDatabase` |
+| R57 | the migration sees the rows (documents) | `TestMigrationOnAPopulatedDatabase` |
+| R58 | the migration sees the rows (chunks) | `TestMigrationOnAPopulatedDatabase` |
+| R59 | FORCE row-level security is switched back on after the backfill | `TestMigrationOnAPopulatedDatabase` |
+| R60 | the name prefix personal- is reserved | `TestKnowledgeBasesAreScoped` |
+| R61 | a member has one personal base (unique by owner) | `TestKnowledgeBasesAreScoped` |
+| R62 | only a manager (or the owner) writes a base | `TestKnowledgeBaseManagersAndCeilings` |
+| R63 | the base's sensitivity ceiling holds | `TestKnowledgeBaseManagersAndCeilings` |
+| R64 | the writer's sensitivity ceiling holds | `TestKnowledgeBaseManagersAndCeilings` |
+| R65 | the base's default sensitivity is applied | `TestKnowledgeBaseManagersAndCeilings` |
+| R66 | an owner may reopen their archived personal base | `TestPersonalBaseNamingAndUnarchive` |
+| R67 | the personal base is found by its owner (the name is derived from a safe encoding) | `TestPersonalBaseNameIsSafeForAnySubject`、`TestPersonalBaseNamingAndUnarchive` |
+| R68 | erasure of originals fails when the store refuses (the delete and the check after it) | `TestErasureFailsWhenAnObjectSurvivesItsDelete`、`TestOriginalErasureFailureIsNotVerified` |
+| R69 | a chunk's heading, page and table are exposed as the item's locator | `TestKnowledgeHeadingIndexSetting` |
+| R70 | the connector digest check is per base | `TestConnectorURIsNeverCrossBases` |
+| R71 | naming a personal base in the administrator's list is audited | `TestAdministratorReadsAPersonalBaseOnlyByNamingIt` |
+| R72 | the administrator's list leaves other members' personal bases out | `TestAdministratorReadsAPersonalBaseOnlyByNamingIt` |
+| R73 | a version replaced stays in the list as superseded (derived status) | `TestMigrationOnAPopulatedDatabase`、`TestNewVersionInForceCondition` |
+| R74 | the quota check of a new version | `TestKnowledgeBasesAreScoped`、`TestQuotaCounting`、`TestQuotaHoldsUnderConcurrency` |
+| R75 | an expired newest version leaves no current version (current view) | `TestExpiredNewestVersionDoesNotResurrectAnOlderOne` |
+| R76 | an expired newest version leaves no current version (as-of) | `TestExpiredNewestVersionDoesNotResurrectAnOlderOne` |
+| R77 | a swept (expired) newest version still counts as the newest | `TestExpiredNewestVersionDoesNotResurrectAnOlderOne` |
+| R78 | the originals erasure sweeps the document's whole prefix | `TestSubjectErasureLeavesNothingThatNamesTheMember` |
+| R79 | the erasure lists the prefix again and fails if an object survived | `TestErasureFailsWhenAnObjectSurvivesItsDelete` |
+| R81 | the closed gate is a transient condition | `TestTransientErrors`、`TestErasureWaitsForTheObjectStore` |
+| R82 | a 5xx answer of the store is a transient condition | `TestTransientErrors`、`TestErasureWaitsForTheObjectStore` |
+| R83 | a personal document keeps no member-chosen path after its erasure | `TestSubjectErasureLeavesNothingThatNamesTheMember` |
+| R84 | the erased subject's personal base is renamed and closed | `TestSubjectErasureLeavesNothingThatNamesTheMember` |
+| R85 | the stored packages' refs are rewritten | `TestSubjectErasureLeavesNothingThatNamesTheMember` |
+| R87 | a transient failure waits out a backoff before the retry | `TestTransientEmbeddingFailureIsRetried` |
+| R88 | a permanent embedding error is forgotten when the model changes | `TestPermanentEmbeddingErrorIsClearedByAModelChangeOrAnAdministrator` |
+| R89 | an administrator can clear embedding errors | `TestPermanentEmbeddingErrorIsClearedByAModelChangeOrAnAdministrator` |
+| R90 | a successful embedding clears the retry bookkeeping | `TestTransientEmbeddingFailureIsRetried` |
+| R91 | a transient failure counts an attempt and sets the next time | `TestTransientEmbeddingFailureIsRetried` |
+| R92 | base archived / manager removed is checked again when the original is recorded | `TestOriginalRechecksBaseAndManagerWhenRecording` |
+| R95 | me is reserved as a source name | `TestReservedNames` |
+| R96 | me is reserved as a base name | `TestReservedNames` |
+| R97 | a prose line that starts with a pipe is not a table row | `TestChunkerQuirks` |
+| R98 | a setext heading is a heading | `TestChunkerQuirks` |
+| R99 | a table marker names the next table of its own section only | `TestChunkerQuirks` |
+| R100 | the heading path of a chunk is always in the indexed and embedded text | `TestChunkKnowledgeHeadingsTablesAndPages`、`TestKnowledgeHeadingIndexSetting` |
+| R101 | the excerpt of a chunk starts with its heading path | `TestKnowledgeHeadingIndexSetting` |
+| R102 | a download's temporary file is unlinked at once | `TestDownloadsNeedAWritableTempDirAndLeaveNothingInIt` |
+| R103 | downloads use the configured temporary directory | `TestDownloadsNeedAWritableTempDirAndLeaveNothingInIt` |
+| R105 | a download gives its place back when it ends | `TestDownloadsAtOnceAreBounded` |
+| R106 | a 401/403/404 of the embedder is not an input error | `TestPermanentErrors`、`TestAnExpiredEmbedderCredentialMarksNothingPermanent` |
+| R107 | an embedder that refuses the caller is counted and logged | `TestAnExpiredEmbedderCredentialMarksNothingPermanent` |
+| R108 | object keys carry the database's tenant id | `TestObjectKeysUseTheCanonicalTenant` |
+| R110 | the erased subject's own packages lose their query and their name | `TestSubjectErasureRedactsTheMembersOwnPackagesAndRevocations` |
+| R111 | a document the erased subject withdrew no longer names them | `TestSubjectErasureRedactsTheMembersOwnPackagesAndRevocations` |
+| R112 | an upload reserves its own length, not the most its type may have | `TestUploadBytesInFlightAreBoundedAndDownloadsAreStreamed` |
+| R113 | a length above the limit of its type is refused before the body is read | `TestUploadBytesInFlightAreBoundedAndDownloadsAreStreamed` |
+| R114 | maxInFlightUploadBytes must cover the largest original | `TestValidateUploadBudget` |
+| R116 | an erasure that finished is no longer counted as waiting | `TestErasureWaitsForTheObjectStore` |
+| R11 | an input error of one chunk is recorded and skipped, not retried for ever | `TestBackfillSkipsAChunkThatCannotBeEmbedded`、`TestPermanentEmbeddingErrorIsClearedByAModelChangeOrAnAdministrator` |
+| R26 | every upload of an original has its own object key | `TestOriginalReplacementRacesAndFailures` |
+| R29 | the object key is built from the database's document id | `TestOriginalKeyUsesTheCanonicalID` |
+| R86 | only an input error is a permanent embedding error | `TestPermanentErrors`、`TestTransientEmbeddingFailureIsRetried` |
+| R93 | the bytes of uploads in flight are bounded over all callers | `TestUploadBytesInFlightAreBoundedAndDownloadsAreStreamed` |
+| R115 | an erasure waiting for the object store is counted | `TestErasureWaitsForTheObjectStore` |
+| R12 | an endpoint that is down is not mistaken for a poisoned chunk | `TestBackfillSkipsAChunkThatCannotBeEmbedded` |
+| R80 | an unreachable object store does not consume an erasure attempt | `TestErasureWaitsForTheObjectStore` |
+| R117 | the injection scan covers the heading path line a model sees, not only the body | `TestInjectionInAHeadingIsFlaggedLikeOneInABody` |
+| R118 | one caller's downloads are bounded within the global limit | `TestDownloadsPerCallerAreBounded` |
+| R119 | the routes that move originals have their own deadline | `TestTransferRoutesHaveTheirOwnDeadline` |
+| R104 | concurrent downloads are bounded | `TestDownloadsAtOnceAreBounded` |
+
+R04、R05 在评测测试（`TestRetrievalOnTheLargeSet`、`TestRetrievalOnTheHeldOutSet`，`make test-eval`）里失败（R04 还在 `TestKnowledgeHeadingIndexSetting` 失败），其余在 `make test`（单元）与 `make test-integration`（集成）里失败。没有单独一行的控制：对象键用数据库租户 id 时，擦除前缀里的租户 id 也用数据库的写法（`deleteOriginals` 里的 `current_tenant()` 查询）——擦除的工作线程本来就用数据库的写法调用，只有键本身是令牌写法时才露出来（R108）；擦除里 `verifyPersonalErased`（核对个人库没有残留）——栅栏的认领（R21）已经保证没有残留，核对是第二道防线，单独删掉不会让任何测试失败，与认领一起删时 R21 的测试失败；媒体类型白名单在路由、`CheckOriginalWrite`、`PutOriginal` 三处各查一次，R46 把三处一起删；"先查权限再读请求体"在路由和 `PutOriginal` 各有一道，R47 把两道一起删。

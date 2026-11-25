@@ -26,6 +26,9 @@ func (s *Store) ListByEntity(ctx context.Context, tenant string, e cmi.Entity, v
 	out := &EntityView{Entity: e, Records: []cmi.MemoryRecord{}, Documents: []cmi.Document{}}
 	key := []string{e.Type + ":" + e.ID}
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+		if err := bindView(ctx, tx, v); err != nil {
+			return err
+		}
 		rows, err := tx.Query(ctx, `SELECT `+memoryCols+` FROM memory_records m JOIN sources s ON s.id = m.source_id, LATERAL (SELECT m.status, m.valid_until, m.sensitivity, m.acl_subjects, m.acl_roles) x
 			WHERE true`+visibleSQL+entityFilterSQL("memory", "m.id", "$4")+` ORDER BY m.created_at DESC LIMIT $5`, v.Subject, v.Roles, rank(v.Ceiling), key, limit)
 		if err != nil {
@@ -44,7 +47,7 @@ func (s *Store) ListByEntity(ctx context.Context, tenant string, e cmi.Entity, v
 			return err
 		}
 		rows, err = tx.Query(ctx, `SELECT `+docCols+` FROM knowledge_documents d JOIN sources s ON s.id = d.source_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x
-			WHERE true`+visibleSQL+entityFilterSQL("knowledge", "d.id", "$4")+` ORDER BY d.created_at DESC LIMIT $5`, v.Subject, v.Roles, rank(v.Ceiling), key, limit)
+			WHERE true`+aclSQL+kbScopeSQL+knowledgeCurrentSQL+entityFilterSQL("knowledge", "d.id", "$4")+` ORDER BY d.created_at DESC LIMIT $5`, v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), key, limit)
 		if err != nil {
 			return err
 		}

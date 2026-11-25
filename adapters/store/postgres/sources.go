@@ -41,6 +41,9 @@ func (s *Store) CreateSource(ctx context.Context, tenant string, in cmi.Source, 
 	if err := in.Validate(); err != nil {
 		return nil, fail("INVALID", "%s", err)
 	}
+	if in.Name == cmi.PersonalAlias {
+		return nil, fail("INVALID", "the name %s is reserved (kb://%s/ is the alias of a member's personal base)", in.Name, in.Name)
+	}
 	var out *cmi.Source
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		id := NewUUID()

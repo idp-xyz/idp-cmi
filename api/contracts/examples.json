@@ -1,5 +1,5 @@
 {
-  "description": "idp.telos.cmi 1.4.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
+  "description": "idp.telos.cmi 1.5.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
   "generatedBy": "go test ./internal/cmi -run TestContract -update",
   "examples": [
     {
@@ -21,6 +21,13 @@
             "excerpt": "Pickup slots. Morning slots run from 07:00 to 11:00.",
             "id": "5b6c7d8e-0000-4000-8000-000000000020",
             "kind": "knowledge",
+            "locator": {
+              "headings": [
+                "Pickup",
+                "Morning slots"
+              ],
+              "page": 3
+            },
             "match": "both",
             "observedAt": "2026-11-02T09:00:00Z",
             "ref": "handbook://pickup#0",
@@ -117,7 +124,7 @@
     {
       "definition": "Envelope",
       "value": {
-        "digest": "sha256:e5a17483b4e6b9d8b8bd6b95e9514a5c8a4510fb11bc65c3f6a03a9513037002",
+        "digest": "sha256:99ed504a6e6982e029537224e8d7ae7209fade825dead1a2c8ecaa0e0d5a5669",
         "document": {
           "asOf": {
             "recorded": "2026-11-04T09:00:00Z",
@@ -135,6 +142,13 @@
               "excerpt": "Pickup slots. Morning slots run from 07:00 to 11:00.",
               "id": "5b6c7d8e-0000-4000-8000-000000000020",
               "kind": "knowledge",
+              "locator": {
+                "headings": [
+                  "Pickup",
+                  "Morning slots"
+                ],
+                "page": 3
+              },
               "match": "both",
               "observedAt": "2026-11-02T09:00:00Z",
               "ref": "handbook://pickup#0",
@@ -430,6 +444,7 @@
         "contentSha256": "sha256:ca2636bae99d12371279ee8b00bea64837b9f09ef3d76438f091adb2366e6ee6",
         "createdAt": "2026-11-02T09:00:00Z",
         "createdBy": "alice",
+        "docType": "policy",
         "documentId": "5b6c7d8e-0000-4000-8000-000000000020",
         "entities": [
           {
@@ -437,12 +452,21 @@
             "type": "service"
           }
         ],
+        "knowledgeBase": "handbook",
+        "original": {
+          "byteSize": 48213,
+          "mediaType": "application/pdf",
+          "sha256": "sha256:2d2964f1354540398f88886bfcfbecc04c3f03ce2c2024e9585c7b3fcfd23e2b"
+        },
+        "owner": "alice",
+        "reviewDue": "2027-05-03T09:00:00Z",
         "revision": 1,
         "sensitivity": "internal",
         "source": "handbook",
         "status": "active",
         "title": "Pickup handbook",
         "uri": "handbook://pickup",
+        "validFrom": "2026-11-02T09:00:00Z",
         "version": 2
       }
     },
@@ -473,6 +497,27 @@
         "uri": "handbook://pricing-internal",
         "validUntil": "2026-12-04T09:00:00Z",
         "version": 1
+      }
+    },
+    {
+      "definition": "KnowledgeBase",
+      "value": {
+        "createdAt": "2026-11-04T09:00:00Z",
+        "createdBy": "alice",
+        "defaultSensitivity": "internal",
+        "displayName": "Company handbook",
+        "knowledgeBaseId": "d4e5f6a7-0000-4000-8000-000000000090",
+        "managers": {},
+        "name": "handbook",
+        "ocr": false,
+        "quotaBytes": 0,
+        "quotaDocuments": 0,
+        "scope": {
+          "kind": "tenant"
+        },
+        "sensitivityCeiling": "restricted",
+        "source": "handbook",
+        "status": "active"
       }
     },
     {

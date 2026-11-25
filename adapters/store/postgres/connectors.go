@@ -343,11 +343,14 @@ func (s *Store) FinishJob(ctx context.Context, tenant, id, status, documentID, e
 	})
 }
 
-// ActiveDocumentDigest returns the content digest of the active document at uri ("" when none).
-func (s *Store) ActiveDocumentDigest(ctx context.Context, tenant, uri string) (string, error) {
+// ActiveDocumentDigest returns the content digest of the current version of uri in the enterprise base the
+// connector's source feeds ("" when none): identity is per base (D51), so a document of the same uri in
+// another base is not this one.
+func (s *Store) ActiveDocumentDigest(ctx context.Context, tenant, source, uri string) (string, error) {
 	var digest string
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		err := tx.QueryRow(ctx, `SELECT content_sha256 FROM knowledge_documents WHERE uri = $1 AND status = 'active'`, uri).Scan(&digest)
+		err := tx.QueryRow(ctx, `SELECT d.content_sha256 FROM knowledge_documents d JOIN knowledge_bases kb ON kb.id = d.knowledge_base_id
+			WHERE d.uri = $1 AND kb.name = $2 AND kb.scope_kind = 'tenant'`+knowledgeCurrentSQL, uri, source).Scan(&digest)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}

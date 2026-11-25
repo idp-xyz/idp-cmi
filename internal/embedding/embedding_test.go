@@ -3,6 +3,8 @@ package embedding
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -55,5 +57,25 @@ func TestOpenAIWire(t *testing.T) {
 	o.BaseURL = srv.URL + "/wrong"
 	if _, err := o.Embed(context.Background(), []string{"a"}); err == nil {
 		t.Fatal("HTTP error not reported")
+	}
+}
+
+// Only an input error is permanent: the endpoint refusing the text itself. Overload, outage and timeouts are not.
+func TestPermanentErrors(t *testing.T) {
+	for status, want := range map[int]bool{400: true, 413: true, 422: true, 401: false, 403: false, 404: false, 405: false, 408: false, 425: false, 429: false, 500: false, 502: false, 503: false} {
+		if got := Permanent(&StatusError{Status: status}); got != want {
+			t.Errorf("HTTP %d: permanent %v, want %v", status, got, want)
+		}
+	}
+	if Permanent(errors.New("connection refused")) || Permanent(fmt.Errorf("wrapped: %w", &StatusError{Status: 503})) || !Permanent(fmt.Errorf("wrapped: %w", &StatusError{Status: 413})) {
+		t.Error("wrapping or plain errors")
+	}
+}
+
+func TestRefused(t *testing.T) {
+	for status, want := range map[int]bool{401: true, 403: true, 404: true, 405: true, 400: false, 413: false, 422: false, 429: false, 408: false, 500: false} {
+		if got := Refused(&StatusError{Status: status}); got != want {
+			t.Errorf("HTTP %d: refused %v, want %v", status, got, want)
+		}
 	}
 }

@@ -4,7 +4,29 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5"
+
+	"idp-cmi/internal/cmi"
+	"idp-cmi/internal/embedding"
 )
+
+// shortReason bounds a recorded failure reason.
+func shortReason(s string) string {
+	if s == "" {
+		s = "the embedder refused the text"
+	}
+	return cutUTF8(s, 300)
+}
+
+func cutUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > 0 && s[cut]&0xC0 == 0x80 {
+		cut--
+	}
+	return s[:cut]
+}
 
 // BackfillEmbeddings vectorizes up to limit records and chunks that have no vector of the current
 // model (D11): rows written while the endpoint was down or before it was configured, and rows
@@ -46,8 +68,8 @@ func (s *Store) BackfillEmbeddings(ctx context.Context, limit int) (int, error) 
 		if err := rows.Err(); err != nil {
 			return err
 		}
-		rows, err = tx.Query(ctx, `SELECT c.document_id::text, c.seq, c.content FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id LEFT JOIN tenant_policies tp ON tp.tenant_id = d.tenant_id
-			WHERE d.status = 'active' AND d.erasure_id IS NULL AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM $1) AND `+sensitivityRankSQL("d.sensitivity")+` <= `+ceiling+` ORDER BY d.created_at, c.seq LIMIT $2`, model, limit-len(mem))
+		rows, err = tx.Query(ctx, `SELECT c.document_id::text, c.seq, c.index_text FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id LEFT JOIN tenant_policies tp ON tp.tenant_id = d.tenant_id
+			WHERE d.status IN ('active', 'superseded') AND d.erasure_id IS NULL AND (c.embed_error IS NULL OR c.embed_error_model IS DISTINCT FROM $1) AND (c.embed_retry_at IS NULL OR c.embed_retry_at <= now()) AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM $1) AND `+sensitivityRankSQL("d.sensitivity")+` <= `+ceiling+` ORDER BY d.created_at, c.seq LIMIT $2`, model, limit-len(mem))
 		if err != nil {
 			return err
 		}
@@ -66,29 +88,86 @@ func (s *Store) BackfillEmbeddings(ctx context.Context, limit int) (int, error) 
 		if len(mem)+len(chunks) == 0 {
 			return nil
 		}
-		texts := make([]string, 0, len(mem)+len(chunks))
-		for _, r := range mem {
-			texts = append(texts, r.text)
-		}
-		for _, r := range chunks {
-			texts = append(texts, r.text)
-		}
-		vecs, err := s.Embedder.Embed(ctx, texts)
-		if err != nil {
-			return err
-		}
 		b := &pgx.Batch{}
-		for i, r := range mem {
-			b.Queue(`UPDATE memory_records SET embedding = $2, embedding_model = $3 WHERE id = $1`, r.id, vecs[i], model)
+		if len(mem) > 0 {
+			texts := make([]string, len(mem))
+			for i, r := range mem {
+				texts[i] = r.text
+			}
+			vecs, err := s.Embedder.Embed(ctx, texts)
+			if err != nil {
+				return err
+			}
+			for i, r := range mem {
+				b.Queue(`UPDATE memory_records SET embedding = $2, embedding_model = $3 WHERE id = $1`, r.id, vecs[i], model)
+			}
 		}
-		for i, r := range chunks {
-			b.Queue(`UPDATE knowledge_chunks SET embedding = $3, embedding_model = $4 WHERE document_id = $1 AND seq = $2`, r.id, r.seq, vecs[len(mem)+i], model)
+		if len(chunks) > 0 { // a chunk the embedder cannot take is skipped with its reason, and the others go on
+			texts := make([]string, len(chunks))
+			for i, r := range chunks {
+				texts[i] = cutUTF8(r.text, cmi.MaxIndexTextBytes) // rows written before the bound existed
+			}
+			vecs, fails, err := s.embedEach(ctx, texts)
+			if err != nil {
+				return err
+			}
+			for i, r := range chunks {
+				s.queueChunkEmbedding(b, r.id, r.seq, vecs[i], fails[i], model)
+			}
 		}
 		if err := tx.SendBatch(ctx, b).Close(); err != nil {
 			return err
 		}
 		n = len(mem) + len(chunks)
 		return nil
+	})
+	return n, err
+}
+
+// queueChunkEmbedding queues what an embedding attempt of one chunk leaves: the vector (clearing any earlier failure), a
+// permanent failure recorded with the model it was for (the chunk is skipped until the model changes or an administrator
+// clears it), or a transient failure that counts an attempt and sets the time of the next one (10 s, doubling, at most an hour).
+func (s *Store) queueChunkEmbedding(b *pgx.Batch, doc string, seq int, vec []float32, f embedFail, model string) {
+	switch {
+	case vec != nil:
+		b.Queue(`UPDATE knowledge_chunks SET embedding = $3, embedding_model = $4, embed_error = NULL, embed_error_model = NULL, embed_attempts = 0, embed_retry_at = NULL WHERE document_id = $1 AND seq = $2`, doc, seq, vec, model)
+	case f.Permanent:
+		if s.OnEmbedFailure != nil {
+			s.OnEmbedFailure("permanent")
+		}
+		b.Queue(`UPDATE knowledge_chunks SET embed_error = $3, embed_error_model = $4 WHERE document_id = $1 AND seq = $2`, doc, seq, shortReason(f.Reason), model)
+		if s.Log != nil {
+			s.Log.Warn("a chunk cannot be embedded and is skipped", "document", doc, "seq", seq, "reason", shortReason(f.Reason))
+		}
+	default:
+		kind := "transient"
+		if embedding.Refused(f.Err) {
+			kind = "refused" // 401, 403, 404...: the embedder's credential or address, not the text
+			if s.Log != nil {
+				s.Log.Error("the embedding endpoint is refusing requests (check its credential and address); chunks wait and are retried", "document", doc, "error", shortReason(f.Reason))
+			}
+		}
+		if s.OnEmbedFailure != nil {
+			s.OnEmbedFailure(kind)
+		}
+		b.Queue(`UPDATE knowledge_chunks SET embed_attempts = embed_attempts + 1, embed_retry_at = now() + least(interval '1 hour', interval '10 seconds' * power(2, least(embed_attempts, 12))) WHERE document_id = $1 AND seq = $2`, doc, seq)
+		if s.Log != nil {
+			s.Log.Warn("a chunk could not be embedded this time; it will be tried again", "document", doc, "seq", seq, "reason", shortReason(f.Reason))
+		}
+	}
+}
+
+// ClearEmbedErrors makes the chunks that were skipped for a permanent embedding error, or are waiting out a retry, eligible
+// again at once (an administrator's way to retry after fixing the embedder or its input limit). It returns how many.
+func (s *Store) ClearEmbedErrors(ctx context.Context, tenant, by string) (int, error) {
+	n := 0
+	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE knowledge_chunks SET embed_error = NULL, embed_error_model = NULL, embed_attempts = 0, embed_retry_at = NULL WHERE embed_error IS NOT NULL OR embed_retry_at IS NOT NULL`)
+		if err != nil {
+			return err
+		}
+		n = int(tag.RowsAffected())
+		return Audit(ctx, tx, tenant, by, "knowledge.embed_errors_cleared", "", map[string]any{"chunks": n})
 	})
 	return n, err
 }

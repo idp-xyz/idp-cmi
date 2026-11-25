@@ -32,20 +32,88 @@ paths:
   /api/v1/sources/{ref}:
     parameters: [{$ref: '#/components/parameters/ref'}]
     get: {summary: Get a source by id or name, responses: {'200': {description: source}, '404': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/knowledge/bases:
+    post:
+      summary: Register a knowledge base (enterprise, unit or personal). A personal base uses a user source. Created active. The name prefix personal- is reserved for the bases the service creates for members; one member has one personal base (ADR-0001 D47, D53)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/KnowledgeBase'}}}}
+      responses: {'201': {description: created}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+    get:
+      summary: Knowledge bases the caller can see - enterprise bases, the caller's units' (all of them for an administrator) and the caller's own personal base. Another member's personal base is not listed; an administrator reads it by naming it
+      responses: {'200': {description: knowledge bases}}
+  /api/v1/knowledge/bases/{name}:
+    parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Get one knowledge base. A caller who cannot see it gets 404. An administrator naming another member's personal base reads it, audited as knowledge_base.read
+      responses: {'200': {description: knowledge base}, '404': {$ref: '#/components/responses/Problem'}}
+  /api/v1/knowledge/bases/{name}/archive:
+    parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Archive a knowledge base. It leaves retrieval and accepts no further documents. Its documents' packages read as stale
+      responses: {'200': {description: archived}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}}
+  /api/v1/knowledge/embed-errors/clear:
+    post:
+      summary: Make the chunks that were skipped for a permanent embedding error (or are waiting for a retry) eligible for embedding again at once. A permanent error is the embedder refusing the text itself (4xx); it is also forgotten when the embedding model changes. A transient error (no answer, 5xx, 429) is retried with a growing wait and never recorded as permanent
+      responses: {'200': {description: 'the number of chunks cleared'}}
+  /api/v1/knowledge/bases/{name}/unarchive:
+    parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Reopen an archived knowledge base. An administrator may reopen any; a member only their own personal base
+      responses: {'200': {description: reopened}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}}
+  /v1/knowledge/documents:
+    post:
+      summary: >-
+        Index a document into a knowledge base the caller manages. With no knowledgeBase, the caller's personal base is created on first use.
+        The uri is kb://<knowledge base name>/<path>, otherwise 422: a version's identity is (tenant, base, uri), and one base never retires another's documents (ADR-0001 D51).
+        A version dated in the future does not supersede the one in force (D52). Without a sensitivity the base's defaultSensitivity applies.
+        The caller is asked of the PDP (knowledge.write); a personal base is written by its owner alone
+      parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/Document'}, {type: object, required: [text], properties: {text: {type: string}}}]}}}}
+      responses: {'201': {description: indexed}, '403': {$ref: '#/components/responses/Problem'}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}, '429': {$ref: '#/components/responses/Problem'}}
+    get:
+      summary: Documents in knowledge bases the caller may write and can read (ACL, sensitivity, the PDP's obligations; D53)
+      responses: {'200': {description: documents}}
+  /v1/knowledge/documents/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      summary: Document metadata the caller can read. A document in someone else's personal base is 404 (an administrator naming it by id reads it, audited as knowledge.read_other)
+      responses: {'200': {description: document}, '404': {$ref: '#/components/responses/Problem'}}
+    delete:
+      summary: Revoke a document in a knowledge base the caller may write and can read. If-Match that no longer matches is 409
+      parameters: [{name: reason, in: query, schema: {type: string}}, {$ref: '#/components/parameters/ifMatch'}]
+      responses: {'200': {description: revoked}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}}
+  /v1/knowledge/documents/{id}/original:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      summary: >-
+        Store the original file for a document version. Content-Type is the media type (an allowed type: pdf, docx, xlsx, pptx, png, jpeg, tiff, txt, md, html).
+        The permission is checked before the body is read; the body is streamed, hashed and bounded (25 MiB, 50 MiB for pdf, pptx and images);
+        at most two uploads per caller at once. Each upload has its own object key; a concurrent change of the original is 409. The object key is not returned
+      requestBody: {required: true, content: {'*/*': {schema: {type: string, format: binary}}}}
+      responses: {'200': {description: document metadata including original}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}, '429': {$ref: '#/components/responses/Problem'}, '503': {$ref: '#/components/responses/Problem'}}
+    get:
+      summary: >-
+        Download the original, always as an attachment (Content-Disposition: attachment, X-Content-Type-Options: nosniff, Content-Security-Policy: sandbox).
+        A caller who cannot read the document gets 404. The bytes are checked against the stored digest (a mismatch is a 500, logged)
+      responses: {'200': {description: file bytes, content: {'*/*': {schema: {type: string, format: binary}}}}, '404': {$ref: '#/components/responses/Problem'}, '503': {$ref: '#/components/responses/Problem'}}
   /api/v1/knowledge/documents:
     post:
-      summary: Index a knowledge document (ADR-0001 D4); a new version of the same uri supersedes the active one. Idempotency-Key (D19) makes retries safe
+      summary: >-
+        Index a knowledge document (ADR-0001 D4). A version's identity is (tenant, knowledge base, uri) (D51): a new version in force replaces the current one of the same base and uri only, whatever other bases hold. With no knowledgeBase the document goes into the base named after its source and keeps its uri (connector style);
+        naming a base, the uri is kb://<base>/<path>, otherwise 422. Into a personal base only its owner writes. Idempotency-Key (D19) makes retries safe
       parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
       requestBody: {required: true, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/Document'}, {type: object, required: [text], properties: {text: {type: string}}}]}}}}
       responses: {'201': {description: indexed, content: {application/json: {schema: {$ref: '#/components/schemas/Document'}}}}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
-    get: {summary: List documents (newest first), responses: {'200': {description: documents}}}
+    get:
+      summary: List documents (newest first). Documents of members' personal bases are not listed unless knowledgeBase names the base; naming another member's is audited (knowledge.read_other)
+      parameters: [{name: knowledgeBase, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer}}]
+      responses: {'200': {description: documents}}
   /api/v1/knowledge/documents/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
-    get: {summary: Get a document's metadata, responses: {'200': {description: document}, '404': {$ref: '#/components/responses/Problem'}}}
+    get: {summary: "Get a document's metadata. A document in another member's personal base is read by this naming of its id and audited (knowledge.read_other)", responses: {'200': {description: document}, '404': {$ref: '#/components/responses/Problem'}}}
     delete:
       summary: Revoke a document (ADR-0001 D6); it leaves retrieval and packages citing it read as stale. If-Match (D19) names the expected revision
       parameters: [{name: reason, in: query, schema: {type: string}}, {$ref: '#/components/parameters/ifMatch'}]
-      responses: {'200': {description: revoked}, '404': {$ref: '#/components/responses/Problem'}}
+      responses: {'200': {description: revoked}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}}
   /api/v1/policy:
     get: {summary: The tenant's policy (sensitivity ceilings per role, default memory TTL, package TTL), responses: {'200': {description: policy, content: {application/json: {schema: {$ref: '#/components/schemas/Policy'}}}}}}
     put:
@@ -223,8 +291,33 @@ components:
     Document:
       description: contract idp.telos.cmi KnowledgeDocument (metadata; the text is indexed, not returned)
       type: object
-      required: [source, uri, title, sensitivity]
-      properties: {documentId: {type: string}, source: {type: string}, uri: {type: string}, title: {type: string}, version: {type: integer}, contentSha256: {type: string}, byteSize: {type: integer}, chunkCount: {type: integer}, status: {type: string, enum: [active, superseded, revoked, expired]}, validUntil: {type: string, format: date-time}, sensitivity: {type: string, enum: [public, internal, confidential, restricted]}, acl: {type: object}, revocation: {type: object}, createdBy: {type: string}, createdAt: {type: string, format: date-time}, entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}}, flags: {type: array, items: {type: string}, readOnly: true}, revision: {type: integer, readOnly: true}}
+      required: [source, uri, title]
+      properties: {documentId: {type: string}, source: {type: string}, uri: {type: string}, title: {type: string}, version: {type: integer}, contentSha256: {type: string}, byteSize: {type: integer}, chunkCount: {type: integer}, status: {type: string, enum: [active, superseded, revoked, expired]}, validUntil: {type: string, format: date-time}, sensitivity: {type: string, enum: [public, internal, confidential, restricted]}, acl: {type: object}, revocation: {type: object}, createdBy: {type: string}, createdAt: {type: string, format: date-time}, entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}}, flags: {type: array, items: {type: string}, readOnly: true}, revision: {type: integer, readOnly: true}, knowledgeBase: {type: string, description: 'the base this version belongs to; on a write the base to put it in (administrators: absent = the base named after the source; members: absent = their personal base)'}, validFrom: {type: string, format: date-time, description: 'when this version takes effect; absent = from the beginning'}, docType: {type: string}, owner: {type: string}, reviewDue: {type: string, format: date-time}, original: {$ref: '#/components/schemas/Original'}}
+    Original:
+      description: the stored file behind a document version (the object key is not part of the contract)
+      type: object
+      readOnly: true
+      required: [mediaType, byteSize, sha256]
+      properties: {mediaType: {type: string}, byteSize: {type: integer}, sha256: {type: string}}
+    KnowledgeBase:
+      description: contract idp.telos.cmi KnowledgeBase
+      type: object
+      required: [name, displayName, scope, defaultSensitivity, sensitivityCeiling, source]
+      properties:
+        knowledgeBaseId: {type: string, readOnly: true}
+        name: {type: string, pattern: '^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$', description: 'must not start with personal-'}
+        displayName: {type: string}
+        scope: {type: object, required: [kind], properties: {kind: {type: string, enum: [tenant, organization, team, project, subject]}, id: {type: string}}}
+        managers: {type: object, properties: {subjects: {type: array, items: {type: string}}, roles: {type: array, items: {type: string}}}}
+        defaultSensitivity: {type: string, enum: [public, internal, confidential, restricted]}
+        sensitivityCeiling: {type: string, enum: [public, internal, confidential, restricted]}
+        source: {type: string}
+        quotaDocuments: {type: integer, minimum: 0, description: '0 = no limit (a personal base then has the member default)'}
+        quotaBytes: {type: integer, minimum: 0, description: '0 = no limit (a personal base then has the member default); counts indexed text and originals'}
+        ocr: {type: boolean}
+        status: {type: string, enum: [active, archived], readOnly: true}
+        createdBy: {type: string, readOnly: true}
+        createdAt: {type: string, format: date-time, readOnly: true}
     Connector:
       type: object
       required: [source, name, kind, config]

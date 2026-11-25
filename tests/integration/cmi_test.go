@@ -94,6 +94,12 @@ const devSecret = "integration-test-secret-at-least-32-bytes-long"
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	ownerURL, serviceURL := scratchDB(t)
+	return newEnvOn(t, ownerURL, serviceURL)
+}
+
+// newEnvOn is newEnv on a database that is already migrated (and may hold data): the tenants acme and globex are found, or created.
+func newEnvOn(t *testing.T, ownerURL, serviceURL string) *env {
+	t.Helper()
 	ctx := context.Background()
 	tenantA, err := postgres.SeedTenant(ctx, ownerURL, "", "acme")
 	if err != nil {

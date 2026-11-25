@@ -183,7 +183,7 @@ func (g *Ingester) work(ctx context.Context, tenant string, j postgres.IngestJob
 		_ = g.Store.FinishJob(ctx, tenant, j.ID, "failed", "", err.Error(), MaxAttempts)
 		return
 	}
-	current, err := g.Store.ActiveDocumentDigest(ctx, tenant, j.URI)
+	current, err := g.Store.ActiveDocumentDigest(ctx, tenant, c.Source, j.URI)
 	if err != nil {
 		_ = g.Store.FinishJob(ctx, tenant, j.ID, "failed", "", err.Error(), MaxAttempts)
 		return

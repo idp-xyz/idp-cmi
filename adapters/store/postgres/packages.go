@@ -41,7 +41,9 @@ func (s *Store) SavePackage(ctx context.Context, tenant string, env *cmi.Envelop
 }
 
 // GetPackage reads a package back for the principal that requested it (or an administrator) and
-// reports which cited items have since expired, been revoked or superseded.
+// reports which cited items have since expired, been revoked or superseded. A knowledge document is current
+// by the one definition of D52: no newer version of its base and uri is in force, it is not revoked, expired or
+// erased, and its base is active.
 func (s *Store) GetPackage(ctx context.Context, tenant, id, requester string) (*StoredPackage, error) {
 	var out StoredPackage
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
@@ -67,7 +69,7 @@ func (s *Store) GetPackage(ctx context.Context, tenant, id, requester string) (*
 			case cmi.ItemMemory:
 				err = tx.QueryRow(ctx, `SELECT status = 'active' AND (valid_until IS NULL OR valid_until > now()) FROM memory_records WHERE id = $1`, it.ID).Scan(&ok)
 			default:
-				err = tx.QueryRow(ctx, `SELECT status = 'active' AND (valid_until IS NULL OR valid_until > now()) FROM knowledge_documents WHERE id = $1`, it.ID).Scan(&ok)
+				err = tx.QueryRow(ctx, `SELECT true`+knowledgeCurrentSQL+` FROM knowledge_documents d WHERE d.id = $1`, it.ID).Scan(&ok)
 			}
 			if errors.Is(err, pgx.ErrNoRows) {
 				ok = false
@@ -109,7 +111,7 @@ func (s *Store) VerifyPackage(ctx context.Context, tenant, id, requester string)
 			if it.Kind == cmi.ItemMemory {
 				err = tx.QueryRow(ctx, `SELECT status, version, status = 'active' AND (valid_until IS NULL OR valid_until > now()) AND erasure_id IS NULL FROM memory_records WHERE id = $1`, it.ID).Scan(&st.Status, &st.Version, &st.Usable)
 			} else {
-				err = tx.QueryRow(ctx, `SELECT status, revision, status = 'active' AND (valid_until IS NULL OR valid_until > now()) AND erasure_id IS NULL FROM knowledge_documents WHERE id = $1`, it.ID).Scan(&st.Status, &st.Version, &st.Usable)
+				err = tx.QueryRow(ctx, `SELECT `+docStatusSQL+`, d.revision, true`+knowledgeCurrentSQL+` FROM knowledge_documents d WHERE d.id = $1`, it.ID).Scan(&st.Status, &st.Version, &st.Usable)
 			}
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return err

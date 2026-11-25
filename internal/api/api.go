@@ -36,6 +36,26 @@ import (
 // MaxBody bounds request bodies (documents may be large).
 const MaxBody = 8 << 20
 
+// releasing gives a download's place back when its body is closed.
+type releasing struct {
+	io.ReadCloser
+	release func()
+}
+
+func (r releasing) Close() error {
+	defer r.release()
+	return r.ReadCloser.Close()
+}
+
+// originalBody is a stored file returned as itself, not as JSON. It is always a download, never a page: the
+// bytes were written by a member and may be HTML (D54).
+type originalBody struct {
+	media string
+	name  string
+	size  int64
+	body  io.ReadCloser
+}
+
 // Verifier authenticates bearer tokens.
 type Verifier interface {
 	Verify(ctx context.Context, token string) (authorization.Principal, error)
@@ -65,6 +85,21 @@ type API struct {
 	resolves *observability.CounterVec
 	writes   *observability.CounterVec
 	limiter  rateLimiter
+	uploads  uploadGate
+	upBytes  byteGate
+
+	// MaxConcurrentDownloads bounds the downloads of originals at once (0 = DefaultConcurrentDownloads).
+	MaxConcurrentDownloads int
+	// MaxDownloadsPerCaller bounds one caller's downloads within that (0 = DefaultDownloadsPerCaller).
+	MaxDownloadsPerCaller int
+	downloads             uploadGate
+	callerDownloads       uploadGate
+	// TransferTimeout is the deadline of the upload and download routes of originals, in place of the server's read and write
+	// timeouts (0 = DefaultTransferTimeout).
+	TransferTimeout time.Duration
+
+	// MaxUploadBytesInFlight bounds the bytes of originals being received at once (0 = DefaultUploadBytesInFlight).
+	MaxUploadBytesInFlight int64
 }
 
 type ctxKey int
@@ -201,6 +236,18 @@ func (a *API) role(h handler, roles ...string) http.HandlerFunc {
 			}
 			body = wh.body
 		}
+		if raw, ok := body.(originalBody); ok {
+			w.Header().Set("Content-Type", raw.media)
+			w.Header().Set("Content-Disposition", `attachment; filename="`+raw.name+`"`)
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Content-Security-Policy", "sandbox")
+			w.Header().Set("Cache-Control", "private, no-store")
+			w.Header().Set("Content-Length", strconv.FormatInt(raw.size, 10))
+			w.WriteHeader(status)
+			_, _ = io.Copy(w, raw.body)
+			_ = raw.body.Close()
+			return
+		}
 		if body == nil {
 			w.WriteHeader(status)
 			return
@@ -215,7 +262,7 @@ func (a *API) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.As(err, &pb):
 	case errors.As(err, &se):
-		status := map[string]int{"NOT_FOUND": 404, "CONFLICT": 409, "FORBIDDEN": 403, "INVALID": 422, "GONE": 410, "APPROVAL_REQUIRED": 409}[se.Code]
+		status := map[string]int{"NOT_FOUND": 404, "CONFLICT": 409, "FORBIDDEN": 403, "INVALID": 422, "GONE": 410, "APPROVAL_REQUIRED": 409, "QUOTA_EXCEEDED": 429, "NOT_CONFIGURED": 503}[se.Code]
 		if status == 0 {
 			status = 500
 		}
@@ -286,7 +333,41 @@ func (a *API) visibility(ctx context.Context, p authorization.Principal) (postgr
 	case p.Has(authorization.RoleReader):
 		ceiling = policy.ReaderCeiling
 	}
-	return postgres.Visibility{Subject: p.Subject, Roles: p.Roles, Ceiling: ceiling}, nil
+	return postgres.Visibility{Subject: p.Subject, Roles: p.Roles, Ceiling: ceiling, Client: p.Client, Actor: p.Actor}, nil
+}
+
+// transferDeadline gives the routes that move an original their own deadline (TransferTimeout), in place of the server's
+// read and write timeouts, which would cap a 50 MiB transfer at about 7 Mbit/s.
+func (a *API) transferDeadline(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		d := a.TransferTimeout
+		if d <= 0 {
+			d = DefaultTransferTimeout
+		}
+		rc := http.NewResponseController(w)
+		_ = rc.SetReadDeadline(time.Now().Add(d)) // an error means this server has no deadlines to extend
+		_ = rc.SetWriteDeadline(time.Now().Add(d))
+		next.ServeHTTP(w, r)
+	})
+}
+
+// memberView is the view of a member route on knowledge (D23): the caller's own visibility, narrowed by the
+// PDP's obligations - the highest sensitivity and the sources it excludes apply to lists, reads, downloads and
+// withdrawals alike. The action is knowledge.read unless given.
+func (a *API) memberView(r *http.Request, p authorization.Principal, res pdp.Resource, action ...string) (postgres.Visibility, error) {
+	v, err := a.visibility(r.Context(), p)
+	if err != nil {
+		return v, err
+	}
+	act := "knowledge.read"
+	if len(action) > 0 {
+		act = action[0]
+	}
+	o, err := a.authorize(r, p, act, res, "")
+	if err != nil {
+		return v, err
+	}
+	return narrow(v, o), nil
 }
 
 // Handler builds the router.
@@ -332,6 +413,34 @@ func (a *API) Handler() http.Handler {
 		out, err := a.Store.GetSource(r.Context(), p.Tenant, r.PathValue("ref"))
 		return 200, out, err
 	}, admin, writer, reader))
+	mux.Handle("POST /api/v1/knowledge/bases", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		var in cmi.KnowledgeBase
+		if err := decode(r, &in); err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.CreateKnowledgeBase(r.Context(), p.Tenant, in, p.Subject)
+		return http.StatusCreated, out, err
+	}, admin))
+	mux.Handle("GET /api/v1/knowledge/bases", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.ListKnowledgeBases(r.Context(), p.Tenant, v)
+		return 200, map[string]any{"knowledgeBases": out}, err
+	}, admin, writer, reader))
+	mux.Handle("GET /api/v1/knowledge/bases/{name}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.GetKnowledgeBase(r.Context(), p.Tenant, r.PathValue("name"), v)
+		return 200, out, err
+	}, admin, writer, reader))
+	mux.Handle("POST /api/v1/knowledge/bases/{name}/archive", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		out, err := a.Store.ArchiveKnowledgeBase(r.Context(), p.Tenant, r.PathValue("name"), p.Subject)
+		return 200, out, err
+	}, admin))
 	mux.Handle("POST /api/v1/knowledge/documents", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		raw, err := readBody(r)
 		if err != nil {
@@ -353,12 +462,20 @@ func (a *API) Handler() http.Handler {
 		})
 	}, admin))
 	mux.Handle("GET /api/v1/knowledge/documents", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-		out, err := a.Store.ListDocuments(r.Context(), p.Tenant, limit)
+		out, err := a.Store.ListDocuments(r.Context(), p.Tenant, v, r.URL.Query().Get("knowledgeBase"), limit)
 		return 200, map[string]any{"documents": out}, err
 	}, admin))
 	mux.Handle("GET /api/v1/knowledge/documents/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
-		out, err := a.Store.GetDocument(r.Context(), p.Tenant, r.PathValue("id"))
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.GetDocument(r.Context(), p.Tenant, r.PathValue("id"), v)
 		return 200, out, err
 	}, admin))
 	mux.Handle("DELETE /api/v1/knowledge/documents/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
@@ -372,6 +489,148 @@ func (a *API) Handler() http.Handler {
 		out, err := a.Store.RevokeDocument(r.Context(), p.Tenant, r.PathValue("id"), p.Subject, r.URL.Query().Get("reason"), expected)
 		return 200, out, err
 	}, admin))
+	mux.Handle("POST /api/v1/knowledge/embed-errors/clear", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		n, err := a.Store.ClearEmbedErrors(r.Context(), p.Tenant, p.Subject)
+		return 200, map[string]any{"cleared": n}, err
+	}, admin))
+	mux.Handle("POST /api/v1/knowledge/bases/{name}/unarchive", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.UnarchiveKnowledgeBase(r.Context(), p.Tenant, r.PathValue("name"), v)
+		return 200, out, err
+	}, admin, writer, reader))
+	mux.Handle("POST /v1/knowledge/documents", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		raw, err := readBody(r)
+		if err != nil {
+			return 0, nil, err
+		}
+		var in struct {
+			cmi.Document
+			Text string `json:"text"`
+		}
+		if err := decodeRaw(raw, &in); err != nil {
+			return 0, nil, err
+		}
+		v, err := a.visibility(r.Context(), p)
+		if err != nil {
+			return 0, nil, err
+		}
+		if _, err := a.authorize(r, p, "knowledge.write", pdp.Resource{Kind: "knowledge", Source: in.Source, Sensitivity: in.Sensitivity, Entities: in.Entities}, ""); err != nil {
+			return 0, nil, err
+		}
+		return a.idempotent(r, p, raw, func() (int, any, error) {
+			out, err := a.Store.CreateMemberDocument(r.Context(), p.Tenant, in.Document, in.Text, v)
+			return http.StatusCreated, out, err
+		})
+	}, reader, writer))
+	mux.Handle("GET /v1/knowledge/documents", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.memberView(r, p, pdp.Resource{Kind: "knowledge"})
+		if err != nil {
+			return 0, nil, err
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		out, err := a.Store.ListMemberDocuments(r.Context(), p.Tenant, v, limit)
+		return 200, map[string]any{"documents": out}, err
+	}, reader, writer))
+	mux.Handle("GET /v1/knowledge/documents/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.memberView(r, p, pdp.Resource{Kind: "knowledge", ID: r.PathValue("id")})
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.GetMemberDocument(r.Context(), p.Tenant, r.PathValue("id"), v)
+		return 200, out, err
+	}, reader, writer))
+	mux.Handle("DELETE /v1/knowledge/documents/{id}", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		expected, err := ifMatch(r)
+		if err != nil {
+			return 0, nil, err
+		}
+		v, err := a.memberView(r, p, pdp.Resource{Kind: "knowledge", ID: r.PathValue("id")}, "knowledge.revoke")
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.RevokeMemberDocument(r.Context(), p.Tenant, r.PathValue("id"), r.URL.Query().Get("reason"), v, expected)
+		return 200, out, err
+	}, reader, writer))
+	mux.Handle("PUT /v1/knowledge/documents/{id}/original", a.transferDeadline(a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		// order matters (D54): who the caller is and what the PDP says, then the right to attach an original to this
+		// document, and only then the body is read - streamed, hashed as it goes, and bounded
+		v, err := a.memberView(r, p, pdp.Resource{Kind: "knowledge", ID: r.PathValue("id")}, "knowledge.write")
+		if err != nil {
+			return 0, nil, err
+		}
+		media, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
+		media = strings.ToLower(strings.TrimSpace(media))
+		limit, ok := postgres.OriginalLimit(media)
+		if !ok {
+			return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", "media type is not accepted")
+		}
+		if err := a.Store.CheckOriginalWrite(r.Context(), p.Tenant, r.PathValue("id"), v, media); err != nil {
+			return 0, nil, err
+		}
+		release, ok := a.uploads.acquire(p.Tenant+"/"+p.Subject, MaxConcurrentUploads)
+		if !ok {
+			pb := transport.Fail(http.StatusTooManyRequests, "RATE_LIMITED", "too many originals are being uploaded by this caller; wait for one to finish")
+			pb.RetryAfter = 1
+			return 0, nil, pb
+		}
+		defer release()
+		maxBytes := a.MaxUploadBytesInFlight
+		if maxBytes <= 0 {
+			maxBytes = DefaultUploadBytesInFlight
+		}
+		reserve := limit // what this upload may hold in memory: its own size when it says so, else the most its type may have
+		if r.ContentLength > limit {
+			return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", "original is larger than the limit of its type")
+		} else if r.ContentLength >= 0 {
+			reserve = max(r.ContentLength, 1)
+		}
+		releaseBytes, ok := a.upBytes.acquire(reserve, maxBytes)
+		if !ok {
+			pb := transport.Fail(http.StatusTooManyRequests, "RATE_LIMITED", "too many originals are being received at once; try again in a moment")
+			pb.RetryAfter = 1
+			return 0, nil, pb
+		}
+		defer releaseBytes()
+		out, err := a.Store.PutOriginal(r.Context(), p.Tenant, r.PathValue("id"), v, media, http.MaxBytesReader(nil, r.Body, limit+1))
+		return 200, out, err
+	}, admin, reader, writer)))
+	mux.Handle("GET /v1/knowledge/documents/{id}/original", a.transferDeadline(a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.memberView(r, p, pdp.Resource{Kind: "knowledge", ID: r.PathValue("id")})
+		if err != nil {
+			return 0, nil, err
+		}
+		maxDownloads := a.MaxConcurrentDownloads
+		if maxDownloads <= 0 {
+			maxDownloads = DefaultConcurrentDownloads
+		}
+		perCaller := a.MaxDownloadsPerCaller
+		if perCaller <= 0 {
+			perCaller = DefaultDownloadsPerCaller
+		}
+		releaseCaller, ok := a.callerDownloads.acquire(p.Tenant+"/"+p.Subject, perCaller)
+		if !ok {
+			pb := transport.Fail(http.StatusTooManyRequests, "RATE_LIMITED", "too many of this caller's downloads are in progress; wait for one to finish")
+			pb.RetryAfter = 1
+			return 0, nil, pb
+		}
+		releaseAll, ok := a.downloads.acquire("downloads", maxDownloads)
+		if !ok {
+			releaseCaller()
+			pb := transport.Fail(http.StatusTooManyRequests, "RATE_LIMITED", "too many originals are being downloaded at once; try again in a moment")
+			pb.RetryAfter = 1
+			return 0, nil, pb
+		}
+		release := func() { releaseAll(); releaseCaller() }
+		f, err := a.Store.GetOriginal(r.Context(), p.Tenant, r.PathValue("id"), v)
+		if err != nil {
+			release()
+			return 0, nil, err
+		}
+		return 200, originalBody{media: f.MediaType, name: f.Name, size: f.Size, body: releasing{f.Body, release}}, nil
+	}, admin, reader, writer)))
 	mux.Handle("GET /api/v1/policy", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		out, err := a.Store.GetPolicy(r.Context(), p.Tenant)
 		return 200, out, err

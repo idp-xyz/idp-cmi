@@ -403,8 +403,140 @@ type Document struct {
 	Flags         []string    `json:"flags,omitempty"`    // union of its chunks' write-time scan findings (D12)
 	Revision      int         `json:"revision,omitempty"` // bumped by every state change of this document row (D19); version is the URI's
 	Revocation    *Revocation `json:"revocation,omitempty"`
+	KnowledgeBase string      `json:"knowledgeBase,omitempty"` // the base this version belongs to
+	ValidFrom     time.Time   `json:"validFrom,omitzero"`      // business time this version takes effect; absent means from the beginning (ADR-0001 D52)
+	DocType       string      `json:"docType,omitempty"`
+	Owner         string      `json:"owner,omitempty"` // the subject responsible for the document
+	ReviewDue     time.Time   `json:"reviewDue,omitzero"`
+	Original      *Original   `json:"original,omitempty"`
 	CreatedBy     string      `json:"createdBy"`
 	CreatedAt     time.Time   `json:"createdAt"`
+}
+
+// Original is the stored file behind a document version. The object key stays in the database.
+type Original struct {
+	MediaType string `json:"mediaType"`
+	ByteSize  int64  `json:"byteSize"`
+	SHA256    string `json:"sha256"`
+}
+
+// Knowledge base statuses.
+const (
+	KnowledgeBaseActive   = "active"
+	KnowledgeBaseArchived = "archived"
+)
+
+// KnowledgeBase is a governed collection of documents (enterprise, unit or personal).
+// Thread and agent scopes are not used. A subject-scoped base's source is a user source,
+// so its trust stays informational.
+type KnowledgeBase struct {
+	ID                 string    `json:"knowledgeBaseId"`
+	Name               string    `json:"name"`
+	DisplayName        string    `json:"displayName"`
+	Scope              Scope     `json:"scope"`
+	Managers           ACL       `json:"managers"`
+	DefaultSensitivity string    `json:"defaultSensitivity"`
+	SensitivityCeiling string    `json:"sensitivityCeiling"`
+	Source             string    `json:"source"`
+	QuotaDocuments     int       `json:"quotaDocuments"` // 0 = no limit
+	QuotaBytes         int64     `json:"quotaBytes"`     // 0 = no limit (a personal base then has the member default, D55); counted on indexed text and originals
+	OCR                bool      `json:"ocr"`
+	Status             string    `json:"status"`
+	CreatedBy          string    `json:"createdBy"`
+	CreatedAt          time.Time `json:"createdAt"`
+}
+
+// Validate checks a knowledge base as submitted. The store fills the id and the audit fields.
+func (k *KnowledgeBase) Validate() error {
+	if !ValidName(k.Name) {
+		return errors.New("name must match ^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$")
+	}
+	if strings.TrimSpace(k.DisplayName) == "" || len(k.DisplayName) > 200 {
+		return errors.New("displayName is required (at most 200 characters)")
+	}
+	if err := k.Scope.Validate(); err != nil {
+		return err
+	}
+	if k.Scope.Kind == ScopeThread || k.Scope.Kind == ScopeAgent {
+		return errors.New("a knowledge base scope is tenant, organization, team, project or subject")
+	}
+	if !ValidName(k.Source) {
+		return errors.New("source is required")
+	}
+	if !ValidSensitivity(k.DefaultSensitivity) || !ValidSensitivity(k.SensitivityCeiling) {
+		return errors.New("sensitivity must be public, internal, confidential or restricted")
+	}
+	if !Within(k.DefaultSensitivity, k.SensitivityCeiling) {
+		return errors.New("defaultSensitivity is above sensitivityCeiling")
+	}
+	if k.QuotaDocuments < 0 || k.QuotaBytes < 0 {
+		return errors.New("quotas must be zero or positive")
+	}
+	if err := k.Managers.Validate(); err != nil {
+		return err
+	}
+	if k.Status == "" {
+		k.Status = KnowledgeBaseActive
+	}
+	if k.Status != KnowledgeBaseActive && k.Status != KnowledgeBaseArchived {
+		return errors.New("status must be active or archived")
+	}
+	return nil
+}
+
+// KnowledgeURIPrefix is the start of every URI of a document uploaded into the base named name:
+// kb://<name>/. A version's identity is (tenant, base, uri) (D51); uploads into a base carry this form so the
+// URI says which base it is for.
+func KnowledgeURIPrefix(name string) string { return "kb://" + name + "/" }
+
+// BaseOfURI returns the base name of a kb:// URI ("" when the URI has another form).
+func BaseOfURI(uri string) string {
+	rest, ok := strings.CutPrefix(uri, "kb://")
+	if !ok {
+		return ""
+	}
+	name, _, _ := strings.Cut(rest, "/")
+	return name
+}
+
+// PersonalAliasPrefix is how a member who names no base spells the uri of an upload into their own personal base,
+// whose name they cannot know before the base exists (it carries a hash of the subject): kb://me/<path>. The
+// store stores the canonical uri, kb://<personal base name>/<path>, and the document it returns shows it (D53).
+const PersonalAliasPrefix = "kb://" + PersonalAlias + "/"
+
+// PersonalAlias is the base-name segment of that alias. It is reserved: no base and no source may be called it (D53).
+const PersonalAlias = "me"
+
+// PersonalBasePrefix is reserved for the bases the service creates for members: an administrator cannot
+// register a base with it, and no document upload creates a base with it from a source name.
+const PersonalBasePrefix = "personal-"
+
+// PersonalBaseName derives the name of a member's personal base from the subject: "personal-", the subject
+// folded to lower-case letters, digits and hyphens (at most 32 characters), and twelve hex digits of the
+// subject's SHA-256, so two subjects that fold alike do not collide and any subject has a valid name.
+// The base is found by its owner (scope), never by this name.
+func PersonalBaseName(subject string) string {
+	var b strings.Builder
+	dash := true
+	for _, r := range strings.ToLower(subject) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+			dash = false
+		} else if !dash {
+			b.WriteByte('-')
+			dash = true
+		}
+		if b.Len() >= 32 {
+			break
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	sum := sha256.Sum256([]byte(subject))
+	name := PersonalBasePrefix
+	if slug != "" {
+		name += slug + "-"
+	}
+	return name + hex.EncodeToString(sum[:])[:12]
 }
 
 // MaxDocument bounds a document's text.
@@ -429,6 +561,15 @@ func ValidateDocument(d *Document, text string) error {
 	}
 	if err := ValidateEntities(d.Entities); err != nil {
 		return err
+	}
+	if d.DocType != "" && !nameRE.MatchString(d.DocType) {
+		return errors.New("docType must match ^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$")
+	}
+	if d.Owner != "" && !idRE.MatchString(d.Owner) {
+		return errors.New("owner is invalid")
+	}
+	if !d.ValidFrom.IsZero() && !d.ValidUntil.IsZero() && !d.ValidFrom.Before(d.ValidUntil) {
+		return errors.New("validFrom must be before validUntil")
 	}
 	return d.ACL.Validate()
 }
@@ -572,7 +713,16 @@ type Item struct {
 	Entities    []Entity  `json:"entities,omitempty"` // the item's entity references (D13)
 	Scope       *Scope    `json:"scope,omitempty"`    // the memory's scope (D22); knowledge has none
 	Match       string    `json:"match,omitempty"`    // which retriever found it: lexical, semantic or both (D11)
+	Locator     *Locator  `json:"locator,omitempty"`  // where in the document a knowledge chunk is: its heading path, page and table (D49)
 	Flags       []string  `json:"flags,omitempty"`    // present only when the tenant policy lets flagged content through (D12)
+}
+
+// Locator says where in its document a knowledge chunk sits. The excerpt is the chunk's body alone;
+// the section the model used to read as part of the body is here.
+type Locator struct {
+	Headings []string `json:"headings,omitempty"`
+	Page     int      `json:"page,omitempty"`
+	Table    string   `json:"table,omitempty"`
 }
 
 // Match values of an item.

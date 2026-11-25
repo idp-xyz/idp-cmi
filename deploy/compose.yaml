@@ -7,6 +7,8 @@
 # DEV ONLY: HS256 development tokens, plaintext http on the private networks.
 name: idp-cmi-go
 
+# A CMI that stores originals needs a writable scratch directory for their downloads (IDP_CMI_TEMP_DIR; the root file system is
+# read-only): add `tmpfs: ["/var/cache/idp-cmi:size=512m,mode=1777"]` and `IDP_CMI_TEMP_DIR: /var/cache/idp-cmi` to the cmi service.
 x-hardened: &hardened
   read_only: true
   cap_drop: [ALL]

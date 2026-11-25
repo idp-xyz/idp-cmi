@@ -19,6 +19,28 @@ type File struct {
 	Authorization *Authorization `yaml:"authorization"`
 	Limits        *Limits        `yaml:"limits"`
 	Rerank        *Rerank        `yaml:"rerank"`
+	Knowledge     *Knowledge     `yaml:"knowledge"`
+}
+
+// Knowledge holds the settings of the knowledge bases (ADR-0001 section 24).
+type Knowledge struct {
+	// IndexContext puts the document title, the heading path and the table name in front of every chunk in the
+	// text that is indexed and embedded (D56). Measured, not adopted: leave it off until the knowledge base's own
+	// labelled set says otherwise. Changing it affects documents written afterwards.
+	IndexContext bool `yaml:"indexContext"`
+	// PersonalQuotaDocuments and PersonalQuotaBytes are the quota of a member's personal base: documents with a live
+	// version, and bytes of indexed text plus originals (D55). Unset: 500 documents and 200 MiB. 0: no limit.
+	PersonalQuotaDocuments *int   `yaml:"personalQuotaDocuments"`
+	PersonalQuotaBytes     *int64 `yaml:"personalQuotaBytes"`
+	// MaxInFlightUploadBytes bounds the bytes of originals being received at once, over all callers (default 256 MiB).
+	MaxInFlightUploadBytes *int64 `yaml:"maxInFlightUploadBytes"`
+	// MaxConcurrentDownloads bounds the downloads of originals at once (default 8); each is verified through a temporary
+	// file in IDP_CMI_TEMP_DIR first.
+	MaxConcurrentDownloads *int `yaml:"maxConcurrentDownloads"`
+	// MaxDownloadsPerCaller bounds one caller's downloads within that (default 2).
+	MaxDownloadsPerCaller *int `yaml:"maxDownloadsPerCaller"`
+	// TransferTimeout is the deadline of one upload or download of an original (default 10m), in place of the server's 60 s.
+	TransferTimeout time.Duration `yaml:"transferTimeout"`
 }
 
 // Rerank is a cross-encoder endpoint that rescores the best candidates (ADR-0001 D39).
@@ -124,6 +146,20 @@ func Load(path string) (*File, error) {
 		}
 		if r.Timeout == 0 {
 			r.Timeout = 10 * time.Second
+		}
+	}
+	if k := f.Knowledge; k != nil {
+		if k.PersonalQuotaDocuments != nil && *k.PersonalQuotaDocuments < 0 || k.PersonalQuotaBytes != nil && *k.PersonalQuotaBytes < 0 {
+			return nil, errors.New("knowledge: quotas must not be negative")
+		}
+		if k.TransferTimeout < 0 || k.MaxDownloadsPerCaller != nil && *k.MaxDownloadsPerCaller < 0 {
+			return nil, errors.New("knowledge: transferTimeout and maxDownloadsPerCaller must not be negative")
+		}
+		if k.MaxConcurrentDownloads != nil && *k.MaxConcurrentDownloads < 0 {
+			return nil, errors.New("knowledge: maxConcurrentDownloads must not be negative")
+		}
+		if k.MaxInFlightUploadBytes != nil && *k.MaxInFlightUploadBytes < 0 {
+			return nil, errors.New("knowledge: maxInFlightUploadBytes must not be negative")
 		}
 	}
 	if l := f.Limits; l != nil && (l.MaxRecordsPerScope < 0 || l.MaxRecordsPerTenant < 0 || l.WritesPerMinute < 0) {

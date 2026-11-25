@@ -28,6 +28,34 @@ type Embedder interface {
 	Model() string
 }
 
+// StatusError is an HTTP answer other than 200 from the embeddings endpoint.
+type StatusError struct{ Status int }
+
+func (e *StatusError) Error() string { return fmt.Sprintf("embeddings: HTTP %d", e.Status) }
+
+// Permanent says whether err will happen again for the same input: the endpoint refused the text itself - 400, 413
+// ("too long") or 422. Anything else is transient and the text is tried again later: no answer, 5xx, a timeout, a malformed
+// reply, and also 401, 403, 404, 405 and the like, which are the embedder's credential or address being wrong, not the text. An error may say so itself with a Permanent() bool method.
+func Permanent(err error) bool {
+	var p interface{ Permanent() bool }
+	if errors.As(err, &p) {
+		return p.Permanent()
+	}
+	var se *StatusError
+	if errors.As(err, &se) {
+		return se.Status == 400 || se.Status == 413 || se.Status == 422
+	}
+	return false
+}
+
+// Refused says whether err is the endpoint refusing the caller rather than the text or its own trouble (a 4xx that is not an
+// input error, not 408 and not 429): a wrong or expired credential, a wrong address. It is retried like any transient
+// failure, and worth an alarm.
+func Refused(err error) bool {
+	var se *StatusError
+	return errors.As(err, &se) && se.Status >= 400 && se.Status < 500 && !Permanent(err) && se.Status != 408 && se.Status != 425 && se.Status != 429
+}
+
 // OpenAI calls POST {BaseURL}/embeddings (OpenAI wire format).
 type OpenAI struct {
 	BaseURL    string // ... /v1
@@ -76,7 +104,7 @@ func (o *OpenAI) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("embeddings: HTTP %d", resp.StatusCode)
+		return nil, &StatusError{Status: resp.StatusCode}
 	}
 	var out struct {
 		Data []struct {

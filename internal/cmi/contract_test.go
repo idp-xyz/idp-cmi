@@ -28,7 +28,7 @@ var update = flag.Bool("update", false, "regenerate api/contracts/examples.json 
 
 const (
 	contractDir = "../../api/contracts"
-	contractID  = "urn:idp:telos:cmi:1.4.0"
+	contractID  = "urn:idp:telos:cmi:1.5.0"
 )
 
 type noLoader struct{}
@@ -82,7 +82,7 @@ func (k *contract) schema(def string) *jsonschema.Schema {
 	return s
 }
 
-var roots = map[string]bool{"ContextPackage": true, "MemoryRecord": true, "Source": true, "KnowledgeDocument": true, "Envelope": true, "Verification": true}
+var roots = map[string]bool{"ContextPackage": true, "MemoryRecord": true, "Source": true, "KnowledgeDocument": true, "KnowledgeBase": true, "Envelope": true, "Verification": true}
 
 func (k *contract) validate(def string, raw []byte) error {
 	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
@@ -107,7 +107,8 @@ func examplePackage() *cmi.Package {
 		Query: "pickup slot surcharge", Scope: &cmi.Scope{Kind: cmi.ScopeThread, ID: "thr-ops-42"}, AsOf: &cmi.AsOf{Valid: at.Add(-time.Hour), Recorded: at}, Omitted: &cmi.Omitted{Budget: 2, Flagged: 1},
 		Items: []cmi.Item{
 			{Kind: cmi.ItemKnowledge, ID: "5b6c7d8e-0000-4000-8000-000000000020", Source: "handbook", Trust: cmi.TrustAuthoritative, Ref: "handbook://pickup#0", Title: "Pickup handbook",
-				Excerpt: "Pickup slots. Morning slots run from 07:00 to 11:00.", ObservedAt: at.Add(-48 * time.Hour), Sensitivity: cmi.SensitivityInternal, Score: 0.9812, Tokens: 14, Match: cmi.MatchBoth},
+				Excerpt: "Pickup slots. Morning slots run from 07:00 to 11:00.", ObservedAt: at.Add(-48 * time.Hour), Sensitivity: cmi.SensitivityInternal, Score: 0.9812, Tokens: 14, Match: cmi.MatchBoth,
+				Locator: &cmi.Locator{Headings: []string{"Pickup", "Morning slots"}, Page: 3}},
 			{Kind: cmi.ItemMemory, ID: "6c7d8e9f-0000-4000-8000-000000000030", Source: "orders", Trust: cmi.TrustAuthoritative, Ref: "order:1001",
 				Excerpt: "Carol prefers morning pickup slots for her parcels.", ObservedAt: at.Add(-time.Hour), ValidUntil: at.Add(90 * 24 * time.Hour), Sensitivity: cmi.SensitivityInternal, Score: 0.7611, Tokens: 13,
 				Entities: []cmi.Entity{{Type: "customer", ID: "carol"}, {Type: "order", ID: "1001"}}, Scope: &cmi.Scope{Kind: cmi.ScopeSubject, ID: "carol"}, Match: cmi.MatchLexical},
@@ -152,11 +153,22 @@ func exampleDocuments() []cmi.Document {
 	return []cmi.Document{
 		{ID: "5b6c7d8e-0000-4000-8000-000000000020", Source: "handbook", URI: "handbook://pickup", Title: "Pickup handbook", Version: 2, ContentSHA256: cmi.ContentSHA256("Pickup slots. Morning slots now run from 07:00 to 11:00."),
 			ByteSize: 56, ChunkCount: 1, Status: cmi.StatusActive, Sensitivity: cmi.SensitivityInternal, ACL: cmi.ACL{Subjects: []string{}, Roles: []string{}},
-			Entities: []cmi.Entity{{Type: "service", ID: "pickup"}}, Revision: 1, CreatedBy: "alice", CreatedAt: at.Add(-48 * time.Hour)},
+			Entities: []cmi.Entity{{Type: "service", ID: "pickup"}}, Revision: 1, CreatedBy: "alice", CreatedAt: at.Add(-48 * time.Hour),
+			KnowledgeBase: "handbook", ValidFrom: at.Add(-48 * time.Hour), DocType: "policy", Owner: "alice", ReviewDue: at.Add(180 * 24 * time.Hour),
+			Original: &cmi.Original{MediaType: "application/pdf", ByteSize: 48213, SHA256: cmi.ContentSHA256("the original file")}},
 		{ID: "b1c2d3e4-0000-4000-8000-000000000080", Source: "handbook", URI: "handbook://pricing-internal", Title: "Pricing (confidential)", Version: 1, ContentSHA256: cmi.ContentSHA256("margins"),
 			ByteSize: 7, ChunkCount: 1, Status: cmi.StatusRevoked, ValidUntil: at.Add(30 * 24 * time.Hour), Sensitivity: cmi.SensitivityConfidential, ACL: cmi.ACL{Subjects: []string{}, Roles: []string{"finance"}},
 			Revision: 2, Revocation: &cmi.Revocation{At: at, By: "alice", Reason: "superseded by the public price list"}, CreatedBy: "alice", CreatedAt: at.Add(-72 * time.Hour)},
 	}
+}
+
+func exampleKnowledgeBases() []cmi.KnowledgeBase {
+	return []cmi.KnowledgeBase{{
+		ID: "d4e5f6a7-0000-4000-8000-000000000090", Name: "handbook", DisplayName: "Company handbook",
+		Scope: cmi.Scope{Kind: cmi.ScopeTenant}, Managers: cmi.ACL{},
+		DefaultSensitivity: cmi.SensitivityInternal, SensitivityCeiling: cmi.SensitivityRestricted, Source: "handbook",
+		Status: cmi.KnowledgeBaseActive, CreatedBy: "alice", CreatedAt: at,
+	}}
 }
 
 type example struct {
@@ -195,6 +207,9 @@ func buildExamples(t *testing.T) []byte {
 	for _, d := range exampleDocuments() {
 		add("KnowledgeDocument", d)
 	}
+	for _, b := range exampleKnowledgeBases() {
+		add("KnowledgeBase", b)
+	}
 	add("Verification", cmi.Verification{PackageID: "3f2a9c1e-0000-4000-8000-000000000010", Stale: true, StaleItems: []string{"6c7d8e9f-0000-4000-8000-000000000030"}, Redacted: false,
 		Items: []cmi.ItemStatus{{Kind: cmi.ItemKnowledge, ID: "5b6c7d8e-0000-4000-8000-000000000020", Status: cmi.StatusActive, Version: 1, Usable: true},
 			{Kind: cmi.ItemMemory, ID: "6c7d8e9f-0000-4000-8000-000000000030", Status: cmi.StatusRevoked, Version: 2, Usable: false},
@@ -202,7 +217,7 @@ func buildExamples(t *testing.T) []byte {
 			{Kind: cmi.ItemMemory, ID: "c3d4e5f6-0000-4000-8000-000000000058", Status: cmi.StatusActive, Version: 1, Usable: true}},
 		ExpiresAt: at.Add(time.Hour), VerifiedAt: at.Add(30 * time.Minute)})
 	b, err := json.MarshalIndent(examplesFile{
-		Description: "idp.telos.cmi 1.4.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
+		Description: "idp.telos.cmi 1.5.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
 		GeneratedBy: "go test ./internal/cmi -run TestContract -update",
 		Examples:    out,
 	}, "", "  ")
@@ -297,7 +312,7 @@ func TestContractFieldsMatchGo(t *testing.T) {
 		return out
 	}
 	closed := map[string]any{"ContextPackage": cmi.Package{}, "ContextItem": cmi.Item{}, "Scope": cmi.Scope{}, "Budget": cmi.Budget{}, "Provenance": cmi.Provenance{}, "ACL": cmi.ACL{},
-		"Validity": cmi.Validity{}, "Revocation": cmi.Revocation{}, "MemoryRecord": cmi.MemoryRecord{}, "Source": cmi.Source{}, "KnowledgeDocument": cmi.Document{}, "Envelope": cmi.Envelope{}, "Entity": cmi.Entity{},
+		"Validity": cmi.Validity{}, "Revocation": cmi.Revocation{}, "MemoryRecord": cmi.MemoryRecord{}, "Source": cmi.Source{}, "KnowledgeDocument": cmi.Document{}, "KnowledgeBase": cmi.KnowledgeBase{}, "Envelope": cmi.Envelope{}, "Entity": cmi.Entity{},
 		"Verification": cmi.Verification{}, "ItemStatus": cmi.ItemStatus{}, "AsOf": cmi.AsOf{}, "Omitted": cmi.Omitted{}}
 	for def, zero := range closed {
 		d, ok := defs[def].(map[string]any)

@@ -13,6 +13,17 @@
 //	IDP_MIGRATION_DATABASE_URL   schema owner connection (migrate, ensure-login, seed-tenant)
 //	IDP_CMI_LISTEN               default 127.0.0.1:8550
 //	IDP_CMI_CONFIG               optional YAML: embedding endpoint (ADR-0001 D11), consolidation model (D15)
+//	IDP_CMI_ORIGINALS_ENDPOINT   S3 endpoint for knowledge originals; unset leaves originals off
+//	IDP_CMI_ORIGINALS_BUCKET     bucket (required when the endpoint is set)
+//	IDP_CMI_ORIGINALS_ACCESS_KEY_FILE / IDP_CMI_ORIGINALS_SECRET_KEY_FILE
+//	IDP_CMI_ORIGINALS_REGION     default us-east-1
+//	IDP_CMI_ORIGINALS_SSE        "false" turns off SSE-S3 (default on)
+//	IDP_CMI_ORIGINALS_CA_FILE    extra trusted CA (PEM) for an https endpoint
+//	IDP_CMI_TEMP_DIR             writable scratch directory for downloads of originals (default: the OS temp directory; a read-only
+//	                             root file system needs an emptyDir / tmpfs here); checked at start when originals are configured
+//	IDP_CMI_ORIGINALS_TIMEOUT    timeout of one request to the store (default 2m)
+//	                             The store is reached in the background: CMI starts without waiting for it, and
+//	                             originals answer 503 until the bucket check has passed (20 s per attempt).
 //	IDP_CMI_SWEEP                expiry sweep interval (default 1m; 0 disables)
 //	IDP_CMI_INGEST               background worker interval: connectors' processing (D16) and erasure purge (D20); default 10s, 0 disables
 //	IDP_CMI_INSTANCE             lease owner name of this replica (default hostname)
@@ -45,6 +56,7 @@ import (
 	"syscall"
 	"time"
 
+	"idp-cmi/adapters/blob"
 	"idp-cmi/adapters/identity"
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/api"
@@ -150,6 +162,41 @@ func main() {
 	}
 }
 
+func knowledgeOriginals() (*blob.S3, error) {
+	endpoint := env("IDP_CMI_ORIGINALS_ENDPOINT", "")
+	if endpoint == "" {
+		return nil, nil
+	}
+	bucket := env("IDP_CMI_ORIGINALS_BUCKET", "")
+	if bucket == "" || env("IDP_CMI_ORIGINALS_ACCESS_KEY_FILE", "") == "" || env("IDP_CMI_ORIGINALS_SECRET_KEY_FILE", "") == "" {
+		return nil, errors.New("IDP_CMI_ORIGINALS_BUCKET, IDP_CMI_ORIGINALS_ACCESS_KEY_FILE and IDP_CMI_ORIGINALS_SECRET_KEY_FILE are required when IDP_CMI_ORIGINALS_ENDPOINT is set")
+	}
+	var timeout time.Duration
+	if t := env("IDP_CMI_ORIGINALS_TIMEOUT", ""); t != "" {
+		d, err := time.ParseDuration(t)
+		if err != nil || d <= 0 {
+			return nil, fmt.Errorf("IDP_CMI_ORIGINALS_TIMEOUT: %q is not a positive duration", t)
+		}
+		timeout = d
+	}
+	return blob.New(blob.Config{
+		Endpoint: endpoint, Bucket: bucket, Region: env("IDP_CMI_ORIGINALS_REGION", "us-east-1"),
+		AccessKeyFile: env("IDP_CMI_ORIGINALS_ACCESS_KEY_FILE", ""), SecretKeyFile: env("IDP_CMI_ORIGINALS_SECRET_KEY_FILE", ""),
+		CAFile: env("IDP_CMI_ORIGINALS_CA_FILE", ""), Timeout: timeout,
+		SSE: env("IDP_CMI_ORIGINALS_SSE", "true") != "false",
+	})
+}
+
+// writable checks that a temporary file can be created in dir ("" = the OS temp directory) and removed again.
+func writable(dir string) error {
+	f, err := os.CreateTemp(dir, "cmi-probe-*")
+	if err != nil {
+		return err
+	}
+	_ = f.Close()
+	return os.Remove(f.Name())
+}
+
 func serve(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -193,6 +240,22 @@ func serve(log *slog.Logger) error {
 		return err
 	}
 	defer store.Close()
+	if originals, err := knowledgeOriginals(); err != nil {
+		return err
+	} else if originals != nil {
+		// the store is optional: the service does not wait for it (a store that is down or slow must not keep CMI from
+		// starting); originals answer 503 until the bucket check passes, which is retried in the background
+		if dir := env("IDP_CMI_TEMP_DIR", ""); dir != "" {
+			store.TempDir = dir
+		}
+		if err := writable(store.TempDir); err != nil { // downloads are verified through a file there (the root file system is read-only)
+			return fmt.Errorf("IDP_CMI_TEMP_DIR: downloads of originals need a writable temporary directory: %w", err)
+		}
+		gate := &blob.Gate{S3: originals}
+		store.Originals = gate
+		go gate.Run(ctx, log, 30*time.Second)
+		log.Info("knowledge originals configured; reaching the store in the background", "endpoint", env("IDP_CMI_ORIGINALS_ENDPOINT", ""), "bucket", env("IDP_CMI_ORIGINALS_BUCKET", ""))
+	}
 	metrics := observability.NewMetrics()
 	if ms := observability.ServeMetrics(env("IDP_METRICS_LISTEN", ""), metrics, log); ms != nil {
 		defer ms.Close()
@@ -224,6 +287,15 @@ func serve(log *slog.Logger) error {
 		return fmt.Errorf("IDP_CMI_CONFIG: %w", err)
 	}
 	store.Log = log
+	if k := cfg.Knowledge; k != nil { // ADR-0001 D55, D56
+		store.Knowledge.IndexContext = k.IndexContext
+		if k.PersonalQuotaDocuments != nil {
+			store.Knowledge.PersonalQuotaDocuments = *k.PersonalQuotaDocuments
+		}
+		if k.PersonalQuotaBytes != nil {
+			store.Knowledge.PersonalQuotaBytes = *k.PersonalQuotaBytes
+		}
+	}
 	var embedder embedding.Embedder
 	if e := cfg.Embedding; e != nil { // ADR-0001 D11
 		tlsCfg, err := transport.ClientTLS(e.CAFile, "", "")
@@ -295,6 +367,21 @@ func serve(log *slog.Logger) error {
 	a := &api.API{Store: store, Auth: verifier, Resolver: resolver, Log: log, Metrics: metrics, Version: version, Evaluator: &evaluation.Suite{Store: store, Resolver: resolver}, PDP: pdpClient, PDPOnError: pdpOnError, Approvals: approvalClient}
 	if l := cfg.Limits; l != nil {
 		a.Limits = *l
+	}
+	if k := cfg.Knowledge; k != nil && k.MaxInFlightUploadBytes != nil {
+		if err := api.ValidateUploadBudget(*k.MaxInFlightUploadBytes); err != nil {
+			return fmt.Errorf("IDP_CMI_CONFIG: %w", err)
+		}
+		a.MaxUploadBytesInFlight = *k.MaxInFlightUploadBytes
+	}
+	if k := cfg.Knowledge; k != nil && k.MaxConcurrentDownloads != nil {
+		a.MaxConcurrentDownloads = *k.MaxConcurrentDownloads
+	}
+	if k := cfg.Knowledge; k != nil {
+		if k.MaxDownloadsPerCaller != nil {
+			a.MaxDownloadsPerCaller = *k.MaxDownloadsPerCaller
+		}
+		a.TransferTimeout = k.TransferTimeout
 	}
 	if c := cfg.Consolidation; c != nil { // ADR-0001 D15
 		tlsCfg, err := transport.ClientTLS(c.CAFile, "", "")
