@@ -21,7 +21,13 @@ const headingJoin = " › "
 
 var (
 	pageMarker  = regexp.MustCompile(`(?i)^<!--\s*page:\s*(\d+)\s*-->$`)
+	slideMarker = regexp.MustCompile(`(?i)^<!--\s*slide:\s*(\d+)\s*-->$`)
 	tableMarker = regexp.MustCompile(`(?i)^<!--\s*table:\s*(.*?)\s*-->$`)
+	// sheetMarker is `<!-- sheet: NAME range: A1:F100 -->`: the name is what lies between "sheet: " and the last " range: "
+	// (the converter writes `-->` in a name as `--&gt;`).
+	sheetMarker = regexp.MustCompile(`(?i)^<!--\s*sheet:\s*(.*)\s+range:\s*([A-Za-z]{1,3}\d+:[A-Za-z]{1,3}\d+)\s*-->$`)
+	// cellRange is a range of A1 references.
+	cellRange = regexp.MustCompile(`^([A-Z]{1,3})(\d+):([A-Z]{1,3})(\d+)$`)
 )
 
 // LocatedChunk is one index unit of a knowledge document. Body is what a model
@@ -31,6 +37,9 @@ type LocatedChunk struct {
 	Body     string
 	Headings []string
 	Page     int    // 0 when the text has no page marker
+	Slide    int    // 0 when the text has no slide marker (a presentation)
+	Sheet    string // the worksheet of a spreadsheet's text ("" for other text)
+	Range    string // the cells a piece of a worksheet's table covers, e.g. A12:F40
 	Table    string // set when this piece is rows of a named table
 }
 
@@ -45,7 +54,7 @@ func SplitHeadingPath(p string) []string {
 // Scanned is everything of the chunk a model may read or a search may match: the heading path (the first line of its excerpt),
 // the table name and the body. The write-time injection scan (D12) runs on this, not on the body alone.
 func (c LocatedChunk) Scanned() string {
-	head := strings.TrimSpace(c.Path() + "\n" + c.Table)
+	head := strings.TrimSpace(c.Path() + "\n" + c.Sheet + "\n" + c.Table)
 	if head == "" {
 		return c.Body
 	}
@@ -68,6 +77,9 @@ func (c LocatedChunk) IndexText(title string, withTitle bool) string {
 		parts = append(parts, t)
 	}
 	parts = append(parts, c.Headings...)
+	if c.Sheet != "" {
+		parts = append(parts, c.Sheet)
+	}
 	if c.Table != "" {
 		parts = append(parts, c.Table)
 	}
@@ -111,12 +123,19 @@ func ChunkKnowledge(text string) []LocatedChunk {
 	var out []LocatedChunk
 	var headings []heading
 	var prose []string
-	var page int
+	var page, slide int
+	var sheet, sheetCols string
 	var pendingTable string
+	place := func(c LocatedChunk) LocatedChunk {
+		c.Slide, c.Sheet = slide, sheet
+		return c
+	}
 	flush := func() {
 		body := strings.TrimSpace(strings.Join(prose, "\n"))
 		prose = nil
-		out = append(out, locatePlain(body, headingTexts(headings), page)...)
+		for _, c := range locatePlain(body, headingTexts(headings), page) {
+			out = append(out, place(c))
+		}
 	}
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
@@ -132,7 +151,7 @@ func ChunkKnowledge(text string) []LocatedChunk {
 				inner = lines[i+1 : j]
 			}
 			for _, body := range fenceChunks(strings.TrimSpace(line), inner, ch, n, closed, KnowledgeChunkBytes) {
-				out = append(out, LocatedChunk{Body: body, Headings: headingTexts(headings), Page: page})
+				out = append(out, place(LocatedChunk{Body: body, Headings: headingTexts(headings), Page: page}))
 			}
 			i = j // the closing fence, or past the end
 			continue
@@ -140,6 +159,17 @@ func ChunkKnowledge(text string) []LocatedChunk {
 		if m := pageMarker.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
 			flush()
 			page, _ = strconv.Atoi(m[1])
+			continue
+		}
+		if m := slideMarker.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			flush()
+			slide, _ = strconv.Atoi(m[1])
+			continue
+		}
+		if m := sheetMarker.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			flush()
+			sheet, sheetCols = strings.ReplaceAll(strings.TrimSpace(m[1]), "--&gt;", "-->"), strings.ToUpper(m[2])
+			pendingTable = ""
 			continue
 		}
 		if m := tableMarker.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
@@ -170,7 +200,11 @@ func ChunkKnowledge(text string) []LocatedChunk {
 			}
 			i--
 			for _, body := range tableChunks(rows, KnowledgeChunkBytes) {
-				out = append(out, LocatedChunk{Body: body, Headings: headingTexts(headings), Page: page, Table: pendingTable})
+				c := place(LocatedChunk{Body: body, Headings: headingTexts(headings), Page: page, Table: pendingTable})
+				if sheet != "" {
+					c.Range = sheetRange(body, sheetCols)
+				}
+				out = append(out, c)
 			}
 			pendingTable = ""
 			continue
@@ -182,6 +216,50 @@ func ChunkKnowledge(text string) []LocatedChunk {
 		return locatePlain(text, nil, page)
 	}
 	return out
+}
+
+// sheetRange is the cells a piece of a worksheet's table covers. The converter writes the Excel row number in the first
+// column of every row (the header's is "row"), so the piece's first and last row numbers and the columns of the sheet's
+// marker (A1:F100 -> A and F) give A12:F40. A piece that does not start with a numbered row (the rest of a row that was cut
+// like text) gets the whole range of the marker's columns' sheet block.
+func sheetRange(body, whole string) string {
+	m := cellRange.FindStringSubmatch(whole)
+	if m == nil {
+		return whole
+	}
+	first, last := 0, 0
+	for _, line := range strings.Split(body, "\n") {
+		n := rowNumber(line)
+		if n == 0 {
+			continue
+		}
+		if first == 0 {
+			first = n
+		}
+		last = n
+	}
+	if first == 0 {
+		return whole
+	}
+	return m[1] + strconv.Itoa(first) + ":" + m[3] + strconv.Itoa(last)
+}
+
+// rowNumber is the number in the first cell of a table line, or 0 (the header, the separator, text).
+func rowNumber(line string) int {
+	s := strings.TrimSpace(line)
+	if !strings.HasPrefix(s, "|") {
+		return 0
+	}
+	s = strings.TrimPrefix(s, "|")
+	end := strings.Index(s, "|")
+	if end < 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s[:end]))
+	if err != nil || n < 1 {
+		return 0
+	}
+	return n
 }
 
 func locatePlain(text string, headings []string, page int) []LocatedChunk {
@@ -369,7 +447,7 @@ func hasKnowledgeStructure(text string) bool {
 		if i+1 < len(all) && s != "" && setextUnderline(all[i+1]) != 0 && !isTableLine(s) && (i == 0 || strings.TrimSpace(all[i-1]) == "") {
 			return true
 		}
-		if _, _, ok := parseHeading(s); ok || isTableLine(s) || pageMarker.MatchString(s) || tableMarker.MatchString(s) {
+		if _, _, ok := parseHeading(s); ok || isTableLine(s) || pageMarker.MatchString(s) || slideMarker.MatchString(s) || sheetMarker.MatchString(s) || tableMarker.MatchString(s) {
 			return true
 		}
 	}

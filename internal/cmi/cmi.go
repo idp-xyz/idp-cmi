@@ -721,7 +721,10 @@ type Item struct {
 // the section the model used to read as part of the body is here.
 type Locator struct {
 	Headings []string `json:"headings,omitempty"`
-	Page     int      `json:"page,omitempty"`
+	Page     int      `json:"page,omitempty"`  // a PDF's page; a Word document's n-th explicit page break
+	Slide    int      `json:"slide,omitempty"` // a presentation's slide (1.6.0)
+	Sheet    string   `json:"sheet,omitempty"` // a spreadsheet's worksheet (1.6.0) ...
+	Range    string   `json:"range,omitempty"` // ... and the cells of it the chunk covers, e.g. A12:F40 (1.6.0)
 	Table    string   `json:"table,omitempty"`
 }
 

@@ -2,6 +2,7 @@ package cmi
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -261,5 +262,61 @@ func TestChunkerQuirks(t *testing.T) {
 	got = ChunkKnowledge("| x | y |\n| - | - |\n| 1 | 2 |\n")
 	if len(got) != 1 || got[0].Path() != "" {
 		t.Fatalf("table: %#v", got)
+	}
+}
+
+func TestChunkKnowledgeLocatesSlidesAndSheets(t *testing.T) {
+	text := "<!-- slide: 1 -->\n# Plan\nBudget words.\n<!-- slide: 2 -->\n# Risks\nRisk words.\n" +
+		"<!-- sheet: Rates 2026 range: A1:C5 -->\n| row | A | B | C |\n| --- | --- | --- | --- |\n| 2 | a | b | c |\n| 3 | d | e | f |\n| 5 | g | h | i |\n"
+	var got []LocatedChunk
+	for _, c := range ChunkKnowledge(text) {
+		got = append(got, c)
+	}
+	if len(got) != 3 {
+		t.Fatalf("%d chunks: %+v", len(got), got)
+	}
+	if got[0].Slide != 1 || got[0].Path() != "Plan" || got[1].Slide != 2 || got[1].Path() != "Risks" {
+		t.Fatalf("slides %+v %+v", got[0], got[1])
+	}
+	if got[2].Sheet != "Rates 2026" || got[2].Range != "A2:C5" {
+		t.Fatalf("sheet %+v", got[2])
+	}
+	if !strings.Contains(got[2].IndexText("", false), "Rates 2026") || !strings.Contains(got[2].Scanned(), "Rates 2026") {
+		t.Fatal("the sheet name is indexed and scanned")
+	}
+}
+
+func TestALargeWorksheetTableIsCutIntoRowRanges(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("<!-- sheet: Big range: A1:B400 -->\n| row | A | B |\n| --- | --- | --- |\n")
+	for r := 2; r <= 400; r++ {
+		fmt.Fprintf(&b, "| %d | value-%d | other-%d |\n", r, r, r)
+	}
+	chunks := ChunkKnowledge(b.String())
+	if len(chunks) < 3 {
+		t.Fatalf("%d chunks", len(chunks))
+	}
+	prev := 1
+	for _, c := range chunks {
+		m := cellRange.FindStringSubmatch(c.Range)
+		if m == nil || m[1] != "A" || m[3] != "B" {
+			t.Fatalf("range %q", c.Range)
+		}
+		first, _ := strconv.Atoi(m[2])
+		last, _ := strconv.Atoi(m[4])
+		if first != prev+1 || last < first {
+			t.Fatalf("range %s after row %d", c.Range, prev)
+		}
+		prev = last
+	}
+	if prev != 400 {
+		t.Fatalf("the ranges end at row %d", prev)
+	}
+}
+
+func TestASheetNameMayContainRangeAndArrows(t *testing.T) {
+	c := ChunkKnowledge("<!-- sheet: Q1 range: totals --&gt; x range: A1:B2 -->\n| row | A |\n| --- | --- |\n| 2 | v |\n")
+	if len(c) != 1 || c[0].Sheet != "Q1 range: totals --> x" || c[0].Range != "A2:B2" {
+		t.Fatalf("%+v", c)
 	}
 }

@@ -248,13 +248,7 @@ func (s *Store) createDocument(ctx context.Context, tenant string, in cmi.Docume
 			if flags == nil {
 				flags = []string{}
 			}
-			var page any
-			if part.Page > 0 {
-				page = part.Page
-			}
-			batch.Queue(`INSERT INTO knowledge_chunks (tenant_id, document_id, seq, content, index_text, heading_path, page, table_name, search, flags, embedding, embedding_model)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, to_tsvector('simple', $5) || to_tsvector('simple', $9), $10, $11, $12)`,
-				tenant, id, i, part.Body, indexes[i], part.Path(), page, part.Table, cmi.Bigrams(indexes[i]), flags, vec, vecModel)
+			queueChunk(batch, tenant, id, i, part, indexes[i], flags, vec, vecModel)
 		}
 		for i := range parts { // D26
 			batch.Queue(`INSERT INTO projection_events (tenant_id, kind, object_id, seq, version, action) VALUES ($1, 'chunk', $2, $3, 1, 'upsert')`, tenant, id, i)
@@ -554,7 +548,7 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 		limit = 200
 	}
 	const from = ` FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id JOIN sources s ON s.id = d.source_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x`
-	const locator = `, c.heading_path, c.page, c.table_name`
+	const locator = `, c.heading_path, c.page, c.table_name, c.slide, c.sheet, c.cell_range`
 	filters := func(usable string) string {
 		return ` AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))` + usable + kbScopeSQL + ` AND ($6 OR cardinality(c.flags) = 0)` + entityFilterSQL("knowledge", "d.id", "$7") + excludeSQL("$9")
 	}
@@ -577,9 +571,9 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 			d := &h.Document
 			var x docScan
 			var r float64
-			var path, table string
-			var page *int
-			dest := append(x.dest(d), &h.Seq, &h.Content, &h.Flags, &r, &h.Trust, &path, &page, &table)
+			var path, table, sheet, cells string
+			var page, slide *int
+			dest := append(x.dest(d), &h.Seq, &h.Content, &h.Flags, &r, &h.Trust, &path, &page, &table, &slide, &sheet, &cells)
 			if err := rows.Scan(dest...); err != nil {
 				return err
 			}
@@ -587,8 +581,11 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 			if len(h.Flags) == 0 {
 				h.Flags = nil
 			}
-			if path != "" || page != nil || table != "" {
-				h.Locator = &cmi.Locator{Table: table}
+			if path != "" || page != nil || table != "" || slide != nil || sheet != "" {
+				h.Locator = &cmi.Locator{Table: table, Sheet: sheet, Range: cells}
+				if slide != nil {
+					h.Locator.Slide = *slide
+				}
 				if path != "" {
 					h.Locator.Headings = cmi.SplitHeadingPath(path)
 				}
@@ -663,4 +660,18 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 		}
 	}
 	return out, nil
+}
+
+// queueChunk queues the insert of one chunk of a document with its locator (D49).
+func queueChunk(batch *pgx.Batch, tenant, docID string, seq int, part cmi.LocatedChunk, index string, flags []string, vec any, model any) {
+	var page, slide any
+	if part.Page > 0 {
+		page = part.Page
+	}
+	if part.Slide > 0 {
+		slide = part.Slide
+	}
+	batch.Queue(`INSERT INTO knowledge_chunks (tenant_id, document_id, seq, content, index_text, heading_path, page, table_name, slide, sheet, cell_range, search, flags, embedding, embedding_model)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, to_tsvector('simple', $5) || to_tsvector('simple', $12), $13, $14, $15)`,
+		tenant, docID, seq, part.Body, index, part.Path(), page, part.Table, slide, part.Sheet, part.Range, cmi.Bigrams(index), flags, vec, model)
 }
