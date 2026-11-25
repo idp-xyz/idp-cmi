@@ -1,7 +1,7 @@
 # idp-cmi build and test entry points.
-PG_IMAGE ?= public.ecr.aws/docker/library/postgres:17-alpine
+PG_IMAGE ?= ghcr.io/idp-xyz/mirror:public.ecr.aws__docker__library__postgres__17-alpine
 PG_NAME  ?= idp-cmi-test-pg
-PGVECTOR_IMAGE ?= pgvector/pgvector:0.8.7-pg17
+PGVECTOR_IMAGE ?= ghcr.io/idp-xyz/mirror:docker.io__pgvector__pgvector__0.8.7-pg17
 
 .PHONY: build test vet test-integration test-integration-pgvector test-eval test-longmemeval e2e test-live pg-up pg-down
 

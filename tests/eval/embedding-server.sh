@@ -15,7 +15,7 @@
 set -euo pipefail
 PORT="${PORT:-18091}"; NAME="${TEI_NAME:-idp-eval-tei}"; V="${TEI_VERSION:-1.9.4}"
 MODELS="${MODELS:-$HOME/.cache/idp-eval/models}"; MIN_FREE="${GPU_MIN_FREE_MIB:-2500}"
-img() { echo "ghcr.io/huggingface/text-embeddings-inference:$1-$V"; }
+img() { echo "ghcr.io/huggingface/text-embeddings-inference:$1-$V"; }   # mirror:upstream (a GPU image of the evaluation only, deliberately not mirrored)
 die() { echo "embedding-server: $*" >&2; exit 1; }
 
 have_image() { docker image inspect "$1" >/dev/null 2>&1 || {
