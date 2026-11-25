@@ -597,6 +597,16 @@ func (a *API) Handler() http.Handler {
 		out, err := a.Store.PutOriginal(r.Context(), p.Tenant, r.PathValue("id"), v, media, http.MaxBytesReader(nil, r.Body, limit+1))
 		return 200, out, err
 	}, admin, reader, writer)))
+	// D63: queue the conversion of the document's original again (a failed one, or another go at a finished one). The same
+	// right as for storing the original: knowledge.write, and the right to write the document's base.
+	mux.Handle("POST /v1/knowledge/documents/{id}/ingest", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
+		v, err := a.memberView(r, p, pdp.Resource{Kind: "knowledge", ID: r.PathValue("id")}, "knowledge.write")
+		if err != nil {
+			return 0, nil, err
+		}
+		out, err := a.Store.RetryConversion(r.Context(), p.Tenant, r.PathValue("id"), v)
+		return 202, out, err
+	}, admin, reader, writer))
 	mux.Handle("GET /v1/knowledge/documents/{id}/original", a.transferDeadline(a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		v, err := a.memberView(r, p, pdp.Resource{Kind: "knowledge", ID: r.PathValue("id")})
 		if err != nil {

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"idp-cmi/internal/guard"
 	"strings"
@@ -65,7 +66,13 @@ const docCols = `d.id::text, s.name, d.uri, CASE WHEN d.erasure_id IS NULL THEN 
 	d.revoked_at, coalesce(d.revoked_by, ''), coalesce(d.revoked_reason, ''), d.created_by, d.created_at, d.flags, d.revision, ` +
 	"(SELECT coalesce(json_agg(json_build_object('type', e.entity_type, 'id', e.entity_id) ORDER BY e.entity_type, e.entity_id), '[]')::text FROM entity_refs e WHERE e.object_kind = 'knowledge' AND e.object_id = d.id), " +
 	"coalesce((SELECT kb.name FROM knowledge_bases kb WHERE kb.id = d.knowledge_base_id), ''), d.valid_from, coalesce(d.doc_type, ''), CASE WHEN d.erasure_id IS NULL THEN d.owner ELSE '' END, d.review_due, " +
-	"coalesce(d.original_media_type, ''), coalesce(d.original_byte_size, 0), coalesce(d.original_sha256, '')"
+	"coalesce(d.original_media_type, ''), coalesce(d.original_byte_size, 0), coalesce(d.original_sha256, ''), " + ingestSQL
+
+// ingestSQL is the latest conversion job of the document as JSON (D63): its state, attempts, the code of its failure and the
+// notice for the uploader, never the detail, which may quote the converter.
+const ingestSQL = `coalesce((SELECT json_build_object('state', j.state, 'attempts', j.attempts, 'error', coalesce(j.error_code, ''), 'notice', coalesce(j.notice, ''),
+	'updatedAt', j.updated_at, 'nextAttemptAt', CASE WHEN j.state = 'queued' AND j.attempts > 0 THEN j.next_attempt_at END)::text
+	FROM knowledge_conversions j WHERE j.document_id = d.id ORDER BY j.created_at DESC LIMIT 1), '')`
 
 // docScan holds what scanning a document row needs besides the document itself.
 type docScan struct {
@@ -73,12 +80,13 @@ type docScan struct {
 	revokedBy, revokedReason, entities          string
 	originalMedia, originalSum                  string
 	originalSize                                int64
+	ingest                                      string
 }
 
 // dest lists the scan targets of docCols for d.
 func (x *docScan) dest(d *cmi.Document) []any {
 	return []any{&d.ID, &d.Source, &d.URI, &d.Title, &d.Version, &d.ContentSHA256, &d.ByteSize, &d.ChunkCount, &d.Status, &x.validUntil, &d.Sensitivity, &d.ACL.Subjects, &d.ACL.Roles,
-		&x.revokedAt, &x.revokedBy, &x.revokedReason, &d.CreatedBy, &d.CreatedAt, &d.Flags, &d.Revision, &x.entities, &d.KnowledgeBase, &x.validFrom, &d.DocType, &d.Owner, &x.reviewDue, &x.originalMedia, &x.originalSize, &x.originalSum}
+		&x.revokedAt, &x.revokedBy, &x.revokedReason, &d.CreatedBy, &d.CreatedAt, &d.Flags, &d.Revision, &x.entities, &d.KnowledgeBase, &x.validFrom, &d.DocType, &d.Owner, &x.reviewDue, &x.originalMedia, &x.originalSize, &x.originalSum, &x.ingest}
 }
 
 func (x *docScan) finish(d *cmi.Document) {
@@ -96,6 +104,7 @@ func (x *docScan) finish(d *cmi.Document) {
 		d.ReviewDue = *x.reviewDue
 	}
 	setOriginal(d, x.originalMedia, x.originalSize, x.originalSum)
+	d.Ingest = decodeIngest(x.ingest)
 	if x.revokedAt != nil {
 		d.Revocation = &cmi.Revocation{At: *x.revokedAt, By: x.revokedBy, Reason: x.revokedReason}
 	}
@@ -385,7 +394,7 @@ func auditPersonalBase(ctx context.Context, tx pgx.Tx, tenant string, v Visibili
 // is a conflict, on every path (D19).
 func revokeDocument(ctx context.Context, tx pgx.Tx, id, by, reason string, ifMatch int) error {
 	tag, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status = 'revoked', revoked_at = now(), revoked_by = $2, revoked_reason = $3, revision = revision + 1
-		WHERE id = $1 AND status IN ('active', 'superseded') AND ($4 = 0 OR revision = $4)`, id, by, reason, ifMatch)
+		WHERE id = $1 AND status IN ('active', 'superseded', 'pending') AND ($4 = 0 OR revision = $4)`, id, by, reason, ifMatch)
 	if err != nil {
 		return err
 	}
@@ -674,4 +683,27 @@ func queueChunk(batch *pgx.Batch, tenant, docID string, seq int, part cmi.Locate
 	batch.Queue(`INSERT INTO knowledge_chunks (tenant_id, document_id, seq, content, index_text, heading_path, page, table_name, slide, sheet, cell_range, search, flags, embedding, embedding_model)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, to_tsvector('simple', $5) || to_tsvector('simple', $12), $13, $14, $15)`,
 		tenant, docID, seq, part.Body, index, part.Path(), page, part.Table, slide, part.Sheet, part.Range, cmi.Bigrams(index), flags, vec, model)
+}
+
+// decodeIngest reads the JSON of ingestSQL.
+func decodeIngest(raw string) *cmi.Ingest {
+	if raw == "" {
+		return nil
+	}
+	var j struct {
+		State         string     `json:"state"`
+		Attempts      int        `json:"attempts"`
+		Error         string     `json:"error"`
+		Notice        string     `json:"notice"`
+		UpdatedAt     time.Time  `json:"updatedAt"`
+		NextAttemptAt *time.Time `json:"nextAttemptAt"`
+	}
+	if json.Unmarshal([]byte(raw), &j) != nil || j.State == "" {
+		return nil
+	}
+	out := &cmi.Ingest{State: j.State, Attempts: j.Attempts, Error: j.Error, Notice: j.Notice, UpdatedAt: j.UpdatedAt}
+	if j.NextAttemptAt != nil {
+		out.NextAttemptAt = *j.NextAttemptAt
+	}
+	return out
 }

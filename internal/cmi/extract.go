@@ -89,3 +89,6 @@ func cleanNotice(s string) string {
 	}
 	return s
 }
+
+// CutUTF8 returns s cut to at most n bytes on a character boundary.
+func CutUTF8(s string, n int) string { return cutUTF8(s, n) }

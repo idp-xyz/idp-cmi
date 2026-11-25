@@ -402,6 +402,14 @@ func (s *Store) purgeDomain(ctx context.Context, tenant, domain string, e *Erasu
 					return err
 				}
 			}
+			// the conversions of the documents (their notices quote the document, their staged text is an object under the
+			// document's prefix, which the originals domain sweeps) and the tickets that were presented for them (D69)
+			if err := count(`DELETE FROM knowledge_conversions WHERE document_id = ANY($1::uuid[])`, e.DocumentIDs); err != nil {
+				return err
+			}
+			if err := count(`DELETE FROM knowledge_ticket_uses WHERE document_id = ANY($1::uuid[])`, e.DocumentIDs); err != nil {
+				return err
+			}
 			if err := count(`UPDATE knowledge_documents SET title = $2, owner = '' WHERE id = ANY($1::uuid[])`, e.DocumentIDs, Erased); err != nil {
 				return err
 			}
@@ -411,8 +419,15 @@ func (s *Store) purgeDomain(ctx context.Context, tenant, domain string, e *Erasu
 				FROM knowledge_bases kb WHERE kb.id = d.knowledge_base_id AND kb.scope_kind = 'subject' AND d.id = ANY($1::uuid[])`, e.DocumentIDs, Erased); err != nil {
 				return err
 			}
-			if err := count(`UPDATE knowledge_chunks SET content = $2, index_text = $2, heading_path = '', table_name = '' WHERE document_id = ANY($1::uuid[])`, e.DocumentIDs, Erased); err != nil {
+			if err := count(`UPDATE knowledge_chunks SET content = $2, index_text = $2, heading_path = '', table_name = '', sheet = '', cell_range = '' WHERE document_id = ANY($1::uuid[])`, e.DocumentIDs, Erased); err != nil {
 				return err
+			}
+			var left int
+			if err := tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM knowledge_conversions WHERE document_id = ANY($1::uuid[])) + (SELECT count(*) FROM knowledge_ticket_uses WHERE document_id = ANY($1::uuid[]))`, e.DocumentIDs).Scan(&left); err != nil {
+				return err
+			}
+			if left > 0 { // a conversion that was queued after the barrier cannot happen (the document is revoked), but "verified" means gone
+				return fmt.Errorf("%d conversion jobs or tickets of the erased documents are still there", left)
 			}
 			return s.verifyPersonalErased(ctx, tx, e, baseIDs)
 		case "vectors":
@@ -437,7 +452,7 @@ func (s *Store) purgeDomain(ctx context.Context, tenant, domain string, e *Erasu
 			return nil
 		case "audit":
 			// audit rows keep action, subject, time and ids; the detail that may carry content is reduced
-			return count(`UPDATE audit_events SET detail = jsonb_build_object('erased', true, 'erasureId', $2::text) WHERE resource_id = ANY($1::text[]) AND action IN ('memory.create', 'knowledge.create')`,
+			return count(`UPDATE audit_events SET detail = jsonb_build_object('erased', true, 'erasureId', $2::text) WHERE resource_id = ANY($1::text[]) AND (action IN ('memory.create', 'knowledge.create') OR action LIKE 'knowledge.ingest.%')`,
 				append(append([]string{}, e.RecordIDs...), e.DocumentIDs...), e.ID)
 		}
 		return fmt.Errorf("unknown domain %s", domain)

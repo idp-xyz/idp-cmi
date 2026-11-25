@@ -1,11 +1,15 @@
 package integration
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"idp-cmi/adapters/identity"
 	"idp-cmi/internal/authorization"
@@ -113,4 +117,26 @@ func writeFile(t *testing.T, dir, name string) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+// ownerQuery runs a query that returns one row as the schema owner (which sees every tenant) and scans it into dest.
+func ownerQuery(t *testing.T, ownerURL, sql string, dest any, args ...any) error {
+	t.Helper()
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, ownerURL)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	return conn.QueryRow(ctx, sql, args...).Scan(dest)
+}
+
+// decodeBody reads a JSON object.
+func decodeBody(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("not JSON: %s", raw)
+	}
+	return out
 }

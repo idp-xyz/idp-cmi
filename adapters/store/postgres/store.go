@@ -54,7 +54,8 @@ type Store struct {
 	TempDir string
 	// OnEmbedFailure, when set, is told of every embedding failure of a chunk: "permanent" (the text was refused), "transient" or "refused" (the endpoint answered 4xx that is not an input error: a credential or configuration problem).
 	OnEmbedFailure func(kind string)
-	Knowledge      KnowledgeSettings // the operator's knowledge-base settings (config file section knowledge)
+	Knowledge      KnowledgeSettings  // the operator's knowledge-base settings (config file section knowledge)
+	Conversion     ConversionSettings // the conversion of originals into text (D61 to D70)
 
 	vec vectorState
 
@@ -92,7 +93,7 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		pool.Close()
 		return nil, fmt.Errorf("schema at version %d, binary needs %d (run idp-cmi migrate)", version, want)
 	}
-	return &Store{Pool: pool, Now: time.Now, Knowledge: DefaultKnowledgeSettings()}, nil
+	return &Store{Pool: pool, Now: time.Now, Knowledge: DefaultKnowledgeSettings(), Conversion: DefaultConversionSettings()}, nil
 }
 
 // Close releases the pool.

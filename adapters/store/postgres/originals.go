@@ -246,6 +246,11 @@ func (s *Store) PutOriginal(ctx context.Context, tenant, id string, v Visibility
 		if err := Audit(ctx, tx, tenant, v.Subject, "knowledge.original", target.id, map[string]any{"bytes": n, "mediaType": media}); err != nil {
 			return err
 		}
+		if _, convert := IngestExtension(media); convert && s.Conversion.Enabled { // D63: a PDF or Office original is converted to text
+			if err := enqueueConversion(ctx, tx, tenant, target.id, v.Subject, media, key, sum, n); err != nil {
+				return err
+			}
+		}
 		out, err = scanDoc(tx.QueryRow(ctx, `SELECT `+docCols+` FROM knowledge_documents d JOIN sources s ON s.id = d.source_id WHERE d.id = $1`, target.id))
 		return err
 	})
@@ -286,12 +291,30 @@ func (s *Store) GetOriginal(ctx context.Context, tenant, id string, v Visibility
 	if t.key == "" {
 		return nil, fail("NOT_FOUND", "document has no original")
 	}
+	tmp, err := s.openVerified(ctx, t.id, t.key, t.size, t.sum)
+	if err != nil {
+		return nil, err
+	}
+	f := &OriginalFile{Body: tmp, Size: t.size, MediaType: "application/octet-stream", Name: "original-" + t.id[:8]}
+	if typ, ok := originalTypes[t.media]; ok {
+		f.MediaType = t.media
+		f.Name += "." + typ.Ext
+	}
+	return f, nil
+}
+
+// openVerified streams the object into a temporary file while it is hashed (memory stays bounded however large it is),
+// checks the size and the digest against what the row recorded, and returns the file positioned at its start. The temporary
+// file is created in Store.TempDir and unlinked at once, keeping the descriptor, so a crash or a forgotten Close leaves
+// nothing in the directory.
+func (s *Store) openVerified(ctx context.Context, docID, key string, size int64, sum string) (*os.File, error) {
 	var src io.ReadCloser
+	var err error
 	if o, ok := s.Originals.(originalOpener); ok {
-		src, err = o.Open(ctx, t.key, t.size)
+		src, err = o.Open(ctx, key, size)
 	} else {
 		var data []byte
-		if data, err = s.Originals.Get(ctx, t.key, t.size); err == nil {
+		if data, err = s.Originals.Get(ctx, key, size); err == nil {
 			src = io.NopCloser(bytes.NewReader(data))
 		}
 	}
@@ -308,28 +331,23 @@ func (s *Store) GetOriginal(ctx context.Context, tenant, id string, v Visibility
 	}
 	_ = os.Remove(tmp.Name())
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(src, t.size+1))
+	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(src, size+1))
 	if err != nil {
 		_ = tmp.Close()
 		return nil, unavailable(err)
 	}
-	if n != t.size || "sha256:"+hex.EncodeToString(h.Sum(nil)) != t.sum {
+	if n != size || "sha256:"+hex.EncodeToString(h.Sum(nil)) != sum {
 		_ = tmp.Close()
 		if s.Log != nil {
-			s.Log.Error("a stored original does not match its recorded digest", "document", t.id, "recordedBytes", t.size, "foundBytes", n)
+			s.Log.Error("a stored original does not match its recorded digest", "document", docID, "recordedBytes", size, "foundBytes", n)
 		}
-		return nil, fmt.Errorf("stored original of document %s does not match its recorded digest", t.id)
+		return nil, fmt.Errorf("stored original of document %s does not match its recorded digest", docID)
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		_ = tmp.Close()
 		return nil, err
 	}
-	f := &OriginalFile{Body: tmp, Size: n, MediaType: "application/octet-stream", Name: "original-" + t.id[:8]}
-	if typ, ok := originalTypes[t.media]; ok {
-		f.MediaType = t.media
-		f.Name += "." + typ.Ext
-	}
-	return f, nil
+	return tmp, nil
 }
 
 // deleteOriginals removes every stored object of the documents and clears the columns (the erasure domain originals,

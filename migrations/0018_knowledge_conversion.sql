@@ -22,6 +22,7 @@ CREATE TABLE knowledge_conversions (
   id              uuid PRIMARY KEY,
   tenant_id       uuid NOT NULL REFERENCES tenants(id),
   document_id     uuid NOT NULL REFERENCES knowledge_documents(id),
+  document_version int NOT NULL,
   original_key    text NOT NULL,
   original_sha256 text NOT NULL,
   media_type      text NOT NULL,

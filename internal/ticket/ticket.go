@@ -57,6 +57,7 @@ type Claims struct {
 	Document  string `json:"doc"`
 	Version   int    `json:"ver"`
 	Job       string `json:"jid"`
+	Attempt   int    `json:"att"` // the attempt of the job: a ticket of an attempt that has been given up is worth nothing
 	Key       string `json:"key"`
 	SHA256    string `json:"sha"`
 }

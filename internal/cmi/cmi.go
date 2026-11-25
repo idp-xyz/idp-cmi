@@ -409,6 +409,7 @@ type Document struct {
 	Owner         string      `json:"owner,omitempty"` // the subject responsible for the document
 	ReviewDue     time.Time   `json:"reviewDue,omitzero"`
 	Original      *Original   `json:"original,omitempty"`
+	Ingest        *Ingest     `json:"ingest,omitempty"` // where the conversion of its original into text stands (1.6.0, D63)
 	CreatedBy     string      `json:"createdBy"`
 	CreatedAt     time.Time   `json:"createdAt"`
 }
@@ -419,6 +420,31 @@ type Original struct {
 	ByteSize  int64  `json:"byteSize"`
 	SHA256    string `json:"sha256"`
 }
+
+// Ingest is the state of the conversion of a document version's original into text (PDF and Office files, ADR-0001 D63): the
+// latest conversion job of the version. The text of a version whose first conversion has not succeeded is not searched
+// (its status is pending). It is absent for a version with no conversion.
+type Ingest struct {
+	State         string    `json:"state"`                  // queued, running, succeeded, truncated or failed
+	Attempts      int       `json:"attempts"`               // how many times it has been tried
+	Error         string    `json:"error,omitempty"`        // the code of the failure (a failed job; a queued one that is waiting to be tried again)
+	Notice        string    `json:"notice,omitempty"`       // what the uploader should know: a worksheet that was cut, pages that have no text layer
+	UpdatedAt     time.Time `json:"updatedAt"`              //
+	NextAttemptAt time.Time `json:"nextAttemptAt,omitzero"` // a queued job that failed before: when it is tried again
+}
+
+// Ingest states.
+const (
+	IngestQueued    = "queued"
+	IngestRunning   = "running"
+	IngestSucceeded = "succeeded"
+	IngestTruncated = "truncated"
+	IngestFailed    = "failed"
+)
+
+// Document statuses besides active, superseded, revoked and expired: a version whose original is being converted for the first
+// time is not in force and replaces nothing.
+const DocumentPending = "pending"
 
 // Knowledge base statuses.
 const (
