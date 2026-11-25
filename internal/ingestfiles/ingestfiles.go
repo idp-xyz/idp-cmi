@@ -69,17 +69,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// refuse answers with a status and a message. A 5xx and a 429 carry no message: the sandbox's client (files.status) prints
+// "the Workspace refused the file: <message>" whenever there is one and "the Workspace refused the file (HTTP n)" when there is
+// not, and CMI's worker tells a busy or failing endpoint (HTTP 5xx, 429: try again) from a refusal (a message: do not) by that.
 func refuse(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+	if status >= 500 || status == http.StatusTooManyRequests {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"message": msg}})
 }
 
-// claims returns the verified claims of the request's bearer ticket, and marks the ticket used. Every failure has been
-// answered when it returns false.
-func (h *Handler) claims(w http.ResponseWriter, r *http.Request, kind string) (ticket.Claims, bool) {
-	auth := r.Header.Get("Authorization")
-	tok, ok := strings.CutPrefix(auth, "Bearer ")
+// verified returns the claims of the request's bearer ticket when its signature, audience, expiry and kind are right. Every
+// failure has been answered when it returns false. It does not use the ticket up.
+func (h *Handler) verified(w http.ResponseWriter, r *http.Request, kind string) (ticket.Claims, bool) {
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || tok == "" {
 		refuse(w, http.StatusUnauthorized, "a ticket is required")
 		return ticket.Claims{}, false
@@ -90,21 +96,26 @@ func (h *Handler) claims(w http.ResponseWriter, r *http.Request, kind string) (t
 		refuse(w, http.StatusForbidden, "the ticket is not valid")
 		return c, false
 	}
+	return c, true
+}
+
+// use marks the verified ticket used: a ticket works once. It reports false, having answered, when it was used before.
+func (h *Handler) use(w http.ResponseWriter, r *http.Request, c ticket.Claims) bool {
 	first, err := h.Backend.UseTicket(r.Context(), c)
 	switch {
 	case errors.Is(err, postgres.ErrTicketRefused):
 		first = false
 	case err != nil:
-		h.log("file ticket could not be recorded", "kind", kind, "job", c.Job, "error", err.Error())
+		h.log("file ticket could not be recorded", "kind", c.Kind, "job", c.Job, "error", err.Error())
 		refuse(w, http.StatusServiceUnavailable, "try again later")
-		return c, false
+		return false
 	}
 	if !first {
-		h.log("file ticket refused", "kind", kind, "job", c.Job, "reason", "used")
+		h.log("file ticket refused", "kind", c.Kind, "job", c.Job, "reason", "used")
 		refuse(w, http.StatusForbidden, "the ticket is not valid")
-		return c, false
+		return false
 	}
-	return c, true
+	return true
 }
 
 func (h *Handler) log(msg string, args ...any) {
@@ -114,7 +125,7 @@ func (h *Handler) log(msg string, args ...any) {
 }
 
 func (h *Handler) read(w http.ResponseWriter, r *http.Request) {
-	c, ok := h.claims(w, r, ticket.Read)
+	c, ok := h.verified(w, r, ticket.Read)
 	if !ok {
 		return
 	}
@@ -122,12 +133,16 @@ func (h *Handler) read(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 {
 		limit = DefaultMaxReads
 	}
+	// the place is taken before the ticket is used: a ticket that was turned away because the endpoint is busy is still good
 	if h.reads.Add(1) > limit {
 		h.reads.Add(-1)
 		refuse(w, http.StatusTooManyRequests, "too many originals are being read at once")
 		return
 	}
 	defer h.reads.Add(-1)
+	if !h.use(w, r, c) {
+		return
+	}
 	f, media, size, err := h.Backend.ConversionOriginal(r.Context(), c)
 	if err != nil {
 		h.fail(w, c, err)
@@ -153,8 +168,8 @@ func (h *Handler) read(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) write(w http.ResponseWriter, r *http.Request) {
-	c, ok := h.claims(w, r, ticket.Write)
-	if !ok {
+	c, ok := h.verified(w, r, ticket.Write)
+	if !ok || !h.use(w, r, c) {
 		return
 	}
 	limit := h.MaxResult

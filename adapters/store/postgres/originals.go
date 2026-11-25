@@ -203,6 +203,7 @@ func (s *Store) PutOriginal(ctx context.Context, tenant, id string, v Visibility
 		return nil, unavailable(err)
 	}
 	var out *cmi.Document
+	var staged []string
 	err = s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		var baseID, current string
 		var erased bool
@@ -219,8 +220,14 @@ func (s *Store) PutOriginal(ctx context.Context, tenant, id string, v Visibility
 			return err
 		}
 		// the row is re-read under the lock: an erasure that began after the permission check is seen here
-		if err := tx.QueryRow(ctx, `SELECT coalesce(d.original_key, ''), d.erasure_id IS NOT NULL FROM knowledge_documents d WHERE d.id = $1 FOR UPDATE`, target.id).Scan(&current, &erased); err != nil {
+		var status string
+		if err := tx.QueryRow(ctx, `SELECT coalesce(d.original_key, ''), d.erasure_id IS NOT NULL, d.status FROM knowledge_documents d WHERE d.id = $1 FOR UPDATE`, target.id).Scan(&current, &erased, &status); err != nil {
 			return err
+		}
+		// a version still waiting for its first text is not given an original that is not converted: nothing would ever
+		// replace the placeholder and the version would stay pending for ever (D64)
+		if _, convert := IngestExtension(media); s.Conversion.Enabled && status == "pending" && !convert && !erased {
+			return fail("CONFLICT", "version %s is waiting for the text of its PDF or Office original; send a PDF, Word, PowerPoint or Excel file, or withdraw the version", target.id)
 		}
 		if erased {
 			return fail("NOT_FOUND", "document not found")
@@ -247,7 +254,7 @@ func (s *Store) PutOriginal(ctx context.Context, tenant, id string, v Visibility
 			return err
 		}
 		if _, convert := IngestExtension(media); convert && s.Conversion.Enabled { // D63: a PDF or Office original is converted to text
-			if err := enqueueConversion(ctx, tx, tenant, target.id, v.Subject, media, key, sum, n); err != nil {
+			if staged, err = enqueueConversion(ctx, tx, tenant, target.id, v.Subject, media, key, sum, n); err != nil {
 				return err
 			}
 		}
@@ -259,6 +266,9 @@ func (s *Store) PutOriginal(ctx context.Context, tenant, id string, v Visibility
 			s.Log.Error("an uploaded original that was not recorded could not be deleted", "key", key, "error", derr)
 		}
 		return nil, err
+	}
+	for _, k := range staged { // the text a given-up conversion had staged is plaintext too
+		s.DeleteStaged(ctx, k)
 	}
 	if target.key != "" { // after the commit: the row no longer points to it
 		if derr := s.Originals.Delete(context.WithoutCancel(ctx), target.key); derr != nil && s.Log != nil {

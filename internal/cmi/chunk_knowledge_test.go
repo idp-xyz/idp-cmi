@@ -320,3 +320,18 @@ func TestASheetNameMayContainRangeAndArrows(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 }
+
+func TestAPageOrSlideNumberThatIsNoNumberOfTheDatabaseIsNoLocation(t *testing.T) {
+	c := ChunkKnowledge("<!-- page: 99999999999999999999 -->\nfirst\n<!-- slide: 4294967296 -->\nsecond\n<!-- page: 0 -->\nthird\n<!-- page: 7 -->\nfourth\n")
+	if len(c) != 4 {
+		t.Fatalf("%+v", c)
+	}
+	for _, i := range []int{0, 1, 2} {
+		if c[i].Page != 0 || c[i].Slide != 0 {
+			t.Fatalf("%d: %+v", i, c[i])
+		}
+	}
+	if c[3].Page != 7 {
+		t.Fatalf("%+v", c[3])
+	}
+}

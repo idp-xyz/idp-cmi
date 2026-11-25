@@ -521,13 +521,14 @@ func startConversion(ctx context.Context, log *slog.Logger, store *postgres.Stor
 	if keyFile == "" {
 		return nil, errors.New("IDP_CMI_INGEST_TICKET_KEY_FILE is required (the key that signs the file endpoint's tickets)")
 	}
-	raw, err := os.ReadFile(keyFile)
+	key, err := readTicketKey(keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("IDP_CMI_INGEST_TICKET_KEY_FILE: %w", err)
 	}
-	key := []byte(strings.TrimSpace(string(raw)))
-	if err := ticket.CheckKey(key); err != nil {
-		return nil, fmt.Errorf("IDP_CMI_INGEST_TICKET_KEY_FILE: %w", err)
+	for name, u := range map[string]string{"endpointUrl": c.EndpointURL, "gatewayUrl": c.GatewayURL, "tokenUrl": c.TokenURL} {
+		if strings.HasPrefix(u, "http://") { // allowed for a development network; a ticket, a token and the documents travel in the clear
+			log.Warn("conversion: "+name+" is plain http; use https outside a development network", name, u)
+		}
 	}
 	if _, err := os.ReadFile(c.ClientSecretFile); err != nil {
 		return nil, fmt.Errorf("clientSecretFile: %w", err)
@@ -543,7 +544,7 @@ func startConversion(ctx context.Context, log *slog.Logger, store *postgres.Stor
 	if err != nil {
 		return nil, fmt.Errorf("tokenCaFile: %w", err)
 	}
-	store.Conversion = postgres.ConversionSettings{Enabled: true, MaxAttempts: c.MaxAttempts, Lease: c.Lease}
+	store.Conversion = postgres.ConversionSettings{Enabled: true, MaxAttempts: c.MaxAttempts, Lease: c.Lease, SandboxConcurrency: c.SandboxConcurrency}
 	tokens := &workload.TokenSource{TokenURL: c.TokenURL, ClientID: c.ClientID, SecretFile: c.ClientSecretFile, Scope: c.Scope,
 		HTTP: workload.NewHTTPClient(15*time.Second, &http.Transport{Proxy: nil, TLSClientConfig: tokTLS})}
 	gateway := &mcpclient.Client{Endpoint: c.GatewayURL, Tokens: tokens, Info: mcpclient.ClientInfo{Name: "idp-cmi", Version: version},
@@ -590,4 +591,36 @@ func startConversion(ctx context.Context, log *slog.Logger, store *postgres.Stor
 		defer cancel()
 		_ = srv.Shutdown(sctx)
 	}, nil
+}
+
+// readTicketKey reads the ticket key and refuses one that is readable by the group or others, too short, or too regular to be a
+// secret (fewer than 16 distinct bytes: all the same byte, a repeated word).
+func readTicketKey(file string) ([]byte, error) {
+	st, err := os.Stat(file)
+	if err != nil {
+		return nil, err
+	}
+	if st.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("%s is readable by the group or others (mode %o); make it 0600 or 0400", file, st.Mode().Perm())
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	key := []byte(strings.TrimSpace(string(raw)))
+	if err := ticket.CheckKey(key); err != nil {
+		return nil, err
+	}
+	var seen [256]bool
+	distinct := 0
+	for _, b := range key {
+		if !seen[b] {
+			seen[b] = true
+			distinct++
+		}
+	}
+	if distinct < 16 {
+		return nil, fmt.Errorf("the key has only %d distinct bytes: use random bytes (for example: openssl rand -hex 32)", distinct)
+	}
+	return key, nil
 }

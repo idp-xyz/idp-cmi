@@ -350,8 +350,8 @@ func TestBusySandboxAndGatewayTroublesAreRetried(t *testing.T) {
 	c.put("bob", id, mediaPDF, "%PDF TAG")
 	c.drain()
 	in := ingestOf(c.doc("bob", id))
-	if in["state"] != "succeeded" || in["attempts"].(float64) != 4 {
-		t.Fatalf("three transient failures, then success: %v", in)
+	if in["state"] != "succeeded" || in["attempts"].(float64) != 2 {
+		t.Fatalf("two busy answers (not attempts) and one gateway failure (an attempt), then success: %v", in)
 	}
 	if got := strings.Join(c.Outcomes(), " "); got != "retry:sandbox_busy retry:gateway_unavailable retry:sandbox_busy succeeded:" {
 		t.Fatalf("outcomes %s", got)

@@ -3,9 +3,14 @@ package convert
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
+	"idp-cmi/adapters/store/postgres"
+	"idp-cmi/internal/cmi"
 	"idp-cmi/internal/mcpclient"
 )
 
@@ -38,11 +43,11 @@ func TestWhatTheSandboxSaysIsClassified(t *testing.T) {
 		}
 	}
 	for text, transientWant := range map[string]bool{
-		"the file could not be moved: the Workspace did not answer: dial tcp":    true,
-		"the file could not be moved: the Workspace refused the file (HTTP 503)": true,
-		"the file could not be moved: the Workspace refused the file (HTTP 429)": true,
-		"the file reference is not valid for this run":                           false,
-		"the file could not be moved: the Workspace refused the file (HTTP 422)": false,
+		"the file could not be moved: the Workspace did not answer: dial tcp":              true,
+		"the file could not be moved: the Workspace refused the file (HTTP 503)":           true,
+		"the file could not be moved: the Workspace refused the file (HTTP 429)":           true,
+		"the file reference is not valid for this run":                                     false,
+		"the file could not be moved: the Workspace refused the file: the result is empty": false,
 		"zip entry too large": false,
 	} {
 		if got := classifyTransfer(text, CodeImportRefused).transient; got != transientWant {
@@ -67,5 +72,41 @@ func TestWhatTheGatewayDoesIsClassified(t *testing.T) {
 		if e := classifyCall(c.err); !e.transient || e.code != c.code {
 			t.Errorf("%v: %+v", c.err, e)
 		}
+	}
+}
+
+type commitStore struct {
+	Store
+	err error
+}
+
+func (s commitStore) ConversionResultKey(context.Context, postgres.Conversion) string { return "" }
+func (s commitStore) StagedConversion(context.Context, postgres.Conversion, int64) ([]byte, bool, error) {
+	return []byte("<!-- page: 1 -->\ntext"), true, nil
+}
+func (s commitStore) DeleteStaged(context.Context, string) {}
+func (s commitStore) CommitConversion(context.Context, postgres.Conversion, string, cmi.ExtractInfo) (*postgres.Committed, error) {
+	return nil, s.err
+}
+
+func TestADataErrorOfTheDatabaseIsPermanent(t *testing.T) {
+	for _, code := range []string{"22021", "22003", "22P05"} {
+		w := &Worker{Store: commitStore{err: fmt.Errorf("insert: %w", &pgconn.PgError{Code: code})}}
+		_, err := w.commit(context.Background(), postgres.Conversion{})
+		var ae *attemptError
+		if !errors.As(err, &ae) || ae.transient || ae.code != CodeOutputInvalid {
+			t.Errorf("%s: %v", code, err)
+		}
+	}
+	w := &Worker{Store: commitStore{err: &pgconn.PgError{Code: "40001"}}} // a serialization failure is worth another go
+	if _, err := w.commit(context.Background(), postgres.Conversion{}); err == nil || !err.(*attemptError).transient {
+		t.Errorf("%v", err)
+	}
+}
+
+func TestACancelledContextIsStillOneAfterClassification(t *testing.T) {
+	e := classifyCall(&mcpclient.NetworkError{Err: context.Canceled})
+	if !errors.Is(e, context.Canceled) {
+		t.Fatal("the cause is lost")
 	}
 }

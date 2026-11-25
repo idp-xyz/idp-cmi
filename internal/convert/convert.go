@@ -21,10 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/cmi"
@@ -86,6 +89,7 @@ type Store interface {
 	SetConversionWorkspace(ctx context.Context, c postgres.Conversion, ws string) error
 	RetryConversionLater(ctx context.Context, c postgres.Conversion, e postgres.ConversionError, delay time.Duration, limit int) error
 	FailConversion(ctx context.Context, c postgres.Conversion, e postgres.ConversionError) error
+	ReleaseConversion(ctx context.Context, c postgres.Conversion) error
 	StagedConversion(ctx context.Context, c postgres.Conversion, limit int64) ([]byte, bool, error)
 	ConversionResultKey(ctx context.Context, c postgres.Conversion) string
 	DeleteStaged(ctx context.Context, key string)
@@ -133,10 +137,19 @@ type attemptError struct {
 	code      string
 	detail    string
 	transient bool
-	limit     int // a cap on the attempts of this kind of failure (0 = the queue's)
+	busy      bool // the sandbox (or CMI's own endpoint) was busy: the attempt is not spent
+	limit     int  // a cap on the attempts of this kind of failure (0 = the queue's)
+	cause     error
 }
 
 func (e *attemptError) Error() string { return e.code + ": " + e.detail }
+
+// Unwrap keeps the cause, so that a cancelled context is still seen as one.
+func (e *attemptError) Unwrap() error { return e.cause }
+
+func busy(code, detail string) *attemptError {
+	return &attemptError{code: code, detail: detail, transient: true, busy: true}
+}
 
 func transient(code, detail string) *attemptError {
 	return &attemptError{code: code, detail: detail, transient: true}
@@ -241,10 +254,17 @@ func (w *Worker) Process(ctx context.Context, c postgres.Conversion) {
 		log.Info("converted an original", "state", committed.State, "chunks", committed.Chunks)
 		w.done(committed.State, "")
 		return
-	case errors.Is(err, postgres.ErrConversionLost) || errors.Is(err, context.Canceled) && ctx.Err() != nil:
-		// the job is not ours any more (an erasure, a newer original, another worker), or CMI is shutting down: the lease
-		// brings it back when it is still wanted
+	case errors.Is(err, postgres.ErrConversionLost):
+		// the job is not ours any more (an erasure, a newer original, another worker)
 		log.Info("a conversion attempt was dropped", "reason", errString(err))
+		return
+	case ctx.Err() != nil:
+		// CMI is shutting down: the attempt was cut off, not failed, so it is given back unspent
+		rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer rcancel()
+		if rerr := w.Store.ReleaseConversion(rctx, c); rerr != nil {
+			log.Warn("an interrupted conversion could not be released; its lease will lapse", "error", rerr)
+		}
 		return
 	}
 	var ae *attemptError
@@ -254,12 +274,16 @@ func (w *Worker) Process(ctx context.Context, c postgres.Conversion) {
 	if actx.Err() != nil && ctx.Err() == nil && !ae.transient { // the attempt's own time ran out
 		ae = transient(CodeGatewayTimeout, "the attempt took longer than "+timeout.String())
 	}
-	e := postgres.ConversionError{Code: ae.code, Detail: ae.detail}
+	ae.detail = postgres.RedactTickets(ae.detail)
+	e := postgres.ConversionError{Code: ae.code, Detail: ae.detail, Busy: ae.busy}
 	// the bookkeeping must survive a shutdown that cuts the attempt off
 	bctx, bcancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer bcancel()
 	if ae.transient {
 		delay := postgres.Backoff(c.Attempts)
+		if ae.busy { // the attempt is given back, so the wait does not grow with it: a minute and a bit, spread
+			delay = time.Minute + time.Duration(rand.Int64N(int64(30*time.Second)))
+		}
 		if w.Backoff != nil {
 			delay = w.Backoff(c.Attempts)
 		}
@@ -502,6 +526,10 @@ func (w *Worker) commit(ctx context.Context, c postgres.Conversion) (*postgres.C
 	case errors.Is(err, postgres.ErrNotCommittable):
 		return nil, permanent(CodeDocumentChanged, "the document no longer has the original this conversion was made from")
 	}
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && strings.HasPrefix(pg.Code, "22") { // data exception: the database cannot hold this text, and will not the next time
+		return nil, permanent(CodeOutputInvalid, "the database refused the text ("+pg.Code+")")
+	}
 	var se *postgres.Error
 	if errors.As(err, &se) && se.Code == "QUOTA_EXCEEDED" {
 		return nil, permanent(CodeQuota, se.Message)
@@ -516,6 +544,12 @@ func (w *Worker) commit(ctx context.Context, c postgres.Conversion) (*postgres.C
 
 // classifyCall is a call that got no tool result: the gateway did not answer, answered with a status, or refused.
 func classifyCall(err error) *attemptError {
+	e := classifyCallKind(err)
+	e.cause = err
+	return e
+}
+
+func classifyCallKind(err error) *attemptError {
 	var ne *mcpclient.NetworkError
 	var he *mcpclient.HTTPError
 	var re *mcpclient.RPCError
@@ -541,7 +575,7 @@ func classifyCall(err error) *attemptError {
 func classifyTool(text, tool string) *attemptError {
 	switch {
 	case strings.Contains(text, "at capacity"), strings.Contains(text, "maximum number of workspaces"), strings.Contains(text, "running another command"):
-		return transient(CodeSandboxBusy, cmi.CutUTF8(text, 200)) // the 9th concurrent run is refused outright, not queued
+		return busy(CodeSandboxBusy, cmi.CutUTF8(text, 200)) // the 9th concurrent run is refused outright, not queued
 	case strings.Contains(text, "failed to complete the request"):
 		return transient(CodeSandboxError, tool+": "+cmi.CutUTF8(text, 200))
 	}
@@ -552,10 +586,10 @@ func classifyTool(text, tool string) *attemptError {
 // transient; a ticket, a file the sandbox does not accept (a type, a macro, a bomb) or one over the transfer limit is not.
 func classifyTransfer(text, refused string) *attemptError {
 	switch {
-	case strings.Contains(text, "did not answer"), strings.Contains(text, "(HTTP 5"), strings.Contains(text, "(HTTP 429)"):
+	case strings.Contains(text, "(HTTP 429)"), strings.Contains(text, "at capacity"), strings.Contains(text, "running another command"):
+		return busy(CodeSandboxBusy, cmi.CutUTF8(text, 200)) // CMI's own endpoint is at its limit of reads, or the sandbox is busy
+	case strings.Contains(text, "did not answer"), strings.Contains(text, "(HTTP 5"):
 		return transient(CodeStoreDown, cmi.CutUTF8(text, 200))
-	case strings.Contains(text, "at capacity"), strings.Contains(text, "running another command"):
-		return transient(CodeSandboxBusy, cmi.CutUTF8(text, 200))
 	}
 	return permanent(refused, cmi.CutUTF8(text, 200))
 }

@@ -148,3 +148,17 @@ type pgxTx = pgx.Tx
 func convtestOutput(md string) convtest.Output { return convtest.Output{Markdown: md} }
 
 func cmiInfo() cmi.ExtractInfo { return cmi.ExtractInfo{HasBody: true} }
+
+// ownerExec runs a statement as the schema owner.
+func ownerExec(t *testing.T, ownerURL, sql string, args ...any) {
+	t.Helper()
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, sql, args...); err != nil {
+		t.Fatal(err)
+	}
+}

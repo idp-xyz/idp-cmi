@@ -46,3 +46,13 @@ func TestNoticesAreOneBoundedLineWithoutControls(t *testing.T) {
 		t.Fatalf("%q", n)
 	}
 }
+
+func TestControlCharactersAreTakenOutOfAConvertedText(t *testing.T) {
+	got, info := CleanExtracted("a\x00b\x01c\x1bd\x7fe\tf\r\ng\rh\n")
+	if got != "abcde\tf\ngh\n" || !info.HasBody {
+		t.Fatalf("%q", got)
+	}
+	if _, info := CleanExtracted("\x00\x00\x01"); info.HasBody {
+		t.Fatal("controls are no body")
+	}
+}

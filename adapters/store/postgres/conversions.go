@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -38,6 +39,11 @@ type ConversionSettings struct {
 	MaxAttempts int
 	// Lease is how long a worker holds a job before another may take it (default 20 minutes).
 	Lease time.Duration
+	// SandboxConcurrency is the ingest sandbox's own limit on runs (0 = not enforced here). It holds over all replicas: a claim
+	// takes no more jobs than the limit leaves after the running jobs whose lease is live.
+	SandboxConcurrency int
+	// MaxBusyWait is how long a job that keeps meeting a busy sandbox may wait in all before that counts as a failure (default 6 hours).
+	MaxBusyWait time.Duration
 }
 
 // DefaultConversionSettings are what Open starts with.
@@ -50,6 +56,13 @@ func (c ConversionSettings) maxAttempts() int {
 		return 6
 	}
 	return c.MaxAttempts
+}
+
+func (c ConversionSettings) maxBusyWait() time.Duration {
+	if c.MaxBusyWait <= 0 {
+		return 6 * time.Hour
+	}
+	return c.MaxBusyWait
 }
 
 func (c ConversionSettings) lease() time.Duration {
@@ -106,29 +119,46 @@ const conversionCols = `j.id::text, j.tenant_id::text, j.document_id::text, j.do
 // not in force until its text has been extracted, unless it already holds extracted text: a first conversion keeps the
 // supplied placeholder out of retrieval, so the version it would replace stays current while this one is made (D64).
 // Earlier jobs of the document that are still open are given up.
-func enqueueConversion(ctx context.Context, tx pgx.Tx, tenant, docID, by, media, key, sum string, size int64) error {
+func enqueueConversion(ctx context.Context, tx pgx.Tx, tenant, docID, by, media, key, sum string, size int64) (stale []string, err error) {
 	var status, source string
 	if err := tx.QueryRow(ctx, `SELECT status, text_source FROM knowledge_documents WHERE id = $1`, docID).Scan(&status, &source); err != nil {
-		return err
+		return nil, err
 	}
 	if status != "active" && status != "superseded" && status != "pending" {
-		return nil // revoked, expired or erased: there is nothing to make searchable
+		return nil, nil // revoked, expired or erased: there is nothing to make searchable
 	}
 	if status == "active" && source == "supplied" {
 		if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status = 'pending', revision = revision + 1 WHERE id = $1`, docID); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE knowledge_conversions SET state = 'failed', error_code = 'replaced', error_detail = 'a newer original was stored', finished_at = now(), updated_at = now()
-		WHERE document_id = $1 AND state IN ('queued', 'running')`, docID); err != nil {
-		return err
+	// the staged text of a job that is given up is plaintext under the document's prefix: its object goes after the commit
+	rows, err := tx.Query(ctx, `WITH old AS (SELECT id, result_key FROM knowledge_conversions WHERE document_id = $1 AND state IN ('queued', 'running') FOR UPDATE)
+		UPDATE knowledge_conversions j SET state = 'failed', error_code = 'replaced', error_detail = 'a newer original was stored', finished_at = now(), updated_at = now(), result_key = NULL
+		FROM old WHERE j.id = old.id RETURNING coalesce(old.result_key, '')`, docID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if k != "" {
+			stale = append(stale, k)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	id := NewUUID()
 	if _, err := tx.Exec(ctx, `INSERT INTO knowledge_conversions (id, tenant_id, document_id, document_version, original_key, original_sha256, media_type, byte_size, requested_by)
 		SELECT $1, d.tenant_id, d.id, d.version, $3, $4, $5, $6, $7 FROM knowledge_documents d WHERE d.id = $2`, id, docID, key, sum, media, size, by); err != nil {
-		return err
+		return nil, err
 	}
-	return Audit(ctx, tx, tenant, by, "knowledge.ingest.queued", docID, map[string]any{"job": id, "mediaType": media, "bytes": size})
+	return stale, Audit(ctx, tx, tenant, by, "knowledge.ingest.queued", docID, map[string]any{"job": id, "mediaType": media, "bytes": size})
 }
 
 // RetryConversion queues a new conversion of the document's original (a failed one, or another go at a finished one). The
@@ -138,6 +168,7 @@ func (s *Store) RetryConversion(ctx context.Context, tenant, id string, v Visibi
 		return nil, fail("NOT_CONFIGURED", "originals are not converted on this service")
 	}
 	var out *cmi.Document
+	var stale []string
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		if err := bindView(ctx, tx, v); err != nil {
 			return err
@@ -161,12 +192,17 @@ func (s *Store) RetryConversion(ctx context.Context, tenant, id string, v Visibi
 		if open > 0 {
 			return fail("CONFLICT", "document %s is being converted already", t.id)
 		}
-		if err := enqueueConversion(ctx, tx, tenant, t.id, v.Subject, t.media, t.key, t.sum, t.size); err != nil {
+		if stale, err = enqueueConversion(ctx, tx, tenant, t.id, v.Subject, t.media, t.key, t.sum, t.size); err != nil {
 			return err
 		}
 		out, err = scanDoc(tx.QueryRow(ctx, `SELECT `+docCols+` FROM knowledge_documents d JOIN sources s ON s.id = d.source_id WHERE d.id = $1`, t.id))
 		return err
 	})
+	if err == nil {
+		for _, k := range stale {
+			s.DeleteStaged(ctx, k)
+		}
+	}
 	return out, err
 }
 
@@ -175,13 +211,43 @@ func (s *Store) RetryConversion(ctx context.Context, tenant, id string, v Visibi
 // does, under its own role.
 func (s *Store) ClaimConversions(ctx context.Context, owner string, limit int) ([]Conversion, error) {
 	var out []Conversion
+	var orphans []string
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT set_config('app.role', 'converter', true)`); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE knowledge_conversions SET state = 'failed', error_code = 'attempts_exhausted', error_detail = 'the worker died on the last attempt', finished_at = now(), updated_at = now(), lease_owner = NULL
-			WHERE state = 'running' AND lease_until < now() AND attempts >= $1`, s.Conversion.maxAttempts()); err != nil {
+		// one claim at a time over all replicas, so that the limit below is a limit
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(72095)`); err != nil {
 			return err
+		}
+		dead, err := tx.Query(ctx, `WITH old AS (SELECT id, result_key FROM knowledge_conversions WHERE state = 'running' AND lease_until < now() AND attempts >= $1 FOR UPDATE)
+			UPDATE knowledge_conversions j SET state = 'failed', error_code = 'attempts_exhausted', error_detail = 'the worker died on the last attempt', finished_at = now(), updated_at = now(), lease_owner = NULL, result_key = NULL
+			FROM old WHERE j.id = old.id RETURNING coalesce(old.result_key, '')`, s.Conversion.maxAttempts())
+		if err != nil {
+			return err
+		}
+		for dead.Next() {
+			var k string
+			if err := dead.Scan(&k); err != nil {
+				dead.Close()
+				return err
+			}
+			if k != "" {
+				orphans = append(orphans, k)
+			}
+		}
+		dead.Close()
+		if err := dead.Err(); err != nil {
+			return err
+		}
+		if cap := s.Conversion.SandboxConcurrency; cap > 0 {
+			var live int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM knowledge_conversions WHERE state = 'running' AND lease_until >= now()`).Scan(&live); err != nil {
+				return err
+			}
+			if limit = min(limit, cap-live); limit <= 0 {
+				return nil
+			}
 		}
 		rows, err := tx.Query(ctx, `WITH due AS (
 				SELECT id, result_key AS stale FROM knowledge_conversions
@@ -204,6 +270,11 @@ func (s *Store) ClaimConversions(ctx context.Context, owner string, limit int) (
 		}
 		return rows.Err()
 	})
+	if err == nil {
+		for _, k := range orphans { // the staged text of a job that has no attempts left
+			s.DeleteStaged(ctx, k)
+		}
+	}
 	return out, err
 }
 
@@ -247,22 +318,40 @@ var ErrConversionLost = errors.New("the conversion job is no longer this attempt
 type ConversionError struct {
 	Code   string // a short stable word: sandbox_busy, conversion_failed, ...
 	Detail string // for the log and the audit, never shown to the uploader
+	Busy   bool   // the sandbox or CMI's own endpoint was busy: not a failure of the job, the attempt is not spent
 }
 
 // RetryConversionLater puts the job back in the queue after a transient failure, to run again after delay; when the attempt was
-// the last it fails. A limit above 0 caps the attempts of this kind of failure (a converter's own error is tried twice).
+// the last it fails. A limit above 0 caps the attempts of this kind of failure (a converter's own error is tried twice). A busy
+// sandbox is not a failure of the job: the attempt is given back, and only a job that has waited MaxBusyWait in all fails.
 func (s *Store) RetryConversionLater(ctx context.Context, c Conversion, e ConversionError, delay time.Duration, limit int) error {
+	e.Detail = redactTickets(e.Detail)
 	last := s.Conversion.maxAttempts()
 	if limit > 0 && limit < last {
 		last = limit
 	}
-	if c.Attempts >= last {
+	if !e.Busy && c.Attempts >= last {
 		return s.FailConversion(ctx, c, e)
 	}
-	return s.InTenant(ctx, c.Tenant, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE knowledge_conversions SET state = 'queued', next_attempt_at = now() + $3::interval, lease_owner = NULL, lease_until = NULL,
+	give := 0
+	if e.Busy {
+		give = 1
+	}
+	failed := false
+	err := s.InTenant(ctx, c.Tenant, func(tx pgx.Tx) error {
+		if e.Busy {
+			var waited bool
+			if err := tx.QueryRow(ctx, `SELECT coalesce(now() - started_at > $2::interval, false) FROM knowledge_conversions WHERE id = $1`, c.ID, s.Conversion.maxBusyWait().String()).Scan(&waited); err != nil {
+				return err
+			}
+			if waited {
+				failed = true
+				return nil
+			}
+		}
+		tag, err := tx.Exec(ctx, `UPDATE knowledge_conversions SET state = 'queued', next_attempt_at = now() + $3::interval, lease_owner = NULL, lease_until = NULL, attempts = greatest(attempts - $6, 0),
 			error_code = $4, error_detail = $5, workspace_id = NULL, updated_at = now() WHERE id = $1 AND state = 'running' AND attempts = $2`,
-			c.ID, c.Attempts, delay.String(), e.Code, e.Detail)
+			c.ID, c.Attempts, delay.String(), e.Code, cutDetail(e.Detail), give)
 		if err != nil {
 			return err
 		}
@@ -271,24 +360,53 @@ func (s *Store) RetryConversionLater(ctx context.Context, c Conversion, e Conver
 		}
 		return nil
 	})
+	if err == nil && failed {
+		return s.FailConversion(ctx, c, e)
+	}
+	return err
+}
+
+// ReleaseConversion gives the attempt back without spending it (CMI is shutting down): the job is queued again at once.
+func (s *Store) ReleaseConversion(ctx context.Context, c Conversion) error {
+	return s.InTenant(ctx, c.Tenant, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE knowledge_conversions SET state = 'queued', next_attempt_at = now(), lease_owner = NULL, lease_until = NULL, attempts = greatest(attempts - 1, 0),
+			workspace_id = NULL, updated_at = now() WHERE id = $1 AND state = 'running' AND attempts = $2`, c.ID, c.Attempts)
+		return err
+	})
 }
 
 // FailConversion ends the job as failed. The version stays as it is: a first conversion that fails leaves it pending (not in
-// force), so nothing half-made is searchable and the version it would have replaced stays current.
+// force), so nothing half-made is searchable and the version it would have replaced stays current. The text the job had staged
+// goes with it.
 func (s *Store) FailConversion(ctx context.Context, c Conversion, e ConversionError) error {
-	return s.InTenant(ctx, c.Tenant, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE knowledge_conversions SET state = 'failed', error_code = $3, error_detail = $4, lease_owner = NULL, lease_until = NULL,
-			workspace_id = NULL, result_key = NULL, finished_at = now(), updated_at = now() WHERE id = $1 AND state = 'running' AND attempts = $2`,
-			c.ID, c.Attempts, e.Code, e.Detail)
+	var staged string
+	err := s.InTenant(ctx, c.Tenant, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `SELECT coalesce(result_key, '') FROM knowledge_conversions WHERE id = $1 AND state = 'running' AND attempts = $2 FOR UPDATE`, c.ID, c.Attempts).Scan(&staged)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrConversionLost
+		}
 		if err != nil {
 			return err
 		}
-		if tag.RowsAffected() == 0 {
-			return ErrConversionLost
+		detail := cutDetail(redactTickets(e.Detail))
+		if _, err := tx.Exec(ctx, `UPDATE knowledge_conversions SET state = 'failed', error_code = $3, error_detail = $4, lease_owner = NULL, lease_until = NULL,
+			workspace_id = NULL, result_key = NULL, finished_at = now(), updated_at = now() WHERE id = $1 AND attempts = $2`, c.ID, c.Attempts, e.Code, detail); err != nil {
+			return err
 		}
-		return Audit(ctx, tx, c.Tenant, c.RequestedBy, "knowledge.ingest.failed", c.DocumentID, map[string]any{"job": c.ID, "attempts": c.Attempts, "error": e.Code, "detail": cutDetail(e.Detail)})
+		return Audit(ctx, tx, c.Tenant, c.RequestedBy, "knowledge.ingest.failed", c.DocumentID, map[string]any{"job": c.ID, "attempts": c.Attempts, "error": e.Code, "detail": detail})
 	})
+	if err == nil {
+		s.DeleteStaged(ctx, staged)
+	}
+	return err
 }
+
+var ticketShaped = regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*`)
+
+// RedactTickets is redactTickets for the worker, which logs the same text.
+func RedactTickets(s string) string { return redactTickets(s) }
+
+func redactTickets(s string) string { return ticketShaped.ReplaceAllString(s, "[redacted]") }
 
 func cutDetail(s string) string { return cutUTF8(s, 300) }
 
@@ -507,6 +625,16 @@ func (s *Store) CommitConversion(ctx context.Context, c Conversion, text string,
 	if len(parts) == 0 {
 		return nil, fail("INVALID", "the converted text produced no chunks")
 	}
+	// the injection scan (D12) reads every chunk; it runs here, not while the base row is locked
+	chunkFlags := make([][]string, len(parts))
+	var docFlags []string
+	for i, part := range parts {
+		chunkFlags[i] = guard.Scan(part.Scanned())
+		docFlags = guard.Union(docFlags, chunkFlags[i])
+	}
+	if docFlags == nil {
+		docFlags = []string{}
+	}
 	var out Committed
 	err := s.InTenant(ctx, c.Tenant, func(tx pgx.Tx) error {
 		var baseID, title, status, source, uri, original string
@@ -546,21 +674,12 @@ func (s *Store) CommitConversion(ctx context.Context, c Conversion, text string,
 		if jobState != ConvRunning || attempts != c.Attempts {
 			return ErrConversionLost
 		}
-		counted := status != "pending"
-		if err := s.checkConversionQuota(ctx, tx, b, uri, c.DocumentID, int64(len(text)), oldBytes, origBytes, counted, validFrom); err != nil {
+		if err := s.checkConversionQuota(ctx, tx, b, uri, c.DocumentID, int64(len(text)), oldBytes, validFrom); err != nil {
 			return err
 		}
-		bodies := make([]string, len(parts))
 		indexes := make([]string, len(parts))
-		chunkFlags := make([][]string, len(parts))
-		var docFlags []string
 		for i, part := range parts {
-			bodies[i], indexes[i] = part.Body, part.IndexText(title, s.Knowledge.IndexContext)
-			chunkFlags[i] = guard.Scan(part.Scanned()) // D12, as for any text written
-			docFlags = guard.Union(docFlags, chunkFlags[i])
-		}
-		if docFlags == nil {
-			docFlags = []string{}
+			indexes[i] = part.IndexText(title, s.Knowledge.IndexContext)
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM knowledge_chunks WHERE document_id = $1`, c.DocumentID); err != nil {
 			return err
@@ -619,7 +738,7 @@ func joinNotices(n []string) string {
 // checkConversionQuota decides whether the extracted text fits the base: the text replaces the version's supplied text, and a
 // version that is not counted yet (pending) brings its original too and, coming into force, frees the bytes of the version of
 // its uri that it replaces.
-func (s *Store) checkConversionQuota(ctx context.Context, tx pgx.Tx, b *baseRow, uri, docID string, newBytes, oldBytes, origBytes int64, counted bool, validFrom *time.Time) error {
+func (s *Store) checkConversionQuota(ctx context.Context, tx pgx.Tx, b *baseRow, uri, docID string, newBytes, oldBytes int64, validFrom *time.Time) error {
 	quotaDocs, quotaBytes := s.effectiveQuota(b)
 	if quotaDocs == 0 && quotaBytes == 0 {
 		return nil
@@ -628,17 +747,11 @@ func (s *Store) checkConversionQuota(ctx context.Context, tx pgx.Tx, b *baseRow,
 	if err != nil {
 		return err
 	}
-	docs, bytes := u.Documents, u.Bytes
-	if counted {
-		bytes += newBytes - oldBytes
-	} else {
-		bytes += newBytes + origBytes
-		if !u.HasURI {
-			docs++
-		}
-		if validFrom == nil || !validFrom.After(s.now()) {
-			bytes -= u.URIBytes
-		}
+	// a version waiting for its text is counted with its placeholder and its original (D64), so the text replaces the placeholder;
+	// a version that comes into force frees the bytes of the other version of its uri that is in force now
+	docs, bytes := u.Documents, u.Bytes+newBytes-oldBytes
+	if validFrom == nil || !validFrom.After(s.now()) {
+		bytes -= u.URIBytes - u.DocBytes
 	}
 	if quotaDocs > 0 && docs > quotaDocs {
 		return fail("QUOTA_EXCEEDED", "knowledge base %s already holds %d documents", b.Name, u.Documents)

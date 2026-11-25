@@ -35,7 +35,7 @@ type ExtractInfo struct {
 // with its other markers (page, slide, sheet, table) in place.
 func CleanExtracted(text string) (string, ExtractInfo) {
 	var info ExtractInfo
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	lines := strings.Split(stripControls(strings.ReplaceAll(text, "\r\n", "\n")), "\n")
 	out := make([]string, 0, len(lines))
 	note := func(s string) {
 		if len(info.Notices) < MaxNotices {
@@ -92,3 +92,19 @@ func cleanNotice(s string) string {
 
 // CutUTF8 returns s cut to at most n bytes on a character boundary.
 func CutUTF8(s string, n int) string { return cutUTF8(s, n) }
+
+// stripControls takes out NUL and the other C0 control characters (and DEL) but tab and newline: PostgreSQL text cannot hold NUL,
+// and a converter may well write what a document holds. A lone carriage return becomes nothing, as the rest.
+func stripControls(s string) string {
+	if !strings.ContainsFunc(s, isControl) {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if isControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+func isControl(r rune) bool { return (r < 0x20 && r != '\t' && r != '\n') || r == 0x7f }

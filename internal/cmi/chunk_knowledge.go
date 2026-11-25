@@ -158,12 +158,12 @@ func ChunkKnowledge(text string) []LocatedChunk {
 		}
 		if m := pageMarker.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
 			flush()
-			page, _ = strconv.Atoi(m[1])
+			page = markerNumber(m[1])
 			continue
 		}
 		if m := slideMarker.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
 			flush()
-			slide, _ = strconv.Atoi(m[1])
+			slide = markerNumber(m[1])
 			continue
 		}
 		if m := sheetMarker.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
@@ -511,4 +511,16 @@ func setextUnderline(line string) int {
 		return 1
 	}
 	return 2
+}
+
+// MaxMarkerNumber is the largest page or slide number a marker may name; a larger one (or one that is not a number) is no
+// location, not an error: a number that does not fit the database's integer must not fail the whole document.
+const MaxMarkerNumber = 1_000_000
+
+func markerNumber(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 || n > MaxMarkerNumber {
+		return 0
+	}
+	return n
 }

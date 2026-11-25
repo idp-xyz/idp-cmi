@@ -441,8 +441,9 @@ func usageOf(ctx context.Context, tx pgx.Tx, baseID, uri, docID string) (baseUsa
 			SELECT d.id, d.uri, d.byte_size::bigint + coalesce(d.original_byte_size, 0) AS size, coalesce(d.original_byte_size, 0)::bigint AS original,
 			       `+windowSQL("d", "now()")+` AS in_force
 			FROM knowledge_documents d
-			WHERE d.knowledge_base_id = $1 AND d.erasure_id IS NULL AND d.status IN ('active', 'superseded')
-			  AND (d.valid_until IS NULL OR d.valid_until > now())`+notReplacedSQL("d", "now()")+`
+			WHERE d.knowledge_base_id = $1 AND d.erasure_id IS NULL AND (
+			  (d.status IN ('active', 'superseded') AND (d.valid_until IS NULL OR d.valid_until > now())`+notReplacedSQL("d", "now()")+`)
+			  OR d.status = 'pending') -- a version waiting for its text holds its placeholder and its original (D64)
 		) x`, baseID, uri, docID).
 		Scan(&u.Documents, &u.Bytes, &u.URIBytes, &u.HasURI, &u.DocBytes, &u.DocOriginal, &u.DocCounted)
 	return u, err

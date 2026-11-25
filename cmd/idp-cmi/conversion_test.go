@@ -20,9 +20,15 @@ func TestStartConversionRefusesAnUnsafeSetup(t *testing.T) {
 	good := filepath.Join(dir, "key")
 	short := filepath.Join(dir, "short")
 	secret := filepath.Join(dir, "secret")
-	_ = os.WriteFile(good, []byte(strings.Repeat("k", 40)), 0o600)
+	_ = os.WriteFile(good, []byte("3f9a1c7e5b2d8046a1f3c9e7b5d20486c1e3a5f79b2d4086"), 0o600)
 	_ = os.WriteFile(short, []byte("short"), 0o600)
 	_ = os.WriteFile(secret, []byte("s"), 0o600)
+	loose := filepath.Join(dir, "loose")
+	same := filepath.Join(dir, "same")
+	few := filepath.Join(dir, "few")
+	_ = os.WriteFile(loose, []byte("3f9a1c7e5b2d8046a1f3c9e7b5d20486c1e3a5f79b2d4086"), 0o644)
+	_ = os.WriteFile(same, []byte(strings.Repeat("k", 40)), 0o600)
+	_ = os.WriteFile(few, []byte(strings.Repeat("abcdefgh", 6)), 0o600)
 	conf := func() *config.Conversion {
 		return &config.Conversion{Enabled: true, GatewayURL: "https://gw/mcp", TokenURL: "https://idp/token", ClientID: "c", ClientSecretFile: secret,
 			WorkloadTenant: "system", WorkloadSubject: "svc", EndpointURL: "http://cmi:8553", ToolPrefix: "ingest__", Concurrency: 1, SandboxConcurrency: 8, MaxAttempts: 3, RunSeconds: 60}
@@ -41,6 +47,9 @@ func TestStartConversionRefusesAnUnsafeSetup(t *testing.T) {
 		"no listener":                       {withStore(), "", good, nil, "IDP_CMI_INGEST_LISTEN is required"},
 		"the API's own address":             {withStore(), "127.0.0.1:8550", good, nil, "must not be the API's address"},
 		"no key":                            {withStore(), "127.0.0.1:0", "", nil, "IDP_CMI_INGEST_TICKET_KEY_FILE is required"},
+		"a key the group can read":          {withStore(), "127.0.0.1:0", loose, nil, "readable by the group or others"},
+		"a key of one repeated byte":        {withStore(), "127.0.0.1:0", same, nil, "distinct bytes"},
+		"a key of a repeated word":          {withStore(), "127.0.0.1:0", few, nil, "distinct bytes"},
 		"a short key":                       {withStore(), "127.0.0.1:0", short, nil, "at least 32 bytes"},
 		"a secret file that cannot be read": {withStore(), "127.0.0.1:0", good, func(c *config.Conversion) { c.ClientSecretFile = filepath.Join(dir, "none") }, "clientSecretFile"},
 		"a gateway with a query":            {withStore(), "127.0.0.1:0", good, func(c *config.Conversion) { c.GatewayURL = "https://gw/mcp?x=1" }, "without credentials, query or fragment"},

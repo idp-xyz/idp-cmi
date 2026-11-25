@@ -258,12 +258,8 @@ func (s *Sandbox) importFile(w http.ResponseWriter, ws, source, path string) {
 		return
 	}
 	defer resp.Body.Close()
-	switch {
-	case resp.StatusCode == 401 || resp.StatusCode == 403:
-		toolError(w, "the file reference is not valid for this run (use the attachment or output reference you were given)")
-		return
-	case resp.StatusCode >= 300:
-		toolError(w, fmt.Sprintf("the file could not be moved: the Workspace refused the file (HTTP %d)", resp.StatusCode))
+	if msg := transferStatus(resp); msg != "" {
+		toolError(w, msg)
 		return
 	}
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 50<<20+1))
@@ -356,15 +352,8 @@ func (s *Sandbox) exportFile(w http.ResponseWriter, ws, path, target, name strin
 		return
 	}
 	defer resp.Body.Close()
-	switch {
-	case resp.StatusCode == 401 || resp.StatusCode == 403:
-		toolError(w, "the file reference is not valid for this run (use the attachment or output reference you were given)")
-		return
-	case resp.StatusCode == 413:
-		toolError(w, "the file is larger than the transfer limit")
-		return
-	case resp.StatusCode >= 300:
-		toolError(w, fmt.Sprintf("the file could not be moved: the Workspace refused the file (HTTP %d)", resp.StatusCode))
+	if msg := transferStatus(resp); msg != "" {
+		toolError(w, msg)
 		return
 	}
 	var f struct {
@@ -377,4 +366,28 @@ func (s *Sandbox) exportFile(w http.ResponseWriter, ws, path, target, name strin
 		return
 	}
 	toolOK(w, fmt.Sprintf("delivered %s (%d bytes) to the member", f.Name, f.Size), map[string]any{"deliveredFile": f})
+}
+
+// transferStatus is what idp-sandbox says of a file endpoint's answer: the logic of files.status (idp-sandbox
+// internal/files/files.go) and of transferFailure (internal/tools/transfer.go), copied, since that module's packages are
+// internal. "" means the answer was a success. A 401 or 403 is the ticket, a 413 the transfer limit; any other status prints
+// "the Workspace refused the file: <message>" when the answer has an error message and "... (HTTP n)" when it has none, always
+// after "the file could not be moved: ". Keep this in step with the source.
+func transferStatus(resp *http.Response) string {
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		return ""
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		return "the file reference is not valid for this run (use the attachment or output reference you were given)"
+	case resp.StatusCode == http.StatusRequestEntityTooLarge:
+		return "the file is larger than the transfer limit"
+	}
+	var p struct {
+		Error struct{ Message string } `json:"error"`
+	}
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<14)).Decode(&p)
+	if p.Error.Message != "" {
+		return "the file could not be moved: the Workspace refused the file: " + p.Error.Message
+	}
+	return fmt.Sprintf("the file could not be moved: the Workspace refused the file (HTTP %d)", resp.StatusCode)
 }
