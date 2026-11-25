@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoad(t *testing.T) {
@@ -124,5 +125,49 @@ func TestEmbeddingQueryEndpoint(t *testing.T) {
 	_ = os.WriteFile(p, []byte("embedding:\n  baseUrl: http://main/v1\n  model: m\n"), 0o600)
 	if f, err := Load(p); err != nil || f.Embedding.Query != nil {
 		t.Fatalf("unset: %+v %v", f.Embedding, err)
+	}
+}
+
+func conversionYAML(extra string) string {
+	return "knowledge:\n  conversion:\n    enabled: true\n    gatewayUrl: https://system-gateway:8443/mcp\n    tokenUrl: https://idp/realms/x/protocol/openid-connect/token\n    clientId: cmi-ingest\n    clientSecretFile: /run/secrets/x\n" +
+		"    workloadTenant: system\n    workloadSubject: svc-cmi-ingest\n    endpointUrl: http://cmi:8553\n" + extra
+}
+
+func TestConversionSettingsAndTheirDefaults(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cmi.yaml")
+	_ = os.WriteFile(p, []byte(conversionYAML("")), 0o600)
+	f, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := f.Knowledge.Conversion
+	if c.ToolPrefix != "ingest__" || c.Concurrency != 4 || c.SandboxConcurrency != 8 || c.MaxAttempts != 6 || c.RunSeconds != 300 || c.TicketTTL != 5*time.Minute ||
+		c.CallTimeout != 390*time.Second || c.JobTimeout != 15*time.Minute || c.Lease != 20*time.Minute {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestConversionSettingsAreChecked(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cmi.yaml")
+	for name, extra := range map[string]string{
+		"more concurrent conversions than the sandbox runs": "    concurrency: 9\n",
+		"a limit of the sandbox of 2":                       "    sandboxConcurrency: 2\n    concurrency: 3\n",
+		"a lease below the job timeout":                     "    lease: 10m\n",
+		"a ticket that lives for hours":                     "    ticketTtl: 3h\n",
+		"a negative interval":                               "    interval: -1s\n",
+		"no attempts at all":                                "    maxAttempts: 99\n",
+	} {
+		_ = os.WriteFile(p, []byte(conversionYAML(extra)), 0o600)
+		if _, err := Load(p); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	_ = os.WriteFile(p, []byte("knowledge:\n  conversion:\n    enabled: true\n    gatewayUrl: https://g\n"), 0o600)
+	if _, err := Load(p); err == nil {
+		t.Error("an incomplete section was accepted")
+	}
+	_ = os.WriteFile(p, []byte("knowledge:\n  conversion:\n    enabled: false\n"), 0o600)
+	if _, err := Load(p); err != nil {
+		t.Errorf("a disabled section needs nothing: %v", err)
 	}
 }

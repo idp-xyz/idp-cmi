@@ -24,6 +24,10 @@
 //	IDP_CMI_ORIGINALS_TIMEOUT    timeout of one request to the store (default 2m)
 //	                             The store is reached in the background: CMI starts without waiting for it, and
 //	                             originals answer 503 until the bucket check has passed (20 s per attempt).
+//	IDP_CMI_INGEST_LISTEN        the internal file endpoint for the ingest sandbox (ADR-0001 D62), a separate listener for the internal
+//	                             network only; required with knowledge.conversion (config file). Never the API's address.
+//	IDP_CMI_INGEST_TICKET_KEY_FILE   the key (at least 32 bytes) that signs and verifies the file endpoint's tickets; required with it
+//	IDP_CMI_INGEST_TLS_CERT_FILE / IDP_CMI_INGEST_TLS_KEY_FILE   serve the file endpoint over HTTPS
 //	IDP_CMI_SWEEP                expiry sweep interval (default 1m; 0 disables)
 //	IDP_CMI_INGEST               background worker interval: connectors' processing (D16) and erasure purge (D20); default 10s, 0 disables
 //	IDP_CMI_INSTANCE             lease owner name of this replica (default hostname)
@@ -64,14 +68,19 @@ import (
 	"idp-cmi/internal/config"
 	"idp-cmi/internal/consolidate"
 	cmictx "idp-cmi/internal/context"
+	"idp-cmi/internal/convert"
 	"idp-cmi/internal/embedding"
 	"idp-cmi/internal/embedwire"
 	"idp-cmi/internal/evaluation"
 	"idp-cmi/internal/ingest"
+	"idp-cmi/internal/ingestfiles"
+	"idp-cmi/internal/mcpclient"
 	"idp-cmi/internal/observability"
 	"idp-cmi/internal/pdp"
 	"idp-cmi/internal/rerank"
+	"idp-cmi/internal/ticket"
 	"idp-cmi/internal/transport"
+	"idp-cmi/internal/workload"
 )
 
 var version = "0.1.0-dev"
@@ -297,6 +306,13 @@ func serve(log *slog.Logger) error {
 			store.Knowledge.PersonalQuotaBytes = *k.PersonalQuotaBytes
 		}
 	}
+	if k := cfg.Knowledge; k != nil && k.Conversion != nil && k.Conversion.Enabled { // ADR-0001 D61 to D70
+		stopConversion, err := startConversion(ctx, log, store, metrics, k.Conversion, instanceName())
+		if err != nil {
+			return fmt.Errorf("knowledge.conversion: %w", err)
+		}
+		defer stopConversion()
+	}
 	var embedder embedding.Embedder
 	if e := cfg.Embedding; e != nil { // ADR-0001 D11
 		tlsCfg, err := transport.ClientTLS(e.CAFile, "", "")
@@ -423,10 +439,7 @@ func serve(log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("IDP_CMI_INGEST: %w", err)
 	}
-	instance := env("IDP_CMI_INSTANCE", "")
-	if instance == "" {
-		instance, _ = os.Hostname()
-	}
+	instance := instanceName()
 	// connectors fetch what a tenant administrator names: never a non-public address unless the operator allows it (D42)
 	a.Ingester = &ingest.Ingester{Store: store, Owner: instance, Lease: time.Minute, Log: log, HTTP: ingest.NewHTTPClient(env("IDP_CMI_INGEST_ALLOW_PRIVATE", "false") == "true"), FilesystemRoot: env("IDP_CMI_FILESYSTEM_ROOT", "")}
 	if ingestEvery > 0 { // ADR-0001 D16
@@ -479,4 +492,102 @@ func serve(log *slog.Logger) error {
 	sctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	return srv.Shutdown(sctx)
+}
+
+// instanceName is this replica's name (the lease owner).
+func instanceName() string {
+	instance := env("IDP_CMI_INSTANCE", "")
+	if instance == "" {
+		instance, _ = os.Hostname()
+	}
+	return instance
+}
+
+// startConversion starts what the conversion of originals needs (ADR-0001 D62, D63): the file endpoint for the ingest sandbox on
+// its own listener, and the worker that takes the jobs and calls the sandbox through the system gateway. The returned function
+// stops the endpoint.
+func startConversion(ctx context.Context, log *slog.Logger, store *postgres.Store, metrics *observability.Metrics, c *config.Conversion, instance string) (func(), error) {
+	if store.Originals == nil {
+		return nil, errors.New("originals must be configured (IDP_CMI_ORIGINALS_ENDPOINT): the originals are what is converted")
+	}
+	listen := env("IDP_CMI_INGEST_LISTEN", "")
+	if listen == "" {
+		return nil, errors.New("IDP_CMI_INGEST_LISTEN is required (the internal file endpoint for the ingest sandbox)")
+	}
+	if listen == env("IDP_CMI_LISTEN", "127.0.0.1:8550") {
+		return nil, errors.New("IDP_CMI_INGEST_LISTEN must not be the API's address: the file endpoint is for the internal network only")
+	}
+	keyFile := env("IDP_CMI_INGEST_TICKET_KEY_FILE", "")
+	if keyFile == "" {
+		return nil, errors.New("IDP_CMI_INGEST_TICKET_KEY_FILE is required (the key that signs the file endpoint's tickets)")
+	}
+	raw, err := os.ReadFile(keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("IDP_CMI_INGEST_TICKET_KEY_FILE: %w", err)
+	}
+	key := []byte(strings.TrimSpace(string(raw)))
+	if err := ticket.CheckKey(key); err != nil {
+		return nil, fmt.Errorf("IDP_CMI_INGEST_TICKET_KEY_FILE: %w", err)
+	}
+	if _, err := os.ReadFile(c.ClientSecretFile); err != nil {
+		return nil, fmt.Errorf("clientSecretFile: %w", err)
+	}
+	if err := mcpclient.CheckEndpoint(c.GatewayURL); err != nil {
+		return nil, err
+	}
+	gwTLS, err := transport.ClientTLS(c.CAFile, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("caFile: %w", err)
+	}
+	tokTLS, err := transport.ClientTLS(c.TokenCAFile, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("tokenCaFile: %w", err)
+	}
+	store.Conversion = postgres.ConversionSettings{Enabled: true, MaxAttempts: c.MaxAttempts, Lease: c.Lease}
+	tokens := &workload.TokenSource{TokenURL: c.TokenURL, ClientID: c.ClientID, SecretFile: c.ClientSecretFile, Scope: c.Scope,
+		HTTP: workload.NewHTTPClient(15*time.Second, &http.Transport{Proxy: nil, TLSClientConfig: tokTLS})}
+	gateway := &mcpclient.Client{Endpoint: c.GatewayURL, Tokens: tokens, Info: mcpclient.ClientInfo{Name: "idp-cmi", Version: version},
+		HTTP: mcpclient.NewHTTPClient(c.CallTimeout, &http.Transport{TLSClientConfig: gwTLS})}
+	handler := &ingestfiles.Handler{Backend: store, Log: log, MaxResult: c.MaxResultBytes, MaxReads: c.MaxConcurrentReads,
+		Verifier: &ticket.Verifier{Key: key, Audience: c.EndpointURL}}
+	outcomes := metrics.Counter("idp_cmi_conversions_total", "Attempts to convert an original to text, by how they ended (succeeded, truncated, retry, failed) and the error code.", "outcome", "code")
+	worker := &convert.Worker{Store: store, Gateway: gateway, Signer: &ticket.Signer{Key: key, Audience: c.EndpointURL, TTL: c.TicketTTL},
+		WorkloadTenant: c.WorkloadTenant, WorkloadSubject: c.WorkloadSubject, ToolPrefix: c.ToolPrefix, Owner: instance,
+		Concurrency: c.Concurrency, Interval: c.Interval, RunSeconds: c.RunSeconds, JobTimeout: c.JobTimeout, MaxResult: c.MaxResultBytes, Log: log,
+		Finished: func(outcome, code string) { outcomes.Inc(outcome, code) }}
+	srv := &http.Server{Addr: listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 10 * time.Minute, WriteTimeout: 10 * time.Minute, IdleTimeout: 2 * time.Minute}
+	if cert := env("IDP_CMI_INGEST_TLS_CERT_FILE", ""); cert != "" {
+		if srv.TLSConfig, err = transport.ServerTLS(cert, env("IDP_CMI_INGEST_TLS_KEY_FILE", "")); err != nil {
+			return nil, fmt.Errorf("IDP_CMI_INGEST_TLS_*: %w", err)
+		}
+	}
+	ln, err := net.Listen("tcp", listen)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		var err error
+		if srv.TLSConfig != nil {
+			err = srv.ServeTLS(ln, "", "")
+		} else {
+			err = srv.Serve(ln)
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("the file endpoint for the ingest sandbox stopped", "error", err)
+		}
+	}()
+	wctx, stopWorker := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() { defer close(done); worker.Run(wctx) }()
+	log.Info("conversion of originals is on", "fileEndpoint", listen, "audience", c.EndpointURL, "gateway", c.GatewayURL, "concurrency", c.Concurrency)
+	return func() {
+		stopWorker()
+		select {
+		case <-done:
+		case <-time.After(20 * time.Second):
+		}
+		sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(sctx)
+	}, nil
 }

@@ -78,7 +78,11 @@ func (s *Sandbox) Close() { s.Srv.Close() }
 func (s *Sandbox) URL() string { return s.Srv.URL }
 
 // Calls are the names of the tools called, in order.
-func (s *Sandbox) Calls() []string { s.mu.Lock(); defer s.mu.Unlock(); return append([]string(nil), s.calls...) }
+func (s *Sandbox) Calls() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.calls...)
+}
 
 // Scripts are the programs sandbox_run was given.
 func (s *Sandbox) Scripts() []string {

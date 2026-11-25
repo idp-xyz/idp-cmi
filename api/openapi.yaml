@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: IDP CMI API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Context, Memory & Knowledge Infrastructure (docs/adr/ADR-0001-cmi-design.md). Three surfaces on one
     listener: the administrative API (`/api/v1`, role cmi-admin) for sources, knowledge documents and the
@@ -87,7 +87,10 @@ paths:
       summary: >-
         Store the original file for a document version. Content-Type is the media type (an allowed type: pdf, docx, xlsx, pptx, png, jpeg, tiff, txt, md, html).
         The permission is checked before the body is read; the body is streamed, hashed and bounded (25 MiB, 50 MiB for pdf, pptx and images);
-        at most two uploads per caller at once. Each upload has its own object key; a concurrent change of the original is 409. The object key is not returned
+        at most two uploads per caller at once. Each upload has its own object key; a concurrent change of the original is 409. The object key is not returned.
+        With knowledge.conversion configured (ADR-0001 D61 to D70) a pdf, docx, pptx or xlsx original queues the conversion of its text: a version that has no extracted text
+        yet becomes status `pending` (not in force, not searched, replacing nothing) and `ingest` shows the job; its text, with page, slide, heading or sheet and cell locators,
+        replaces what the version had in one transaction when the conversion succeeds
       requestBody: {required: true, content: {'*/*': {schema: {type: string, format: binary}}}}
       responses: {'200': {description: document metadata including original}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}, '429': {$ref: '#/components/responses/Problem'}, '503': {$ref: '#/components/responses/Problem'}}
     get:
@@ -95,6 +98,14 @@ paths:
         Download the original, always as an attachment (Content-Disposition: attachment, X-Content-Type-Options: nosniff, Content-Security-Policy: sandbox).
         A caller who cannot read the document gets 404. The bytes are checked against the stored digest (a mismatch is a 500, logged)
       responses: {'200': {description: file bytes, content: {'*/*': {schema: {type: string, format: binary}}}}, '404': {$ref: '#/components/responses/Problem'}, '503': {$ref: '#/components/responses/Problem'}}
+  /v1/knowledge/documents/{id}/ingest:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: >-
+        Queue the conversion of the document's original into text again (ADR-0001 D63): after a failed one, or another go at a finished one. The same right as for storing the
+        original (knowledge.write, and writing the document's base). 202 with the document and its `ingest` state; 409 while a conversion is queued or running; 422 when the
+        document has no pdf, docx, pptx or xlsx original; 503 when this service does not convert originals
+      responses: {'202': {description: document metadata, the conversion queued}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}, '503': {$ref: '#/components/responses/Problem'}}
   /api/v1/knowledge/documents:
     post:
       summary: >-
@@ -292,7 +303,15 @@ components:
       description: contract idp.telos.cmi KnowledgeDocument (metadata; the text is indexed, not returned)
       type: object
       required: [source, uri, title]
-      properties: {documentId: {type: string}, source: {type: string}, uri: {type: string}, title: {type: string}, version: {type: integer}, contentSha256: {type: string}, byteSize: {type: integer}, chunkCount: {type: integer}, status: {type: string, enum: [active, superseded, revoked, expired]}, validUntil: {type: string, format: date-time}, sensitivity: {type: string, enum: [public, internal, confidential, restricted]}, acl: {type: object}, revocation: {type: object}, createdBy: {type: string}, createdAt: {type: string, format: date-time}, entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}}, flags: {type: array, items: {type: string}, readOnly: true}, revision: {type: integer, readOnly: true}, knowledgeBase: {type: string, description: 'the base this version belongs to; on a write the base to put it in (administrators: absent = the base named after the source; members: absent = their personal base)'}, validFrom: {type: string, format: date-time, description: 'when this version takes effect; absent = from the beginning'}, docType: {type: string}, owner: {type: string}, reviewDue: {type: string, format: date-time}, original: {$ref: '#/components/schemas/Original'}}
+      properties: {documentId: {type: string}, source: {type: string}, uri: {type: string}, title: {type: string}, version: {type: integer}, contentSha256: {type: string}, byteSize: {type: integer}, chunkCount: {type: integer}, status: {type: string, enum: [active, superseded, revoked, expired, pending], description: 'pending: the original is being converted to text for the first time; not in force, not searched, replaces nothing (1.6.0)'}, validUntil: {type: string, format: date-time}, sensitivity: {type: string, enum: [public, internal, confidential, restricted]}, acl: {type: object}, revocation: {type: object}, createdBy: {type: string}, createdAt: {type: string, format: date-time}, entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}}, flags: {type: array, items: {type: string}, readOnly: true}, revision: {type: integer, readOnly: true}, knowledgeBase: {type: string, description: 'the base this version belongs to; on a write the base to put it in (administrators: absent = the base named after the source; members: absent = their personal base)'}, validFrom: {type: string, format: date-time, description: 'when this version takes effect; absent = from the beginning'}, docType: {type: string}, owner: {type: string}, reviewDue: {type: string, format: date-time}, original: {$ref: '#/components/schemas/Original'}, ingest: {$ref: '#/components/schemas/Ingest'}}
+    Ingest:
+      description: >-
+        where the conversion of the version's original into text stands (the latest job; absent without one). `truncated` is a conversion that succeeded but left
+        something out (a worksheet over 10,000 rows or 200 columns): `notice` says what, for the uploader. `error` is a code (corrupt, unsupported, limits, no_text,
+        conversion_timeout, conversion_oom, empty_output, text_too_large, quota_exceeded, sandbox_busy, gateway_unavailable, ...), never the converter's own words
+      type: object
+      readOnly: true
+      properties: {state: {type: string, enum: [queued, running, succeeded, truncated, failed]}, attempts: {type: integer}, error: {type: string}, notice: {type: string}, updatedAt: {type: string, format: date-time}, nextAttemptAt: {type: string, format: date-time}}
     Original:
       description: the stored file behind a document version (the object key is not part of the contract)
       type: object

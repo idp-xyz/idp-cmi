@@ -1,5 +1,5 @@
 {
-  "description": "idp.telos.cmi 1.5.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
+  "description": "idp.telos.cmi 1.6.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
   "generatedBy": "go test ./internal/cmi -run TestContract -update",
   "examples": [
     {
@@ -99,6 +99,44 @@
             "source": "orders",
             "tokens": 13,
             "trust": "authoritative"
+          },
+          {
+            "excerpt": "| row | A | B |\n| --- | --- | --- |\n| 12 | morning | 4.50 |",
+            "id": "5b6c7d8e-0000-4000-8000-000000000021",
+            "kind": "knowledge",
+            "locator": {
+              "range": "A12:B12",
+              "sheet": "Rates 2026"
+            },
+            "match": "lexical",
+            "observedAt": "2026-11-03T09:00:00Z",
+            "ref": "kb://handbook/rates.xlsx#4",
+            "score": 0.91,
+            "sensitivity": "internal",
+            "source": "handbook",
+            "title": "Pickup rates",
+            "tokens": 22,
+            "trust": "authoritative"
+          },
+          {
+            "excerpt": "Pickup slots are booked in the portal.",
+            "id": "5b6c7d8e-0000-4000-8000-000000000022",
+            "kind": "knowledge",
+            "locator": {
+              "headings": [
+                "Booking"
+              ],
+              "slide": 7
+            },
+            "match": "semantic",
+            "observedAt": "2026-11-03T09:00:00Z",
+            "ref": "kb://handbook/onboarding.pptx#2",
+            "score": 0.62,
+            "sensitivity": "internal",
+            "source": "handbook",
+            "title": "Onboarding deck",
+            "tokens": 9,
+            "trust": "authoritative"
           }
         ],
         "omitted": {
@@ -124,7 +162,7 @@
     {
       "definition": "Envelope",
       "value": {
-        "digest": "sha256:99ed504a6e6982e029537224e8d7ae7209fade825dead1a2c8ecaa0e0d5a5669",
+        "digest": "sha256:c818df5fde2da4a0a94e272eef33ea406c93c41f931ac753e62c4deafb74eae5",
         "document": {
           "asOf": {
             "recorded": "2026-11-04T09:00:00Z",
@@ -219,6 +257,44 @@
               "sensitivity": "internal",
               "source": "orders",
               "tokens": 13,
+              "trust": "authoritative"
+            },
+            {
+              "excerpt": "| row | A | B |\n| --- | --- | --- |\n| 12 | morning | 4.50 |",
+              "id": "5b6c7d8e-0000-4000-8000-000000000021",
+              "kind": "knowledge",
+              "locator": {
+                "range": "A12:B12",
+                "sheet": "Rates 2026"
+              },
+              "match": "lexical",
+              "observedAt": "2026-11-03T09:00:00Z",
+              "ref": "kb://handbook/rates.xlsx#4",
+              "score": 0.91,
+              "sensitivity": "internal",
+              "source": "handbook",
+              "title": "Pickup rates",
+              "tokens": 22,
+              "trust": "authoritative"
+            },
+            {
+              "excerpt": "Pickup slots are booked in the portal.",
+              "id": "5b6c7d8e-0000-4000-8000-000000000022",
+              "kind": "knowledge",
+              "locator": {
+                "headings": [
+                  "Booking"
+                ],
+                "slide": 7
+              },
+              "match": "semantic",
+              "observedAt": "2026-11-03T09:00:00Z",
+              "ref": "kb://handbook/onboarding.pptx#2",
+              "score": 0.62,
+              "sensitivity": "internal",
+              "source": "handbook",
+              "title": "Onboarding deck",
+              "tokens": 9,
               "trust": "authoritative"
             }
           ],
@@ -468,6 +544,69 @@
         "uri": "handbook://pickup",
         "validFrom": "2026-11-02T09:00:00Z",
         "version": 2
+      }
+    },
+    {
+      "definition": "KnowledgeDocument",
+      "value": {
+        "acl": {},
+        "byteSize": 11,
+        "chunkCount": 1,
+        "contentSha256": "sha256:4097889236a2af26c293033feb964c4cf118c0224e0d063fec0a89e9d0569ef2",
+        "createdAt": "2026-11-04T08:00:00Z",
+        "createdBy": "alice",
+        "documentId": "c9d8e7f6-0000-4000-8000-000000000081",
+        "ingest": {
+          "attempts": 1,
+          "error": "sandbox_busy",
+          "nextAttemptAt": "2026-11-04T09:00:30Z",
+          "state": "queued",
+          "updatedAt": "2026-11-04T08:59:00Z"
+        },
+        "knowledgeBase": "handbook",
+        "original": {
+          "byteSize": 30211,
+          "mediaType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "sha256": "sha256:b5e442d8a25324b5a3dac7c7be9b65f5949e409ddfe8fc2c2eee6c3a8dd3f445"
+        },
+        "revision": 2,
+        "sensitivity": "internal",
+        "source": "handbook",
+        "status": "pending",
+        "title": "Pickup rates",
+        "uri": "kb://handbook/rates.xlsx",
+        "version": 1
+      }
+    },
+    {
+      "definition": "KnowledgeDocument",
+      "value": {
+        "acl": {},
+        "byteSize": 9,
+        "chunkCount": 3,
+        "contentSha256": "sha256:7c375be828a16923f65095998609312a73318a1c01d89d3699e69e53a0883fac",
+        "createdAt": "2026-11-04T07:00:00Z",
+        "createdBy": "alice",
+        "documentId": "d0e9f8a7-0000-4000-8000-000000000082",
+        "ingest": {
+          "attempts": 1,
+          "notice": "Truncated: sheet Rates, rows kept 10000 of 120000",
+          "state": "truncated",
+          "updatedAt": "2026-11-04T09:00:00Z"
+        },
+        "knowledgeBase": "handbook",
+        "original": {
+          "byteSize": 5900000,
+          "mediaType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "sha256": "sha256:4cfa64eed73535cefaf263310d0f91f02bd3ee8f492bed7ed7d777fa7b73625c"
+        },
+        "revision": 3,
+        "sensitivity": "internal",
+        "source": "handbook",
+        "status": "active",
+        "title": "Pickup rates 2026",
+        "uri": "kb://handbook/rates-2026.xlsx",
+        "version": 1
       }
     },
     {

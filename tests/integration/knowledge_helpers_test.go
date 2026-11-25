@@ -13,6 +13,8 @@ import (
 
 	"idp-cmi/adapters/identity"
 	"idp-cmi/internal/authorization"
+	"idp-cmi/internal/cmi"
+	"idp-cmi/internal/convert/convtest"
 )
 
 // addUser gives a subject of tenant A a token with the roles (reader when none).
@@ -140,3 +142,9 @@ func decodeBody(t *testing.T, raw []byte) map[string]any {
 	}
 	return out
 }
+
+type pgxTx = pgx.Tx
+
+func convtestOutput(md string) convtest.Output { return convtest.Output{Markdown: md} }
+
+func cmiInfo() cmi.ExtractInfo { return cmi.ExtractInfo{HasBody: true} }

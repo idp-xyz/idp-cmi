@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -541,4 +542,73 @@ func TestRetryingAFailedConversion(t *testing.T) {
 	md := c.stub("bob", "notes", "plain")
 	c.put("bob", md, "text/markdown", "# x")
 	c.e.must(422, "POST", "/v1/knowledge/documents/"+md+"/ingest", "bob", nil)
+}
+
+func TestTheWorkerRunsNoMoreConversionsThanItIsToldTo(t *testing.T) {
+	c := newConv(t)
+	c.worker.Concurrency = 2
+	c.output("TAG", convtest.Output{Markdown: "<!-- page: 1 -->\nZqxFew text.\n", Delay: 50 * time.Millisecond})
+	for i := 0; i < 6; i++ {
+		id := c.stub("bob", fmt.Sprintf("doc-%d", i), "placeholder")
+		c.put("bob", id, mediaPDF, "%PDF TAG")
+	}
+	c.drain()
+	if m := c.sb.MaxConcurrentRuns(); m > 2 || m == 0 {
+		t.Fatalf("the sandbox ran %d at once; the worker was told 2", m)
+	}
+}
+
+func TestATextOverTheLimitOfADocumentIsAFailure(t *testing.T) {
+	c := newConv(t)
+	c.output("TAG", convtest.Output{Markdown: "<!-- page: 1 -->\n" + strings.Repeat("word ", 900_000) + "\n"}) // 4.5 MB: over the 4 MiB of a document, under what the endpoint takes
+	id := c.stub("bob", "doc", "placeholder")
+	c.put("bob", id, mediaPDF, "%PDF TAG")
+	c.drain()
+	if in := ingestOf(c.doc("bob", id)); in["state"] != "failed" || in["error"] != "text_too_large" {
+		t.Fatalf("%v", in)
+	}
+}
+
+func TestAWorkerThatLostItsLeaseCannotCommit(t *testing.T) {
+	c := newConv(t)
+	c.e.store.Conversion.Lease = time.Second
+	id := c.stub("bob", "doc", "placeholder")
+	c.put("bob", id, mediaPDF, "%PDF TAG")
+	first, err := c.e.store.ClaimConversions(context.Background(), "slow-replica", 5)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("%v %v", first, err)
+	}
+	time.Sleep(1200 * time.Millisecond)
+	second, err := c.e.store.ClaimConversions(context.Background(), "other-replica", 5)
+	if err != nil || len(second) != 1 || second[0].Attempts != 2 {
+		t.Fatalf("%v %v", second, err)
+	}
+	_, err = c.e.store.CommitConversion(context.Background(), first[0], "<!-- page: 1 -->\nZqxStale text", cmiInfo())
+	if !errors.Is(err, postgres.ErrConversionLost) {
+		t.Fatalf("the first attempt committed: %v", err)
+	}
+	if len(c.hits("bob", "ZqxStale")) != 0 {
+		t.Fatal("nothing of it is searchable")
+	}
+	if _, err := c.e.store.CommitConversion(context.Background(), second[0], "<!-- page: 1 -->\nZqxCurrent text", cmiInfo()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.hits("bob", "ZqxCurrent")) != 1 {
+		t.Fatal("the current attempt commits")
+	}
+}
+
+func TestAPendingVersionCanBeWithdrawnAndItsConversionThenCommitsNothing(t *testing.T) {
+	c := newConv(t)
+	c.output("TAG", convtest.Output{Markdown: "<!-- page: 1 -->\nZqxWithdrawn text.\n"})
+	id := c.stub("bob", "doc", "placeholder")
+	c.put("bob", id, mediaPDF, "%PDF TAG")
+	c.e.must(200, "DELETE", "/v1/knowledge/documents/"+id+"?reason=wrong+file", "bob", nil)
+	c.drain()
+	if d := c.doc("bob", id); d["status"] != "revoked" || len(c.hits("bob", "ZqxWithdrawn")) != 0 {
+		t.Fatalf("a withdrawn version stays withdrawn: %v", d)
+	}
+	if in := ingestOf(c.doc("bob", id)); in["state"] != "failed" || in["error"] != "document_changed" || c.sb.Count("sandbox_create") != 0 {
+		t.Fatalf("a conversion nobody wants is ended before the sandbox is asked anything: %v, %d workspaces made", in, c.sb.Count("sandbox_create"))
+	}
 }

@@ -207,6 +207,25 @@ func (s *Store) ClaimConversions(ctx context.Context, owner string, limit int) (
 	return out, err
 }
 
+// ConversionWanted reports whether the document still has the original the job is for and may still be given text: it is not
+// erased, withdrawn or expired. A job that is not wanted any more is ended before the sandbox is asked to do anything.
+func (s *Store) ConversionWanted(ctx context.Context, c Conversion) (bool, error) {
+	wanted := false
+	err := s.InTenant(ctx, c.Tenant, func(tx pgx.Tx) error {
+		var key, sum string
+		var erased bool
+		var status string
+		err := tx.QueryRow(ctx, `SELECT d.status, d.erasure_id IS NOT NULL, coalesce(d.original_key, ''), coalesce(d.original_sha256, '')
+			FROM knowledge_documents d WHERE d.id = $1`, c.DocumentID).Scan(&status, &erased, &key, &sum)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		wanted = err == nil && !erased && key == c.OriginalKey && sum == c.OriginalSHA256 && (status == "pending" || status == "active" || status == "superseded")
+		return err
+	})
+	return wanted, err
+}
+
 // SetConversionWorkspace records the sandbox workspace of the running attempt, and clears it (ws "") when the workspace is gone.
 func (s *Store) SetConversionWorkspace(ctx context.Context, c Conversion, ws string) error {
 	return s.InTenant(ctx, c.Tenant, func(tx pgx.Tx) error {
@@ -322,13 +341,14 @@ type ticketTarget struct {
 // ticket names: not erased, not replaced, not revoked. Everything the ticket says is checked against the rows, because the
 // sandbox, which carries the ticket, checks nothing of it.
 func bindTicket(ctx context.Context, tx pgx.Tx, c ticket.Claims) (*ticketTarget, error) {
+	resultFree := c.Kind == ticket.Write // one result for an attempt
 	var t ticketTarget
 	err := tx.QueryRow(ctx, `SELECT j.media_type, j.byte_size, j.original_sha256
 		FROM knowledge_conversions j JOIN knowledge_documents d ON d.id = j.document_id
 		WHERE j.id = $1 AND j.document_id = $2 AND j.tenant_id = current_tenant() AND j.state = 'running' AND j.lease_until > now() AND j.attempts = $3
-		  AND j.original_key = $4 AND j.original_sha256 = $5
+		  AND j.original_key = $4 AND j.original_sha256 = $5 AND (NOT $7 OR j.result_key IS NULL)
 		  AND d.original_key = $4 AND d.original_sha256 = $5 AND d.version = $6 AND d.erasure_id IS NULL AND d.status IN ('pending', 'active', 'superseded')`,
-		c.Job, c.Document, c.Attempt, c.Key, c.SHA256, c.Version).Scan(&t.media, &t.size, &t.sum)
+		c.Job, c.Document, c.Attempt, c.Key, c.SHA256, c.Version, resultFree).Scan(&t.media, &t.size, &t.sum)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrTicketRefused
 	}
@@ -390,7 +410,7 @@ func (s *Store) StageConversionResult(ctx context.Context, c ticket.Claims, body
 		return nil, fail("INVALID", "the result is empty")
 	}
 	sum := "sha256:" + hex.EncodeToString(h.Sum(nil))
-	key := fmt.Sprintf("kb/%s/%s/%d/result-%s-%d", c.DocTenant, c.Document, c.Version, c.Job, c.Attempt)
+	key := fmt.Sprintf("kb/%s/%s/%d/result-%s-%d-%s", c.DocTenant, c.Document, c.Version, c.Job, c.Attempt, c.ID) // the ticket's own, so that a refused second result deletes only itself
 	if err := s.Originals.Put(ctx, key, buf.Bytes()); err != nil {
 		return nil, unavailable(err)
 	}

@@ -82,6 +82,7 @@ const (
 // Store is what the worker needs of the database.
 type Store interface {
 	ClaimConversions(ctx context.Context, owner string, limit int) ([]postgres.Conversion, error)
+	ConversionWanted(ctx context.Context, c postgres.Conversion) (bool, error)
 	SetConversionWorkspace(ctx context.Context, c postgres.Conversion, ws string) error
 	RetryConversionLater(ctx context.Context, c postgres.Conversion, e postgres.ConversionError, delay time.Duration, limit int) error
 	FailConversion(ctx context.Context, c postgres.Conversion, e postgres.ConversionError) error
@@ -118,7 +119,7 @@ type Worker struct {
 	MaxResult  int64 // the largest converted text accepted (default 6 MiB)
 	// Backoff is the wait after a transient failure of attempt n (default postgres.Backoff: 30 s, doubling, at most 30 minutes).
 	Backoff func(attempt int) time.Duration
-	Log        *slog.Logger
+	Log     *slog.Logger
 	// Finished is told how every attempt ended: "succeeded", "truncated", "retry" or "failed", and the error code.
 	Finished func(outcome, code string)
 	Now      func() time.Time
@@ -137,7 +138,9 @@ type attemptError struct {
 
 func (e *attemptError) Error() string { return e.code + ": " + e.detail }
 
-func transient(code, detail string) *attemptError { return &attemptError{code: code, detail: detail, transient: true} }
+func transient(code, detail string) *attemptError {
+	return &attemptError{code: code, detail: detail, transient: true}
+}
 func permanent(code, detail string) *attemptError { return &attemptError{code: code, detail: detail} }
 
 func (w *Worker) log() *slog.Logger {
@@ -293,6 +296,11 @@ func (w *Worker) attempt(ctx context.Context, c postgres.Conversion) (*postgres.
 	ext, ok := postgres.IngestExtension(c.MediaType)
 	if !ok {
 		return nil, permanent(CodeUnsupported, "the media type "+c.MediaType+" is not converted")
+	}
+	if wanted, err := w.Store.ConversionWanted(ctx, c); err != nil {
+		return nil, transient(CodeStoreDown, err.Error())
+	} else if !wanted { // withdrawn, erased or given a newer original while it waited: nothing for the sandbox to do
+		return nil, permanent(CodeDocumentChanged, "the document no longer has the original this conversion was queued for")
 	}
 	ws, err := w.create(ctx)
 	if err != nil {

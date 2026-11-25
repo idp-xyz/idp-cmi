@@ -41,6 +41,53 @@ type Knowledge struct {
 	MaxDownloadsPerCaller *int `yaml:"maxDownloadsPerCaller"`
 	// TransferTimeout is the deadline of one upload or download of an original (default 10m), in place of the server's 60 s.
 	TransferTimeout time.Duration `yaml:"transferTimeout"`
+	// Conversion turns the PDF and Office originals into text in a dedicated sandbox instance (ADR-0001 D61 to D70). Off when absent.
+	Conversion *Conversion `yaml:"conversion"`
+}
+
+// Conversion holds the settings of the conversion of originals (section knowledge.conversion). It needs the original store
+// (IDP_CMI_ORIGINALS_*), the file endpoint's listener (IDP_CMI_INGEST_LISTEN) and its ticket key (IDP_CMI_INGEST_TICKET_KEY_FILE).
+type Conversion struct {
+	Enabled bool `yaml:"enabled"`
+	// GatewayURL is the system gateway's MCP endpoint, the only way to the ingest sandbox; ToolPrefix what that gateway puts in front of
+	// the sandbox's tool names (the name of its target and a separator; default "ingest__"). CAFile adds a trusted CA for an https gateway.
+	GatewayURL string `yaml:"gatewayUrl"`
+	ToolPrefix string `yaml:"toolPrefix"`
+	CAFile     string `yaml:"caFile"`
+	// TokenURL, ClientID and ClientSecretFile are CMI's OAuth client_credentials grant for the ingest workload (the token's audience is
+	// the system gateway); Scope is optional. TokenCAFile adds a trusted CA for an https token endpoint.
+	TokenURL         string `yaml:"tokenUrl"`
+	ClientID         string `yaml:"clientId"`
+	ClientSecretFile string `yaml:"clientSecretFile"`
+	Scope            string `yaml:"scope"`
+	TokenCAFile      string `yaml:"tokenCaFile"`
+	// WorkloadTenant and WorkloadSubject are what the gateway asserts to the sandbox as its caller: the system tenant and the
+	// subject of the ingest workload. The tickets carry them as tenant_id and sub, which is what the sandbox compares.
+	WorkloadTenant  string `yaml:"workloadTenant"`
+	WorkloadSubject string `yaml:"workloadSubject"`
+	// EndpointURL is the file endpoint as the sandbox is configured with it (IDP_SANDBOX_FILES_URL); tickets are issued for it (aud).
+	EndpointURL string `yaml:"endpointUrl"`
+	// TicketTTL is how long a ticket lives (default 5m, 30s to 30m); each is made just before it is used.
+	TicketTTL time.Duration `yaml:"ticketTtl"`
+	// Concurrency is how many conversions run at once (default 4); SandboxConcurrency is the ingest instance's own limit
+	// (IDP_SANDBOX_MAX_CONCURRENT, default 8): Concurrency may not exceed it, because the sandbox refuses the run over its limit outright.
+	Concurrency        int `yaml:"concurrency"`
+	SandboxConcurrency int `yaml:"sandboxConcurrency"`
+	// MaxAttempts is how often a job is tried (default 6); a transient failure waits 30 s, doubling to 30 minutes.
+	MaxAttempts int `yaml:"maxAttempts"`
+	// RunSeconds is the time limit of one converter run (default 300) and may not exceed the instance's IDP_SANDBOX_TIMEOUT_S;
+	// CallTimeout is how long CMI waits for one gateway call (default RunSeconds + 90 s) and must be above the gateway's IDP_CALL_TIMEOUT.
+	RunSeconds  int           `yaml:"runSeconds"`
+	CallTimeout time.Duration `yaml:"callTimeout"`
+	// JobTimeout bounds one attempt (default 15m); Lease is how long a worker holds a job before another may take it (default 20m,
+	// above JobTimeout); Interval how often the queue is looked at (default 5s).
+	JobTimeout time.Duration `yaml:"jobTimeout"`
+	Lease      time.Duration `yaml:"lease"`
+	Interval   time.Duration `yaml:"interval"`
+	// MaxResultBytes is the largest converted text accepted from the sandbox (default 6 MiB; a document's text is at most 4 MiB).
+	MaxResultBytes int64 `yaml:"maxResultBytes"`
+	// MaxConcurrentReads bounds the originals the file endpoint serves at once (default 8).
+	MaxConcurrentReads int `yaml:"maxConcurrentReads"`
 }
 
 // Rerank is a cross-encoder endpoint that rescores the best candidates (ADR-0001 D39).
@@ -176,6 +223,11 @@ func Load(path string) (*File, error) {
 			return nil, errors.New("knowledge: maxInFlightUploadBytes must not be negative")
 		}
 	}
+	if k := f.Knowledge; k != nil && k.Conversion != nil {
+		if err := k.Conversion.validate(); err != nil {
+			return nil, fmt.Errorf("knowledge.conversion: %w", err)
+		}
+	}
 	if l := f.Limits; l != nil && (l.MaxRecordsPerScope < 0 || l.MaxRecordsPerTenant < 0 || l.WritesPerMinute < 0) {
 		return nil, errors.New("limits: values must not be negative")
 	}
@@ -257,4 +309,70 @@ func secret(inline, file string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(b)), nil
+}
+
+func httpURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// validate checks the section and fills its defaults. A section with enabled: false is left alone.
+func (c *Conversion) validate() error {
+	if !c.Enabled {
+		return nil
+	}
+	if !httpURL(c.GatewayURL) || !httpURL(c.TokenURL) || !httpURL(c.EndpointURL) {
+		return errors.New("gatewayUrl, tokenUrl and endpointUrl (http(s)) are required")
+	}
+	if c.ClientID == "" || c.ClientSecretFile == "" || c.WorkloadTenant == "" || c.WorkloadSubject == "" {
+		return errors.New("clientId, clientSecretFile, workloadTenant and workloadSubject are required")
+	}
+	if c.ToolPrefix == "" {
+		c.ToolPrefix = "ingest__"
+	}
+	if c.TicketTTL == 0 {
+		c.TicketTTL = 5 * time.Minute
+	}
+	if c.TicketTTL < 30*time.Second || c.TicketTTL > 30*time.Minute {
+		return errors.New("ticketTtl must be between 30s and 30m")
+	}
+	if c.SandboxConcurrency == 0 {
+		c.SandboxConcurrency = 8
+	}
+	if c.Concurrency == 0 {
+		c.Concurrency = min(4, c.SandboxConcurrency)
+	}
+	if c.Concurrency < 1 || c.SandboxConcurrency < 1 || c.Concurrency > c.SandboxConcurrency {
+		return fmt.Errorf("concurrency %d must be between 1 and the ingest sandbox's own limit, sandboxConcurrency %d (it refuses a run over its limit outright)", c.Concurrency, c.SandboxConcurrency)
+	}
+	if c.MaxAttempts == 0 {
+		c.MaxAttempts = 6
+	}
+	if c.RunSeconds == 0 {
+		c.RunSeconds = 300
+	}
+	if c.MaxAttempts < 1 || c.MaxAttempts > 50 || c.RunSeconds < 1 || c.RunSeconds > 3600 {
+		return errors.New("maxAttempts must be within [1, 50] and runSeconds within [1, 3600]")
+	}
+	if c.CallTimeout == 0 {
+		c.CallTimeout = time.Duration(c.RunSeconds)*time.Second + 90*time.Second
+	}
+	if c.JobTimeout == 0 {
+		c.JobTimeout = 15 * time.Minute
+	}
+	if c.Lease == 0 {
+		c.Lease = 20 * time.Minute
+	}
+	if c.Interval == 0 {
+		c.Interval = 5 * time.Second
+	}
+	if c.CallTimeout < 0 || c.JobTimeout < 0 || c.Lease < 0 || c.Interval < 0 || c.MaxResultBytes < 0 || c.MaxConcurrentReads < 0 {
+		return errors.New("timeouts, limits and the interval must not be negative")
+	}
+	if c.Lease <= c.JobTimeout {
+		return fmt.Errorf("lease %s must be above jobTimeout %s, or another replica takes a job that is still running", c.Lease, c.JobTimeout)
+	}
+	if c.JobTimeout < c.CallTimeout {
+		return fmt.Errorf("jobTimeout %s must be above callTimeout %s", c.JobTimeout, c.CallTimeout)
+	}
+	return nil
 }
