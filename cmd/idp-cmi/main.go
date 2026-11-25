@@ -12,7 +12,7 @@
 //	IDP_DATABASE_URL             service connection (a member of idp_cmi_app, never a superuser)
 //	IDP_MIGRATION_DATABASE_URL   schema owner connection (migrate, ensure-login, seed-tenant)
 //	IDP_CMI_LISTEN               default 127.0.0.1:8550
-//	IDP_CMI_CONFIG               optional YAML: embedding endpoint (ADR-0001 D11), consolidation model (D15)
+//	IDP_CMI_CONFIG               optional YAML: embedding endpoint (ADR-0001 D11; embedding.query: its own endpoint for queries, D59), consolidation model (D15)
 //	IDP_CMI_ORIGINALS_ENDPOINT   S3 endpoint for knowledge originals; unset leaves originals off
 //	IDP_CMI_ORIGINALS_BUCKET     bucket (required when the endpoint is set)
 //	IDP_CMI_ORIGINALS_ACCESS_KEY_FILE / IDP_CMI_ORIGINALS_SECRET_KEY_FILE
@@ -65,6 +65,7 @@ import (
 	"idp-cmi/internal/consolidate"
 	cmictx "idp-cmi/internal/context"
 	"idp-cmi/internal/embedding"
+	"idp-cmi/internal/embedwire"
 	"idp-cmi/internal/evaluation"
 	"idp-cmi/internal/ingest"
 	"idp-cmi/internal/observability"
@@ -308,9 +309,18 @@ func serve(log *slog.Logger) error {
 			log.Warn("embedding.floor or embedding.lexicalBlend is not set: using the legacy relevance (floor 0.35, the larger of lexical and semantic); the cosine scale differs between models, so calibrate yours (tests/eval, ADR-0001 D37)",
 				"floor", e.Floor, "lexicalBlend", e.LexicalBlend, "model", e.Model)
 		}
-		asym := embedding.Asymmetric{Base: embedder, QueryPrefix: e.QueryPrefix, DocumentPrefix: e.DocumentPrefix} // D37
-		embedder = asym.Queries()
-		store.Embedder = asym
+		var queryBase embedding.Embedder
+		if q := e.Query; q != nil { // D59: queries have an endpoint of their own, guarded by a probe against the main one
+			queryBase = &embedding.OpenAI{BaseURL: q.BaseURL, ModelName: e.Model, APIKey: q.APIKey, Dimensions: e.Dimensions, Timeout: q.Timeout,
+				HTTP: &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsCfg}}}
+		}
+		wired := embedwire.Build(embedwire.Options{Config: e, Main: embedder, Query: queryBase, Store: store, Metrics: metrics, Log: log})
+		store.Embedder = wired.Documents
+		store.OnEmbedFailure = wired.Failure // the API's own hook, set later, replaces it with the same count
+		embedder = wired.Queries
+		if wired.Guard != nil {
+			go wired.Guard.Run(ctx) // does not hold up the start
+		}
 		go func() {
 			t := time.NewTicker(e.Backfill)
 			defer t.Stop()

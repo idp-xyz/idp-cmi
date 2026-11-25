@@ -89,3 +89,40 @@ func TestKnowledgeSettings(t *testing.T) {
 		t.Fatalf("unset quotas must stay unset (the defaults apply): %+v %v", f.Knowledge, err)
 	}
 }
+
+// ADR-0001 D59: queries may have an endpoint of their own, for the same model.
+func TestEmbeddingQueryEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.yaml")
+	key := filepath.Join(dir, "k")
+	_ = os.WriteFile(key, []byte("qk\n"), 0o600)
+	write := func(q string) (*File, error) {
+		_ = os.WriteFile(p, []byte("embedding:\n  baseUrl: http://main:8080/v1\n  model: m\n  dimensions: 1024\n  apiKey: mainkey\n  query:\n"+q), 0o600)
+		return Load(p)
+	}
+	f, err := write("    baseUrl: http://q:8080/v1\n    apiKeyFile: " + key + "\n    timeout: 3s\n")
+	if err != nil || f.Embedding.Query == nil || f.Embedding.Query.APIKey != "qk" || f.Embedding.Query.Timeout.Seconds() != 3 || f.Embedding.APIKey != "mainkey" {
+		t.Fatalf("%+v %v", f.Embedding, err)
+	}
+	f, err = write("    baseUrl: https://q/v1\n    model: m\n    dimensions: 1024\n")
+	if err != nil || f.Embedding.Query.Timeout.Seconds() != 10 || f.Embedding.Query.APIKey != "" { // the main key is not inherited
+		t.Fatalf("%+v %v", f.Embedding.Query, err)
+	}
+	for name, q := range map[string]string{
+		"another model":     "    baseUrl: http://q/v1\n    model: other\n",
+		"other dimensions":  "    baseUrl: http://q/v1\n    dimensions: 512\n",
+		"no address":        "    timeout: 1s\n",
+		"not http":          "    baseUrl: ftp://q\n",
+		"negative timeout":  "    baseUrl: http://q/v1\n    timeout: -1s\n",
+		"prefix of its own": "    baseUrl: http://q/v1\n    queryPrefix: x\n",
+		"both key and file": "    baseUrl: http://q/v1\n    apiKey: a\n    apiKeyFile: " + key + "\n",
+	} {
+		if _, err := write(q); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	_ = os.WriteFile(p, []byte("embedding:\n  baseUrl: http://main/v1\n  model: m\n"), 0o600)
+	if f, err := Load(p); err != nil || f.Embedding.Query != nil {
+		t.Fatalf("unset: %+v %v", f.Embedding, err)
+	}
+}

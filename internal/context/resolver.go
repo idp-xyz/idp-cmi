@@ -259,7 +259,11 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 		if vecs, err := r.Embedder.Embed(ctx, []string{req.Query}); err == nil && len(vecs) == 1 {
 			q.Vector, q.Model = vecs[0], r.Embedder.Model()
 		} else if r.Log != nil {
-			r.Log.Warn("query embedding failed; lexical retrieval only", "error", err)
+			if errors.Is(err, embedding.ErrQueryEndpointUnavailable) {
+				r.Log.Debug("query endpoint not checked yet or mismatched; lexical retrieval only") // the guard has logged why
+			} else {
+				r.Log.Warn("query embedding failed; lexical retrieval only", "error", err)
+			}
 		}
 	}
 	var cands []candidate

@@ -32,12 +32,19 @@ embedding:   # ADR-0001 D11: OpenAI 兼容 /v1/embeddings；不配则只有全�
   baseUrl: http://127.0.0.1:8080/v1
   model: text-embedding-3-small
   apiKeyFile: /run/secrets/embedding
+  query:         # 可选，ADR-0001 D59：查询自己的端点（同一个模型）；文档（投影、回填、写入）仍用上面的端点
+    baseUrl: http://embedding-query:8080/v1
+    apiKeyFile: /run/secrets/embedding-query   # 自己的密钥，不继承；不写就不带密钥
+    timeout: 10s                                # 缺省 10s；超时的查询只答词面检索
+    # 不能写 model、dimensions 与主端点不同的值（启动即拒绝）；前缀、CA 与主端点共用
 consolidation:   # ADR-0001 D15: OpenAI 兼容 /v1/chat/completions；不配则没有整合
   baseUrl: http://127.0.0.1:8080/v1
   model: qwen3.8-flash-next-iq3_xxs
   source: distiller      # 本租户里登记的 agent 来源，产出归于它
   interval: 1h           # 0 = 只在管理员触发时整合
 ```
+
+`embedding.query`（D59）：摄入占着主端点时，查询会排在整个摄入请求后面（4 CPU 实测：每次 64 条输入等 247 秒，8 条时 p95 31 秒），所以查询可以有自己的实例。启动后和之后每 5 分钟（未通过时每 30 秒）CMI 把一条固定文字发给查询端点，与主端点的向量比较，要求维度相等、余弦至少 0.999（参照是主端点对同一条文字的向量，第一次拿到就存进库，之后探测只问查询端点；所以摄入期间重启不会让查询一直只答词面；迁移 0017）；**通过之前或不通过时查询只答词面检索**（不改用主端点），日志记一条（不匹配是 error），指标：`idp_cmi_query_endpoint_state{state}`、`idp_cmi_query_endpoint_probes_total{result}`、`idp_cmi_embedding_requests_total{role,outcome}`、`idp_cmi_embed_failures_total{kind,role}`（新增 `role` 标签；`kind="unavailable"`：整个请求没有得到可用答案，连不上、超时、5xx，每个失败的请求一次，不消耗任何块的重试次数）、`idp_cmi_embedding_last_success_timestamp_seconds{role}`（该角色最近一次成功嵌入的 Unix 时间，0 = 启动后还没有；告警可写 `time() - ... > 600`）。查询端点失败不会让解析失败，也不会把任何块记成永久失败。
 
 `authorization.pdp`（可选，D23）指向 OPA 风格的决策端点；`authorization.approvals`（可选，D30，`url`、`caFile`、`timeout`）指向核验审批引用的审批系统。租户策略（`PUT /api/v1/policy`）中 `externalModelCeiling`（D29，缺省 internal）限定送往嵌入与整合模型的敏感级别，`requireApproval`（D30）要求接纳候选时带审批引用。`IDP_CMI_INGEST`（缺省 10s）是连接器、擦除与投影 Worker 的轮询间隔；`make test-live`（`IDP_LIVE_OPENAI_URL`、`IDP_LIVE_MODEL`）对真实模型跑整合门禁。
 

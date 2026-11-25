@@ -102,6 +102,20 @@ type Embedding struct {
 	Floor          float64 `yaml:"floor"`          // cosine below which a candidate is dropped (0 = the built-in 0.35)
 	MemoryFloor    float64 `yaml:"memoryFloor"`    // the floor for memory records (0 = floor): an exchange is longer than a chunk and its cosine to a question lower (docs/eval/LONGMEMEVAL.md)
 	LexicalBlend   float64 `yaml:"lexicalBlend"`   // > 0: semantic-led relevance, cosine + blend x normalized lexical score (0 = the legacy max of the two)
+	// Query is an endpoint of its own for embedding queries (ADR-0001 D59). Documents (projection, backfill, writes) stay on the
+	// main endpoint; the model, dimensions, prefixes and CA are shared, because one model serves both sides.
+	Query *EmbeddingQuery `yaml:"query"`
+}
+
+// EmbeddingQuery is the second endpoint of the same embedding model, for queries only.
+type EmbeddingQuery struct {
+	BaseURL    string        `yaml:"baseUrl"`
+	APIKey     string        `yaml:"apiKey"` // its own: the main endpoint's key is never sent to another address
+	APIKeyFile string        `yaml:"apiKeyFile"`
+	Timeout    time.Duration `yaml:"timeout"` // default 10s: a query is waited for; a slow endpoint should end in a lexical answer
+	// Model and Dimensions exist only to be refused when they differ from the main endpoint's: one model serves both sides.
+	Model      string `yaml:"model"`
+	Dimensions int    `yaml:"dimensions"`
 }
 
 // Consolidation is the chat model that distills episodic memory into semantic statements (D15).
@@ -180,6 +194,26 @@ func Load(path string) (*File, error) {
 		}
 		if e.Backfill == 0 {
 			e.Backfill = 30 * time.Second
+		}
+		if q := e.Query; q != nil { // D59
+			if !strings.HasPrefix(q.BaseURL, "http://") && !strings.HasPrefix(q.BaseURL, "https://") {
+				return nil, errors.New("embedding.query: baseUrl (http(s)) is required")
+			}
+			if q.Model != "" && q.Model != e.Model {
+				return nil, fmt.Errorf("embedding.query: model %q differs from embedding.model %q: one model must serve both sides, or the vectors are not comparable (leave model out)", q.Model, e.Model)
+			}
+			if q.Dimensions != 0 && q.Dimensions != e.Dimensions {
+				return nil, fmt.Errorf("embedding.query: dimensions %d differ from embedding.dimensions %d (leave dimensions out)", q.Dimensions, e.Dimensions)
+			}
+			if q.Timeout < 0 {
+				return nil, errors.New("embedding.query: timeout must not be negative")
+			}
+			if q.Timeout == 0 {
+				q.Timeout = 10 * time.Second
+			}
+			if q.APIKey, err = secret(q.APIKey, q.APIKeyFile); err != nil {
+				return nil, fmt.Errorf("embedding.query: %w", err)
+			}
 		}
 	}
 	if a := f.Authorization; a != nil && a.PDP != nil {

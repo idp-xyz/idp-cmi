@@ -11,6 +11,7 @@ import (
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/authorization"
 	"idp-cmi/internal/cmi"
+	"idp-cmi/internal/embedwire"
 	"idp-cmi/internal/observability"
 	"idp-cmi/internal/transport"
 )
@@ -187,8 +188,8 @@ func (a *API) registerGauges() {
 	if a.Store == nil {
 		return
 	}
-	embedFailures := a.Metrics.Counter("idp_cmi_embed_failures_total", "Chunks the embedder did not take, by kind (permanent: the text was refused; transient: retried later; refused: the endpoint refused the credential or address).", "kind")
-	a.Store.OnEmbedFailure = func(kind string) { embedFailures.Inc(kind) }
+	embedFailures := a.Metrics.Counter("idp_cmi_embed_failures_total", embedwire.FailuresHelp, "kind", "role")
+	a.Store.OnEmbedFailure = func(kind string) { embedFailures.Inc(kind, "documents") }
 	a.Metrics.GaugeFunc("idp_cmi_erasures_waiting_for_store", "Erasures held up because the object store of the originals cannot be reached.", nil, func() []observability.LabeledValue {
 		n, _ := a.Store.WaitingErasures()
 		return []observability.LabeledValue{{Value: float64(n)}}
