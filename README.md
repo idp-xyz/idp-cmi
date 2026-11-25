@@ -60,6 +60,16 @@ Kubernetes 清单在 `deploy/kubernetes`（未在集群上应用；`tests/deploy
 - **被取代的旧版本要重新解读**：旧发布把被取代的文档版本存成 `superseded`；升级后"现行"按 D52 推导，撤回更新的一版会让上一版重新现行（之前什么都不返回）。一个版本到期不会让更早的版本复活。
 - 对象存储（可选）在后台连：CMI 不等它，原件在它可达之前答 503；`IDP_CMI_ORIGINALS_CA_FILE`、`_TIMEOUT` 见 `cmd/idp-cmi/main.go`。配置文件新增 `knowledge` 一节（`indexContext`、`personalQuotaDocuments`、`personalQuotaBytes`、`maxInFlightUploadBytes`、`maxConcurrentDownloads`、`maxDownloadsPerCaller`、`transferTimeout`）。**原件下载需要一个可写的临时目录**（`IDP_CMI_TEMP_DIR`；根文件系统只读时用 emptyDir / tmpfs，`deploy/kubernetes/cmi.yaml` 已带，compose 要加 tmpfs，见 `deploy/compose.yaml` 头部）。
 
+## 原件转成文本（KB3，ADR-0001 第 26 节）
+
+PDF、Word、PowerPoint、Excel 的原件存进对象存储之后，由一个**专做摄入的 idp-sandbox 实例**提取文本（办公档位，无网络），CMI 的后台线程经**系统网关**调它；字节只在沙箱与 CMI 的内部文件端点之间走。开关与设置都在配置文件的 `knowledge.conversion`（`enabled: false` 或没有这一节：原件只存不转，和以前一样）。
+
+- **需要**：对象存储（`IDP_CMI_ORIGINALS_*`）、内部文件端点的监听（`IDP_CMI_INGEST_LISTEN`，**只给内网，不能是 API 的地址**）、票据的密钥文件（`IDP_CMI_INGEST_TICKET_KEY_FILE`，至少 32 字节；可选 `IDP_CMI_INGEST_TLS_CERT_FILE`、`IDP_CMI_INGEST_TLS_KEY_FILE`），以及配置文件里的网关、令牌端点、客户端、工作负载身份。缺哪一项，启动即拒绝。
+- **配置项**（`knowledge.conversion`）：`gatewayUrl`（系统网关的 MCP 地址）、`toolPrefix`（缺省 `ingest__`）、`caFile`、`tokenUrl`、`clientId`、`clientSecretFile`、`scope`、`tokenCaFile`（OAuth `client_credentials`，Keycloak 只是现在回答它的那一个）、`workloadTenant`与`workloadSubject`（网关对沙箱断言的调用者；票据里的 `tenant_id` 与 `sub`）、`endpointUrl`（沙箱的 `IDP_SANDBOX_FILES_URL`；票据的受众）、`ticketTtl`（缺省 5m）、`concurrency`（缺省 4）与`sandboxConcurrency`（摄入实例的 `IDP_SANDBOX_MAX_CONCURRENT`，缺省 8；前者不得超过后者）、`maxAttempts`（缺省 6）、`runSeconds`（缺省 300，不得超过摄入实例的 `IDP_SANDBOX_TIMEOUT_S`）、`callTimeout`（缺省 `runSeconds`+90 秒，必须大于系统网关的 `IDP_CALL_TIMEOUT`）、`jobTimeout`（15m）、`lease`（20m，大于 `jobTimeout`）、`interval`（5s）、`maxResultBytes`（6 MiB）、`maxConcurrentReads`（8）。
+- **一个版本的文本**：这一版（调用者先写一段占位文本，再存原件）在第一次转换成功之前是 `pending`——不检索、不取代它要取代的那一版；成功时它的文本在一个事务里被换成提取出来的，定位信息（页、幻灯片、标题路径、工作表与单元格范围）随块出来，向量由现有的投影接着做。失败时它仍是 `pending`、前一版照常可取；`GET /v1/knowledge/documents/{id}` 的 `ingest` 给出状态、失败原因码和给上传者的说明，`POST /v1/knowledge/documents/{id}/ingest` 重新排队。
+- **契约 `idp.telos.cmi` 1.6.0**（只做新增）：`KnowledgeDocument.ingest`、`status` 增 `pending`、`ContextItem.locator` 增 `slide`、`sheet`、`range`。
+- **升级**：迁移 0018 新建两张表、给 `knowledge_documents` 与 `knowledge_chunks` 各加列（不改写已有行）。
+
 ## 许可证
 
 本仓库采用 [PolyForm Noncommercial License 1.0.0](LICENSE)：允许非商业用途，禁止任何商业使用。

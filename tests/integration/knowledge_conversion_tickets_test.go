@@ -285,7 +285,10 @@ func TestTheSandboxRefusesTicketsOfAnotherCaller(t *testing.T) {
 
 func TestConversionTablesAreTenantIsolated(t *testing.T) {
 	c := newConv(t)
-	c.running("bob", "a", "%PDF ZqxA")
+	r := c.running("bob", "a", "%PDF ZqxA")
+	if st, _, _ := c.get(c.tok(c.claims(r, ticket.Read))); st != 200 { // a ticket is presented, so that its record exists
+		t.Fatalf("%d", st)
+	}
 	var visible int
 	conn, err := c.e.store.Pool.Acquire(context.Background())
 	if err != nil {
@@ -297,9 +300,16 @@ func TestConversionTablesAreTenantIsolated(t *testing.T) {
 			t.Fatalf("%s without a tenant sees %d rows (%v)", q, visible, err)
 		}
 	}
-	if err := c.e.store.InTenant(context.Background(), c.e.tenantB, func(tx pgxTx) error {
-		return tx.QueryRow(context.Background(), `SELECT count(*) FROM knowledge_conversions`).Scan(&visible)
-	}); err != nil || visible != 0 {
-		t.Fatalf("another tenant sees %d jobs (%v)", visible, err)
+	for _, table := range []string{"knowledge_conversions", "knowledge_ticket_uses"} {
+		if err := c.e.store.InTenant(context.Background(), c.e.tenantB, func(tx pgxTx) error {
+			return tx.QueryRow(context.Background(), `SELECT count(*) FROM `+table).Scan(&visible)
+		}); err != nil || visible != 0 {
+			t.Fatalf("another tenant sees %d rows of %s (%v)", visible, table, err)
+		}
+	}
+	if err := c.e.store.InTenant(context.Background(), c.e.tenantA, func(tx pgxTx) error {
+		return tx.QueryRow(context.Background(), `SELECT count(*) FROM knowledge_ticket_uses`).Scan(&visible)
+	}); err != nil || visible != 1 {
+		t.Fatalf("the tenant sees its own record: %d (%v)", visible, err)
 	}
 }
