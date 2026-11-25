@@ -547,11 +547,18 @@ func TestRetryingAFailedConversion(t *testing.T) {
 func TestTheWorkerRunsNoMoreConversionsThanItIsToldTo(t *testing.T) {
 	c := newConv(t)
 	c.worker.Concurrency = 2
-	c.output("TAG", convtest.Output{Markdown: "<!-- page: 1 -->\nZqxFew text.\n", Delay: 50 * time.Millisecond})
+	c.output("TAG", convtest.Output{Markdown: "<!-- page: 1 -->\nZqxFew text.\n", Delay: 300 * time.Millisecond})
 	for i := 0; i < 6; i++ {
 		id := c.stub("bob", fmt.Sprintf("doc-%d", i), "placeholder")
 		c.put("bob", id, mediaPDF, "%PDF TAG")
 	}
+	// the queue is looked at again and again while the first conversions still run, as Run does
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		c.worker.Tick(context.Background(), &wg)
+		time.Sleep(40 * time.Millisecond)
+	}
+	wg.Wait()
 	c.drain()
 	if m := c.sb.MaxConcurrentRuns(); m > 2 || m == 0 {
 		t.Fatalf("the sandbox ran %d at once; the worker was told 2", m)

@@ -249,6 +249,12 @@ func TestAWriteTicketStagesOneResultWithinTheLimit(t *testing.T) {
 	if st, _ := c.post(c.tok(c.claims(r, ticket.Write)), bytes.Repeat([]byte("x"), 1001)); st != 413 {
 		t.Errorf("a result over the limit: %d", st)
 	}
+	// a body that does not say how long it is (chunked) is bounded as it is read
+	req, _ := http.NewRequest(http.MethodPost, c.files.URL+"/", io.NopCloser(bytes.NewReader(bytes.Repeat([]byte("x"), 1001))))
+	req.Header.Set("Authorization", "Bearer "+c.tok(c.claims(r, ticket.Write)))
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 413 {
+		t.Errorf("a chunked result over the limit: %v %v", resp, err)
+	}
 	if st, body := c.post(c.tok(c.claims(r, ticket.Write)), []byte("# text\nZqxResult")); st != 200 || !strings.Contains(string(body), `"ref":"`+r.job.ID+`"`) || !strings.Contains(string(body), `"size":16`) {
 		t.Fatalf("%d %s", st, body)
 	}
