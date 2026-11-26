@@ -139,15 +139,16 @@
             "trust": "authoritative"
           },
           {
-            "excerpt": "Pickup › Surcharges\nThe surcharge for a late pickup is 5 euro; 取件附加费 applies.",
+            "excerpt": "Pickup › Surcharges\nThe surcharge for a late pickup is 5 euro; the evening surcharge is 7 euro.",
+            "hitCount": 2,
             "hits": [
               {
-                "length": 9,
-                "offset": 4
+                "length": 4,
+                "offset": 57
               },
               {
-                "length": 5,
-                "offset": 43
+                "length": 4,
+                "offset": 90
               }
             ],
             "id": "5b6c7d8e-0000-4000-8000-000000000020",
@@ -166,7 +167,7 @@
             "sensitivity": "internal",
             "source": "handbook",
             "title": "Pickup handbook",
-            "tokens": 24,
+            "tokens": 25,
             "trust": "authoritative"
           }
         ],
@@ -193,7 +194,7 @@
     {
       "definition": "Envelope",
       "value": {
-        "digest": "sha256:b0784657a3fc06e9985ee8c235031796be1909a3d7034788f99654241f051949",
+        "digest": "sha256:99a8bdc58ee3427e213f8391e51d324d710138ba68c81077b6b894cb2d9d442f",
         "document": {
           "asOf": {
             "recorded": "2026-11-04T09:00:00Z",
@@ -329,15 +330,16 @@
               "trust": "authoritative"
             },
             {
-              "excerpt": "Pickup › Surcharges\nThe surcharge for a late pickup is 5 euro; 取件附加费 applies.",
+              "excerpt": "Pickup › Surcharges\nThe surcharge for a late pickup is 5 euro; the evening surcharge is 7 euro.",
+              "hitCount": 2,
               "hits": [
                 {
-                  "length": 9,
-                  "offset": 4
+                  "length": 4,
+                  "offset": 57
                 },
                 {
-                  "length": 5,
-                  "offset": 43
+                  "length": 4,
+                  "offset": 90
                 }
               ],
               "id": "5b6c7d8e-0000-4000-8000-000000000020",
@@ -356,7 +358,7 @@
               "sensitivity": "internal",
               "source": "handbook",
               "title": "Pickup handbook",
-              "tokens": 24,
+              "tokens": 25,
               "trust": "authoritative"
             }
           ],

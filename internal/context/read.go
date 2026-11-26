@@ -1,22 +1,37 @@
 package context
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/cmi"
 )
 
-// Read and find (ADR-0001 D71-D75, contract 1.7.0): the two ways to look into one document by its id. Both go through the
+// Read and find (ADR-0001 D72-D76, contract 1.7.0): the two ways to look into one document by its id. Both go through the
 // visibility of resolve (postgres.DocumentChunks) and produce a package sealed and stored like resolve's, so verification
 // and erasure treat it like any other.
+
+// InvalidError is a request that is wrong as written (422); every other error of the resolver is the service's own (a
+// database that failed, a timeout) and is not told to the caller.
+type InvalidError struct{ Msg string }
+
+func (e *InvalidError) Error() string { return e.Msg }
+
+func invalid(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &InvalidError{Msg: err.Error()}
+}
+
 const (
 	DefaultAround = 1
 	MaxAround     = 5
@@ -40,6 +55,8 @@ type ReadRequest struct {
 	Purpose            string       `json:"purpose,omitempty"`
 	AsOf               *cmi.AsOf    `json:"asOf,omitempty"`
 	SensitivityCeiling string       `json:"sensitivityCeiling,omitempty"`
+	// RequireVersion is set by the API once the PDP has been asked about this version (D76): nothing else is read.
+	RequireVersion string `json:"-"`
 }
 
 // FindRequest asks where a text is in one document.
@@ -51,9 +68,12 @@ type FindRequest struct {
 	Purpose            string      `json:"purpose,omitempty"`
 	AsOf               *cmi.AsOf   `json:"asOf,omitempty"`
 	SensitivityCeiling string      `json:"sensitivityCeiling,omitempty"`
+	RequireVersion     string      `json:"-"`
 }
 
 var rangeRE = regexp.MustCompile(`^([A-Z]{1,3})([0-9]+):([A-Z]{1,3})([0-9]+)$`)
+
+func (r *ReadRequest) Validate() error { return invalid(r.validate()) }
 
 func (r *ReadRequest) validate() error {
 	if !postgres.IsUUID(r.DocumentID) {
@@ -95,6 +115,8 @@ func (r *ReadRequest) validate() error {
 	return nil
 }
 
+func (r *FindRequest) Validate() error { return invalid(r.validate()) }
+
 func (r *FindRequest) validate() error {
 	if !postgres.IsUUID(r.DocumentID) {
 		return errors.New("documentId must be a document id")
@@ -130,6 +152,7 @@ func validateBudget(b *cmi.Budget) error {
 // prepared is what read and find share before they look at chunks: the view, the budget, the policy and the document.
 type prepared struct {
 	v        postgres.Visibility
+	q        postgres.DocQuery
 	asOf     *cmi.AsOf
 	budget   cmi.Budget
 	policy   *postgres.Policy
@@ -138,16 +161,45 @@ type prepared struct {
 	purposed string
 }
 
-func (r *Resolver) prepare(ctx context.Context, tenant string, v postgres.Visibility, id, purpose, ceiling, via string, asOf *cmi.AsOf, b *cmi.Budget) (*prepared, error) {
-	now := r.now()
+// viewOf is the caller's view for one request: the as-of view checked and normalized, the request's ceiling lowering the
+// caller's and never raising it (D74).
+func (r *Resolver) viewOf(v postgres.Visibility, ceiling string, asOf *cmi.AsOf) (postgres.Visibility, error) {
 	if asOf != nil {
+		now := r.now()
 		if err := asOf.Validate(now); err != nil {
-			return nil, err
+			return v, invalid(err)
 		}
 		asOf.Normalize(now)
 	}
 	if ceiling != "" && cmi.Within(ceiling, v.Ceiling) {
 		v.Ceiling = ceiling
+	}
+	return v, nil
+}
+
+// Target is the version of a document a read or a find would look into for the caller, found under the visibility of
+// resolve and without any audit (D76): the API asks the PDP about this version, then runs the request with it.
+type Target struct {
+	ID, Source, Sensitivity string
+}
+
+// TargetOf finds the Target; a document the caller cannot see is the NOT_FOUND of every other way of not seeing it.
+func (r *Resolver) TargetOf(ctx context.Context, tenant string, v postgres.Visibility, id, ceiling string, asOf *cmi.AsOf) (*Target, error) {
+	v, err := r.viewOf(v, ceiling, asOf)
+	if err != nil {
+		return nil, err
+	}
+	view, err := r.Store.ResolveDocument(ctx, tenant, v, postgres.DocQuery{DocumentID: id, AsOf: asOf})
+	if err != nil {
+		return nil, err
+	}
+	return &Target{ID: view.Document.ID, Source: view.Document.Source, Sensitivity: view.Document.Sensitivity}, nil
+}
+
+func (r *Resolver) prepare(ctx context.Context, tenant string, v postgres.Visibility, id, require, purpose, ceiling, via string, asOf *cmi.AsOf, b *cmi.Budget, content bool) (*prepared, error) {
+	v, err := r.viewOf(v, ceiling, asOf)
+	if err != nil {
+		return nil, err
 	}
 	budget := cmi.Budget{MaxTokens: DefaultMaxTokens, MaxItems: readDefaultItems}
 	if b != nil {
@@ -162,14 +214,32 @@ func (r *Resolver) prepare(ctx context.Context, tenant string, v postgres.Visibi
 	if err != nil {
 		return nil, err
 	}
-	view, err := r.Store.DocumentChunks(ctx, tenant, v, postgres.DocQuery{DocumentID: id, AsOf: asOf, Via: via})
+	q := postgres.DocQuery{DocumentID: id, AsOf: asOf, Via: via, RequireID: require}
+	view, err := r.Store.DocumentChunks(ctx, tenant, v, q, content)
 	if err != nil {
 		return nil, err
 	}
+	q.DocumentID, q.RequireID = view.Document.ID, "" // the chunks are asked for the version that was found
 	if purpose == "" {
 		purpose = via
 	}
-	return &prepared{v: v, asOf: asOf, budget: budget, policy: policy, view: view, purposed: purpose}, nil
+	return &prepared{v: v, q: q, asOf: asOf, budget: budget, policy: policy, view: view, purposed: purpose}, nil
+}
+
+// contents fetches the text of chunks of the version that was found, under the visibility predicate again (D74).
+func (r *Resolver) contents(ctx context.Context, tenant string, p *prepared, idx []int) (map[int]string, error) {
+	seqs := make([]int, len(idx))
+	for i, j := range idx {
+		seqs[i] = p.view.Chunks[j].Seq
+	}
+	got, err := r.Store.ChunkContents(ctx, tenant, p.v, p.q, seqs)
+	if err != nil {
+		return nil, err
+	}
+	if len(got) != len(seqs) {
+		return nil, &postgres.Error{Code: "NOT_FOUND", Message: "document not found"} // withdrawn while it was being read
+	}
+	return got, nil
 }
 
 // item makes the package item of a chunk: what resolve makes of one, with the version's own id.
@@ -207,19 +277,24 @@ func (r *Resolver) seal(ctx context.Context, tenant string, p *prepared, query s
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := r.Store.SavePackage(ctx, tenant, env, pkg); err != nil {
+	// the package names the version it consulted, items or none (D76)
+	if err := r.Store.SaveConsultingPackage(ctx, tenant, env, pkg, []string{p.view.Document.ID}); err != nil {
 		return nil, nil, err
 	}
 	return pkg, env, nil
 }
 
-// Read gives the chunks of a document at a place (D71): the chunks the locator matches in document order - or, with no
+// readBatch is how many chunks of a read are fetched at a time: the text of a chunk is fetched only when the budget may still
+// take it (D72), so a read of the start of a long document does not load the document.
+const readBatch = 16
+
+// Read gives the chunks of a document at a place (D72): the chunks the locator matches in document order - or, with no
 // locator, from the start of the document - and around chunks on each side of the matches, as far as the budget goes.
 func (r *Resolver) Read(ctx context.Context, tenant string, v postgres.Visibility, req ReadRequest) (*cmi.Package, *cmi.Envelope, error) {
-	if err := req.validate(); err != nil {
+	if err := req.Validate(); err != nil {
 		return nil, nil, err
 	}
-	p, err := r.prepare(ctx, tenant, v, req.DocumentID, req.Purpose, req.SensitivityCeiling, "read", req.AsOf, req.Budget)
+	p, err := r.prepare(ctx, tenant, v, req.DocumentID, req.RequireVersion, req.Purpose, req.SensitivityCeiling, "read", req.AsOf, req.Budget, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -243,19 +318,27 @@ func (r *Resolver) Read(ctx context.Context, tenant string, v postgres.Visibilit
 	given := map[int]cmi.Item{}
 	tokens := 0
 	stopped := -1 // the first matched chunk the budget did not take
-	for n, i := range order {
-		body := excerpt(chunks[i].Content, readExcerptBytes)
-		if body == "" {
-			continue
+	for start := 0; start < len(order) && stopped < 0; start += readBatch {
+		end := min(start+readBatch, len(order))
+		text, err := r.contents(ctx, tenant, p, order[start:end])
+		if err != nil {
+			return nil, nil, err
 		}
-		it := p.item(chunks[i], body)
-		it.Score = 1
-		if len(given) >= p.budget.MaxItems || tokens+it.Tokens > p.budget.MaxTokens {
-			stopped = n
-			break
+		for n := start; n < end; n++ {
+			i := order[n]
+			body := excerpt(text[chunks[i].Seq], readExcerptBytes)
+			if body == "" {
+				continue
+			}
+			it := p.item(chunks[i], body)
+			it.Score = 1
+			if len(given) >= p.budget.MaxItems || tokens+it.Tokens > p.budget.MaxTokens {
+				stopped = n
+				break
+			}
+			tokens += it.Tokens
+			given[i] = it
 		}
-		tokens += it.Tokens
-		given[i] = it
 	}
 	if stopped >= 0 {
 		p.omitted.Budget += len(order) - stopped // a read is contiguous: what comes after the first chunk that did not fit is left
@@ -274,18 +357,25 @@ func (r *Resolver) Read(ctx context.Context, tenant string, v postgres.Visibilit
 				}
 			}
 		}
-		sortInts(near)
-		for _, j := range near {
-			body := excerpt(chunks[j].Content, readExcerptBytes)
-			if body == "" {
-				continue
+		sort.Ints(near)
+		for start := 0; start < len(near) && len(given) < p.budget.MaxItems && tokens < p.budget.MaxTokens; start += readBatch {
+			end := min(start+readBatch, len(near))
+			text, err := r.contents(ctx, tenant, p, near[start:end])
+			if err != nil {
+				return nil, nil, err
 			}
-			it := p.item(chunks[j], body)
-			if len(given) >= p.budget.MaxItems || tokens+it.Tokens > p.budget.MaxTokens {
-				continue // context that does not fit is not a loss to report: the matches are what was asked
+			for _, j := range near[start:end] {
+				body := excerpt(text[chunks[j].Seq], readExcerptBytes)
+				if body == "" {
+					continue
+				}
+				it := p.item(chunks[j], body)
+				if len(given) >= p.budget.MaxItems || tokens+it.Tokens > p.budget.MaxTokens {
+					continue // context that does not fit is not a loss to report: the matches are what was asked
+				}
+				tokens += it.Tokens
+				given[j] = it
 			}
-			tokens += it.Tokens
-			given[j] = it
 		}
 	}
 	items := make([]cmi.Item, 0, len(given))
@@ -297,23 +387,44 @@ func (r *Resolver) Read(ctx context.Context, tenant string, v postgres.Visibilit
 	return r.seal(ctx, tenant, p, readQuery(req), items, tokens)
 }
 
+// maxQueryBytes is the longest query a package has: the contract's 4096 (resolve checks bytes, so does this).
+const maxQueryBytes = 4096
+
+// readQuery is what a read's package says it asked: "read", the document id and the locator as JSON (not escaped for HTML:
+// the section names are read by people), cut on a character boundary where it is longer than a package's query may be.
 func readQuery(req ReadRequest) string {
 	q := "read " + req.DocumentID
 	if req.Locator != nil {
-		if raw, err := json.Marshal(req.Locator); err == nil && string(raw) != "{}" {
-			q += " " + string(raw)
+		var b bytes.Buffer
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(req.Locator); err == nil {
+			if raw := strings.TrimSpace(b.String()); raw != "{}" {
+				q += " " + raw
+			}
 		}
 	}
-	return q
+	return cutAtCharacter(q, maxQueryBytes)
 }
 
-// Find gives the chunks of a document that hold a text, word for word (D72), in document order, with where the text is in
-// each: at most MaxHits places over all, and as many chunks as the budget takes.
+// cutAtCharacter is s cut to at most n bytes without cutting a character.
+func cutAtCharacter(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
+// Find gives the chunks of a document that hold a text, word for word (D73), in document order, with where the text is in
+// each excerpt: at most MaxHits places over all, and as many chunks as the budget takes.
 func (r *Resolver) Find(ctx context.Context, tenant string, v postgres.Visibility, req FindRequest) (*cmi.Package, *cmi.Envelope, error) {
-	if err := req.validate(); err != nil {
+	if err := req.Validate(); err != nil {
 		return nil, nil, err
 	}
-	p, err := r.prepare(ctx, tenant, v, req.DocumentID, req.Purpose, req.SensitivityCeiling, "find", req.AsOf, req.Budget)
+	p, err := r.prepare(ctx, tenant, v, req.DocumentID, req.RequireVersion, req.Purpose, req.SensitivityCeiling, "find", req.AsOf, req.Budget, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -321,11 +432,11 @@ func (r *Resolver) Find(ctx context.Context, tenant string, v postgres.Visibilit
 	if maxHits == 0 {
 		maxHits = DefaultHits
 	}
-	needle := foldText(req.Text)
+	found := findInChunks(p.view.Chunks, foldText(req.Text))
 	var items []cmi.Item
 	tokens, left := 0, maxHits
-	for _, c := range p.view.Chunks {
-		hits := findAll(c.Content, needle)
+	for i, c := range p.view.Chunks {
+		hits := found[i]
 		if len(hits) == 0 {
 			continue
 		}
@@ -337,21 +448,23 @@ func (r *Resolver) Find(ctx context.Context, tenant string, v postgres.Visibilit
 			p.omitted.Budget++ // the hits limit is a budget too
 			continue
 		}
-		if len(hits) > left {
-			hits = hits[:left]
+		taken := hits
+		if len(taken) > left {
+			taken = taken[:left]
 		}
-		body := window(c.Content, hits[0], findWindowBytes)
-		if body == "" {
+		win := windowAround(c.Content, taken[0], findWindowBytes)
+		if win.text == "" {
 			continue
 		}
-		it := p.item(c, body)
-		it.Match, it.Score, it.Hits = cmi.MatchExact, 1, hits
+		it := p.item(c, win.text)
+		it.Match, it.Score = cmi.MatchExact, 1
+		it.Hits, it.HitCount = win.place(taken, utf8.RuneCountInString(sectionLine(c.Locator))), len(hits)
 		if len(items) >= p.budget.MaxItems || tokens+it.Tokens > p.budget.MaxTokens {
 			p.omitted.Budget++
 			continue
 		}
 		tokens += it.Tokens
-		left -= len(hits)
+		left -= len(taken)
 		items = append(items, it)
 	}
 	return r.seal(ctx, tenant, p, req.Text, items, tokens)
@@ -359,7 +472,7 @@ func (r *Resolver) Find(ctx context.Context, tenant string, v postgres.Visibilit
 
 // ---- locator matching ----
 
-// matchesLocator says a chunk at place c is covered by the requested locator: every field the request gives must hold (D71).
+// matchesLocator says a chunk at place c is covered by the requested locator: every field the request gives must hold (D72).
 // A page or a slide is exact; headings are a prefix of the chunk's heading path; a sheet is exact and a range matches when
 // the cells it names overlap the chunk's.
 func matchesLocator(want *cmi.Locator, c *cmi.Locator) bool {
@@ -435,123 +548,3 @@ func parseRange(s string) *cellRange {
 func (a *cellRange) overlaps(b *cellRange) bool {
 	return a.c1 <= b.c2 && b.c1 <= a.c2 && a.r1 <= b.r2 && b.r1 <= a.r2
 }
-
-func sortInts(a []int) {
-	for i := 1; i < len(a); i++ {
-		for j := i; j > 0 && a[j-1] > a[j]; j-- {
-			a[j-1], a[j] = a[j], a[j-1]
-		}
-	}
-}
-
-// ---- find: matching ----
-
-// folded is a text made comparable: a run of white space is one space, A-Z are a-z (ASCII only: other scripts are matched
-// as they are, so a Chinese text is matched character by character), and for each character where it began and ended
-// in the original, counted in characters (code points).
-type folded struct {
-	runes      []rune
-	start, end []int
-}
-
-func foldText(s string) folded {
-	f := foldFull(s)
-	// the needle is the text without the white space at its ends
-	for len(f.runes) > 0 && f.runes[0] == ' ' {
-		f.runes, f.start, f.end = f.runes[1:], f.start[1:], f.end[1:]
-	}
-	for len(f.runes) > 0 && f.runes[len(f.runes)-1] == ' ' {
-		n := len(f.runes) - 1
-		f.runes, f.start, f.end = f.runes[:n], f.start[:n], f.end[:n]
-	}
-	return f
-}
-
-// findAll returns where the needle is in text, without overlaps, in order. Offsets and lengths are in characters of text.
-func findAll(text string, needle folded) []cmi.TextHit {
-	n := len(needle.runes)
-	if n == 0 {
-		return nil
-	}
-	hay := foldFull(text)
-	var out []cmi.TextHit
-	for i := 0; i+n <= len(hay.runes); {
-		j := 0
-		for j < n && hay.runes[i+j] == needle.runes[j] {
-			j++
-		}
-		if j < n {
-			i++
-			continue
-		}
-		start, end := hay.start[i], hay.end[i+n-1]
-		out = append(out, cmi.TextHit{Offset: start, Length: end - start})
-		i += n
-	}
-	return out
-}
-
-// foldFull is foldText without trimming (the text searched keeps its ends).
-func foldFull(s string) folded {
-	var f folded
-	src := []rune(s)
-	for i := 0; i < len(src); {
-		r := src[i]
-		if unicode.IsSpace(r) {
-			j := i
-			for j < len(src) && unicode.IsSpace(src[j]) {
-				j++
-			}
-			f.runes, f.start, f.end = append(f.runes, ' '), append(f.start, i), append(f.end, j)
-			i = j
-			continue
-		}
-		if r >= 'A' && r <= 'Z' {
-			r += 'a' - 'A'
-		}
-		f.runes, f.start, f.end = append(f.runes, r), append(f.start, i), append(f.end, i+1)
-		i++
-	}
-	return f
-}
-
-// window is at most max bytes of text around the first hit, cut between characters: it starts from the hit (the beginning of
-// it when the hit alone is longer) and grows to both sides, and a cut is marked with an ellipsis. A text that fits is given
-// whole.
-func window(text string, hit cmi.TextHit, max int) string {
-	if len(text) <= max {
-		return strings.TrimSpace(text)
-	}
-	src := []rune(text)
-	a := min(max0(hit.Offset), len(src))
-	b := min(a+hit.Length, len(src))
-	bytes, end := 0, a
-	for end < b && bytes+utf8.RuneLen(src[end]) <= max {
-		bytes += utf8.RuneLen(src[end])
-		end++
-	}
-	b = end
-	for grew := true; grew; {
-		grew = false
-		if a > 0 && bytes+utf8.RuneLen(src[a-1]) <= max {
-			a--
-			bytes += utf8.RuneLen(src[a])
-			grew = true
-		}
-		if b < len(src) && bytes+utf8.RuneLen(src[b]) <= max {
-			bytes += utf8.RuneLen(src[b])
-			b++
-			grew = true
-		}
-	}
-	out := strings.TrimSpace(string(src[a:b]))
-	if a > 0 {
-		out = "…" + out
-	}
-	if b < len(src) {
-		out += "…"
-	}
-	return out
-}
-
-func max0(n int) int { return max(n, 0) }

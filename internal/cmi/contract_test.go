@@ -123,8 +123,8 @@ func examplePackage() *cmi.Package {
 				Excerpt: "Pickup slots are booked in the portal.", ObservedAt: at.Add(-24 * time.Hour), Sensitivity: cmi.SensitivityInternal, Score: 0.62, Tokens: 9, Match: cmi.MatchSemantic,
 				Locator: &cmi.Locator{Headings: []string{"Booking"}, Slide: 7}},
 			{Kind: cmi.ItemKnowledge, ID: "5b6c7d8e-0000-4000-8000-000000000020", Source: "handbook", Trust: cmi.TrustAuthoritative, Ref: "handbook://pickup#1", Title: "Pickup handbook",
-				Excerpt: "Pickup › Surcharges\nThe surcharge for a late pickup is 5 euro; 取件附加费 applies.", ObservedAt: at.Add(-48 * time.Hour), Sensitivity: cmi.SensitivityInternal, Score: 1, Tokens: 24, Match: cmi.MatchExact,
-				Hits: []cmi.TextHit{{Offset: 4, Length: 9}, {Offset: 43, Length: 5}}, Locator: &cmi.Locator{Headings: []string{"Pickup", "Surcharges"}, Page: 4}}},
+				Excerpt: "Pickup › Surcharges\nThe surcharge for a late pickup is 5 euro; the evening surcharge is 7 euro.", ObservedAt: at.Add(-48 * time.Hour), Sensitivity: cmi.SensitivityInternal, Score: 1, Tokens: 25, Match: cmi.MatchExact,
+				Hits: []cmi.TextHit{{Offset: 57, Length: 4}, {Offset: 90, Length: 4}}, HitCount: 2, Locator: &cmi.Locator{Headings: []string{"Pickup", "Surcharges"}, Page: 4}}},
 		Budget: cmi.Budget{MaxTokens: 2000, UsedTokens: 42, MaxItems: 20}, AssembledAt: at, ExpiresAt: at.Add(time.Hour)}
 }
 

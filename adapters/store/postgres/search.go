@@ -23,7 +23,7 @@ type Query struct {
 	Limit          int
 	AsOf           *cmi.AsOf // a bitemporal view instead of "now" (D25)
 	// KnowledgeBases and DocTypes narrow the knowledge items to those bases (by name) and document types; empty = no filter.
-	// They narrow what is visible, never widen it (D72).
+	// They narrow what is visible, never widen it (D71).
 	KnowledgeBases []string
 	DocTypes       []string
 }
@@ -64,10 +64,13 @@ func excluded(v Visibility) []string {
 	return v.ExcludeSources
 }
 
+// cmiAliasSQL is the alias "me" of the caller's own personal base, which a request may name as an upload's uri does (D53, D71).
+const cmiAliasSQL = `'` + cmi.PersonalAlias + `'`
+
 // baseDocTypeSQL keeps knowledge rows in the named bases and of the named document types ($kb and $dt are text[] parameters;
 // an empty array = no filter).
 func baseDocTypeSQL(kb, dt string) string {
-	return ` AND (cardinality(` + kb + `::text[]) = 0 OR EXISTS (SELECT 1 FROM knowledge_bases kbn WHERE kbn.id = d.knowledge_base_id AND kbn.name = ANY(` + kb + `)))` +
+	return ` AND (cardinality(` + kb + `::text[]) = 0 OR EXISTS (SELECT 1 FROM knowledge_bases kbn WHERE kbn.id = d.knowledge_base_id AND (kbn.name = ANY(` + kb + `) OR (` + cmiAliasSQL + ` = ANY(` + kb + `) AND kbn.scope_kind = 'subject' AND kbn.scope_id = $1))))` +
 		` AND (cardinality(` + dt + `::text[]) = 0 OR d.doc_type = ANY(` + dt + `))`
 }
 

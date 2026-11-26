@@ -296,6 +296,10 @@ func TestReadBudgetSaysWhatItLeftOut(t *testing.T) {
 	if len(items(tight)) != 1 || !strings.Contains(excerpts(tight), "partword10") || omittedBudget(tight) != 0 {
 		t.Fatalf("%v omitted %d", refs(tight), omittedBudget(tight))
 	}
+	some := readDoc(e, "carol", map[string]any{"documentId": id, "purpose": "p", "locator": map[string]any{"headings": []string{"Part 10"}}, "around": 3, "budget": map[string]any{"maxItems": 3}})
+	if len(items(some)) != 3 || !strings.Contains(excerpts(some), "partword10") {
+		t.Fatalf("around takes what the item budget leaves: %v", refs(some))
+	}
 	roomy := readDoc(e, "carol", map[string]any{"documentId": id, "purpose": "p", "locator": map[string]any{"headings": []string{"Part 10"}}, "around": 3})
 	if len(items(roomy)) != 7 || omittedBudget(roomy) != 0 {
 		t.Fatalf("around 3: %v", refs(roomy))
@@ -436,12 +440,11 @@ func TestFindByCharactersCaseAndWhiteSpace(t *testing.T) {
 		}
 	}
 	first := hitsOf(its[0])
-	if len(first) != 3 || first[0] != [2]int{4, 6} {
-		t.Fatalf("hits %v", first)
+	if len(first) != 3 || first[0] != [2]int{11, 6} || its[0]["hitCount"] != float64(3) {
+		t.Fatalf("hits %v, %v", first, its[0]["hitCount"])
 	}
-	// the hits point into the chunk's body (the excerpt without the heading line, for a chunk that is whole)
-	body := strings.TrimPrefix(its[0]["excerpt"].(string), "Pickup\n")
-	runes := []rune(body)
+	// the hits point into the excerpt as it is returned: the heading line counts ("Pickup\n" is 7 characters)
+	runes := []rune(its[0]["excerpt"].(string))
 	for _, h := range first {
 		if !strings.EqualFold(string(runes[h[0]:h[0]+h[1]]), "pickup") {
 			t.Fatalf("hit %v is %q", h, string(runes[h[0]:h[0]+h[1]]))
@@ -466,10 +469,10 @@ func TestFindByCharactersCaseAndWhiteSpace(t *testing.T) {
 			hit = hitsOf(it)
 		}
 	}
-	if len(hit) != 2 || hit[0] != [2]int{0, 2} || hit[1] != [2]int{10, 2} {
+	if len(hit) != 2 || hit[0] != [2]int{3, 2} || hit[1] != [2]int{13, 2} {
 		t.Fatalf("CJK hits %v", hit)
 	}
-	if mid := find("附加费"); len(items(mid)) != 1 || hitsOf(items(mid)[0])[0] != [2]int{18, 3} {
+	if mid := find("附加费"); len(items(mid)) != 1 || hitsOf(items(mid)[0])[0] != [2]int{21, 3} {
 		t.Fatalf("a part of a word: %v", items(mid))
 	}
 	if len(items(find("件时"))) != 1 {
@@ -482,7 +485,7 @@ func TestFindByCharactersCaseAndWhiteSpace(t *testing.T) {
 	}
 	// maxHits bounds the places over the package, not per chunk
 	one := find("pickup", map[string]any{"maxHits": 1})
-	if len(items(one)) != 1 || len(hitsOf(items(one)[0])) != 1 || omittedBudget(one) != 1 {
+	if len(items(one)) != 1 || len(hitsOf(items(one)[0])) != 1 || omittedBudget(one) != 1 || items(one)[0]["hitCount"] != float64(3) {
 		t.Fatalf("maxHits 1: %v omitted %v", items(one), one["package"].(map[string]any)["omitted"])
 	}
 	four := find("pickup", map[string]any{"maxHits": 4})
@@ -543,8 +546,9 @@ func TestFindExcerptIsAWindowAroundTheFirstHit(t *testing.T) {
 		t.Fatalf("excerpt %q", ex)
 	}
 	h := its[0]["hits"].([]any)[0].(map[string]any)
-	if h["length"] != float64(10) || h["offset"].(float64) < 500 {
-		t.Fatalf("hit %v", h)
+	exr := []rune(its[0]["excerpt"].(string))
+	if o, l := int(h["offset"].(float64)), int(h["length"].(float64)); l != 10 || !strings.EqualFold(string(exr[o:o+l]), "needleword") || its[0]["hitCount"] != float64(1) {
+		t.Fatalf("hit %v in %q", h, its[0]["excerpt"])
 	}
 	if body := strings.TrimSuffix(strings.TrimPrefix(ex, "…"), "…"); len(body) > 1500 || len(body) < 1400 {
 		t.Fatalf("the window is %d bytes", len(body))
@@ -870,8 +874,12 @@ func TestReadAndFindKeepTheInjectionFlags(t *testing.T) {
 func TestReadAndFindPackagesAreVerifiedAndRedactedByErasure(t *testing.T) {
 	e := newEnv(t)
 	kbSources(e)
-	d := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://erase", "", "# Terms\n\nerasequartz the secret clause about refunds.\n"))
+	d := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://erase", "", "<!-- page: 3 -->\n# Terms\n\nerasequartz the secret clause about refunds.\n"))
 	id := d["documentId"].(string)
+	rs := resolveKnowledge(e, "carol", "erasequartz", nil) // a resolve package cites it too: its locator is text of the document as well (D76)
+	if len(items(rs)) != 1 || fmt.Sprint(items(rs)[0]["locator"]) != "map[headings:[Terms] page:3]" {
+		t.Fatalf("resolve: %v", items(rs))
+	}
 	r := readDoc(e, "carol", map[string]any{"documentId": id, "purpose": "p", "locator": map[string]any{"headings": []string{"Terms"}}})
 	f := findDoc(e, "carol", map[string]any{"documentId": id, "text": "secret clause", "purpose": "p"})
 	if len(items(r)) != 1 || len(items(f)) != 1 {
@@ -892,7 +900,7 @@ func TestReadAndFindPackagesAreVerifiedAndRedactedByErasure(t *testing.T) {
 		}
 	}
 	// a new version replaces it: both packages say stale
-	e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://erase", "", "# Terms\n\nerasequartz the new clause.\n"))
+	e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://erase", "", "<!-- page: 3 -->\n# Terms\n\nerasequartz the new clause.\n"))
 	for name, p := range map[string]map[string]any{"read": r, "find": f} {
 		if ver := verify(e, "carol", p); ver["stale"] != true || ver["items"].([]any)[0].(map[string]any)["status"] != "superseded" {
 			t.Fatalf("%s package after a new version: %v", name, ver)
@@ -903,14 +911,21 @@ func TestReadAndFindPackagesAreVerifiedAndRedactedByErasure(t *testing.T) {
 	if _, err := e.store.Purge(context.Background(), e.tenantA, 5); err != nil {
 		t.Fatal(err)
 	}
-	for name, p := range map[string]map[string]any{"read": r, "find": f} {
+	for name, p := range map[string]map[string]any{"read": r, "find": f, "resolve": rs} {
 		got := e.must(200, "GET", "/v1/context/packages/"+p["packageId"].(string), "carol", nil)
 		doc := got["package"].(map[string]any)
 		it := doc["items"].([]any)[0].(map[string]any)
-		if got["redacted"] != true || got["digest"] != p["digest"] || it["excerpt"] != "[erased]" || it["hits"] != nil || it["title"] != "[erased]" {
+		if got["redacted"] != true || got["digest"] != p["digest"] || it["excerpt"] != "[erased]" || it["hits"] != nil || it["hitCount"] != nil || it["title"] != "[erased]" {
 			t.Fatalf("%s package after the erasure: %v", name, got)
 		}
-		if strings.Contains(fmt.Sprint(got), "secret clause") || strings.Contains(fmt.Sprint(got), "erasequartz") {
+		// the section names are text of the document; the page number is not
+		if loc, _ := it["locator"].(map[string]any); fmt.Sprint(loc) != "map[page:3]" {
+			t.Fatalf("%s locator after the erasure: %v", name, it["locator"])
+		}
+		if strings.Contains(fmt.Sprint(it), "Terms") {
+			t.Fatalf("%s item keeps a heading: %v", name, it)
+		}
+		if shown := fmt.Sprint(doc["items"]); strings.Contains(shown, "secret clause") || strings.Contains(shown, "erasequartz") || name != "resolve" && (strings.Contains(fmt.Sprint(got), "secret clause") || strings.Contains(fmt.Sprint(got), "erasequartz")) { // a resolve keeps the question that was asked
 			t.Fatalf("%s package keeps the text: %v", name, got)
 		}
 		if doc["query"] != "[erased]" && name == "find" {
@@ -920,7 +935,7 @@ func TestReadAndFindPackagesAreVerifiedAndRedactedByErasure(t *testing.T) {
 			t.Fatalf("%s verification after the erasure: %v", name, ver)
 		}
 	}
-	if q := e.must(200, "GET", "/v1/context/packages/"+r["packageId"].(string), "carol", nil)["package"].(map[string]any)["query"]; strings.Contains(fmt.Sprint(q), "Terms") {
+	if q := e.must(200, "GET", "/v1/context/packages/"+r["packageId"].(string), "carol", nil)["package"].(map[string]any)["query"]; q != "[erased]" {
 		t.Fatalf("the read's query names the erased section: %v", q)
 	}
 	// after the erasure neither can be asked for

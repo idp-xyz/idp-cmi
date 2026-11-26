@@ -256,6 +256,16 @@ func (a *API) role(h handler, roles ...string) http.HandlerFunc {
 	}
 }
 
+// requestError is the answer to an error of the resolver: a request that is wrong as written is a 422; everything else (a
+// database that failed, a timeout) is the service's own and goes through writeError, logged, without its text.
+func requestError(err error) error {
+	var ie *cmictx.InvalidError
+	if errors.As(err, &ie) {
+		return transport.Fail(http.StatusUnprocessableEntity, "INVALID", ie.Msg)
+	}
+	return err
+}
+
 func (a *API) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var se *postgres.Error
 	var pb *transport.Problem
@@ -1135,43 +1145,41 @@ func (a *API) Handler() http.Handler {
 			if a.resolves != nil {
 				a.resolves.Inc("error")
 			}
-			var se *postgres.Error
-			if errors.As(err, &se) {
-				return 0, nil, err
-			}
-			return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", err.Error())
+			return 0, nil, requestError(err)
 		}
 		if a.resolves != nil {
 			a.resolves.Inc("ok")
 		}
 		return 200, map[string]any{"packageId": pkg.ID, "digest": env.Digest, "package": json.RawMessage(env.Document)}, nil
 	}, reader, writer))
-	// read and find look into one document by its id (D71, D72): the visibility is resolve's, a document the caller cannot see
-	// is a 404 whatever the reason, and the package they make is sealed and stored like resolve's
-	lookInto := func(in func(r *http.Request) (id, purpose string, err error), run func(ctx context.Context, tenant string, v postgres.Visibility) (*cmi.Package, *cmi.Envelope, error)) func(r *http.Request, p authorization.Principal) (int, any, error) {
+	// read and find look into one document by its id (D72, D73): the request is validated first; the version that would be read
+	// is found under the visibility of resolve (a document the caller cannot see is a 404 whatever the reason); the PDP is
+	// asked about that version, not about the id the caller named, so a rule on a document cannot be got round with the id of
+	// an older version (D76); and the package they make is sealed and stored like resolve's
+	lookInto := func(valid func() error, target func(ctx context.Context, tenant string, v postgres.Visibility) (*cmictx.Target, error), purpose func() string,
+		run func(ctx context.Context, tenant string, v postgres.Visibility, version string) (*cmi.Package, *cmi.Envelope, error)) func(r *http.Request, p authorization.Principal) (int, any, error) {
 		return func(r *http.Request, p authorization.Principal) (int, any, error) {
-			id, purpose, err := in(r)
-			if err != nil {
-				return 0, nil, err
+			if err := valid(); err != nil {
+				return 0, nil, requestError(err)
 			}
 			v, err := a.visibility(r.Context(), p)
 			if err != nil {
 				return 0, nil, err
 			}
-			o, err := a.authorize(r, p, "knowledge.read", pdp.Resource{Kind: "knowledge", ID: id}, purpose)
+			t, err := target(r.Context(), p.Tenant, v)
+			if err != nil {
+				return 0, nil, requestError(err)
+			}
+			o, err := a.authorize(r, p, "knowledge.read", pdp.Resource{Kind: "knowledge", ID: t.ID, Source: t.Source, Sensitivity: t.Sensitivity}, purpose())
 			if err != nil {
 				return 0, nil, err
 			}
-			pkg, env, err := run(r.Context(), p.Tenant, narrow(v, o))
+			pkg, env, err := run(r.Context(), p.Tenant, narrow(v, o), t.ID)
 			if err != nil {
 				if a.resolves != nil {
 					a.resolves.Inc("error")
 				}
-				var se *postgres.Error
-				if errors.As(err, &se) {
-					return 0, nil, err
-				}
-				return 0, nil, transport.Fail(http.StatusUnprocessableEntity, "INVALID", err.Error())
+				return 0, nil, requestError(err)
 			}
 			if a.resolves != nil {
 				a.resolves.Inc("ok")
@@ -1181,19 +1189,25 @@ func (a *API) Handler() http.Handler {
 	}
 	mux.Handle("POST /v1/context/read", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		var in cmictx.ReadRequest
-		return lookInto(func(r *http.Request) (string, string, error) {
-			err := decode(r, &in)
-			return in.DocumentID, in.Purpose, err
-		}, func(ctx context.Context, tenant string, v postgres.Visibility) (*cmi.Package, *cmi.Envelope, error) {
+		if err := decode(r, &in); err != nil {
+			return 0, nil, err
+		}
+		return lookInto(in.Validate, func(ctx context.Context, tenant string, v postgres.Visibility) (*cmictx.Target, error) {
+			return a.Resolver.TargetOf(ctx, tenant, v, in.DocumentID, in.SensitivityCeiling, in.AsOf)
+		}, func() string { return in.Purpose }, func(ctx context.Context, tenant string, v postgres.Visibility, version string) (*cmi.Package, *cmi.Envelope, error) {
+			in.RequireVersion = version
 			return a.Resolver.Read(ctx, tenant, v, in)
 		})(r, p)
 	}, reader, writer))
 	mux.Handle("POST /v1/context/find", a.role(func(r *http.Request, p authorization.Principal) (int, any, error) {
 		var in cmictx.FindRequest
-		return lookInto(func(r *http.Request) (string, string, error) {
-			err := decode(r, &in)
-			return in.DocumentID, in.Purpose, err
-		}, func(ctx context.Context, tenant string, v postgres.Visibility) (*cmi.Package, *cmi.Envelope, error) {
+		if err := decode(r, &in); err != nil {
+			return 0, nil, err
+		}
+		return lookInto(in.Validate, func(ctx context.Context, tenant string, v postgres.Visibility) (*cmictx.Target, error) {
+			return a.Resolver.TargetOf(ctx, tenant, v, in.DocumentID, in.SensitivityCeiling, in.AsOf)
+		}, func() string { return in.Purpose }, func(ctx context.Context, tenant string, v postgres.Visibility, version string) (*cmi.Package, *cmi.Envelope, error) {
+			in.RequireVersion = version
 			return a.Resolver.Find(ctx, tenant, v, in)
 		})(r, p)
 	}, reader, writer))

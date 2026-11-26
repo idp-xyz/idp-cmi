@@ -511,9 +511,13 @@ func auditPersonalRead(ctx context.Context, tx pgx.Tx, tenant string, v Visibili
 	return Audit(ctx, tx, tenant, v.Subject, "knowledge.read_other", id, map[string]any{"via": via, "subject": scopeID, "document": docID, "client": v.Client, "actor": v.Actor})
 }
 
-// auditNamedBases records that a resolve named another member's personal base in its knowledgeBases filter (D72): a
+// AuditNamedBases records that a resolve named another member's personal base in its knowledgeBases filter (D71): a
 // knowledge.read_other for each such base, like naming it in a scope (D53). Naming does not widen what is visible; the
 // event says who reached for whose.
+func (s *Store) AuditNamedBases(ctx context.Context, tenant string, v Visibility, names []string) error {
+	return s.InTenant(ctx, tenant, func(tx pgx.Tx) error { return auditNamedBases(ctx, tx, tenant, v, names) })
+}
+
 func auditNamedBases(ctx context.Context, tx pgx.Tx, tenant string, v Visibility, names []string) error {
 	if len(names) == 0 {
 		return nil

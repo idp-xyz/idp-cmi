@@ -740,7 +740,8 @@ type Item struct {
 	Scope       *Scope    `json:"scope,omitempty"`    // the memory's scope (D22); knowledge has none
 	Match       string    `json:"match,omitempty"`    // which retriever found it: lexical, semantic or both (D11)
 	Locator     *Locator  `json:"locator,omitempty"`  // where in the document a knowledge chunk is: its heading path, page and table (D49)
-	Hits        []TextHit `json:"hits,omitempty"`     // where the searched text is in the chunk's body, set by find (1.7.0, D72)
+	Hits        []TextHit `json:"hits,omitempty"`     // where the searched text is in the excerpt, as returned, set by find (1.7.0, D73, D75)
+	HitCount    int       `json:"hitCount,omitempty"` // how many times the searched text is in the chunk (1.7.0, D75)
 	Flags       []string  `json:"flags,omitempty"`    // present only when the tenant policy lets flagged content through (D12)
 }
 
@@ -760,11 +761,12 @@ const (
 	MatchLexical  = "lexical"
 	MatchSemantic = "semantic"
 	MatchBoth     = "both"
-	MatchExact    = "exact" // the text a find asked for is in the chunk, word for word (1.7.0, D72)
+	MatchExact    = "exact" // the text a find asked for is in the chunk, word for word (1.7.0, D73)
 )
 
-// TextHit is one place a find matched in a chunk's body: Offset and Length count Unicode code points of the body (the
-// chunk text without its heading line), and Length is that of the matched text as it stands in the body (D72).
+// TextHit is one place a find matched in an item's excerpt, as the excerpt is returned: Offset and Length count Unicode
+// code points, so the heading line and a leading ellipsis are counted, and Length is that of the matched text as it stands
+// there (D75).
 type TextHit struct {
 	Offset int `json:"offset"`
 	Length int `json:"length"`

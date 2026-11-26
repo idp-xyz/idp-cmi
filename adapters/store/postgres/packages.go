@@ -28,14 +28,23 @@ type StoredPackage struct {
 
 // SavePackage stores a sealed package.
 func (s *Store) SavePackage(ctx context.Context, tenant string, env *cmi.Envelope, p *cmi.Package) error {
+	return s.SaveConsultingPackage(ctx, tenant, env, p, nil)
+}
+
+// SaveConsultingPackage stores a sealed package and the versions of documents it consulted - what a read or a find looked
+// into, whether or not any item came out of it (D76): erasing a document finds the packages that consulted it by these.
+func (s *Store) SaveConsultingPackage(ctx context.Context, tenant string, env *cmi.Envelope, p *cmi.Package, consulted []string) error {
+	if consulted == nil {
+		consulted = []string{}
+	}
 	refs := make([]ItemRef, 0, len(p.Items))
 	for _, it := range p.Items {
 		refs = append(refs, ItemRef{Kind: it.Kind, ID: it.ID})
 	}
 	raw, _ := json.Marshal(refs)
 	return s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO context_packages (id, tenant_id, requested_by, digest, document, item_refs, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			p.ID, tenant, p.RequestedBy, env.Digest, string(env.Document), raw, p.ExpiresAt)
+		_, err := tx.Exec(ctx, `INSERT INTO context_packages (id, tenant_id, requested_by, digest, document, item_refs, expires_at, consulted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid[])`,
+			p.ID, tenant, p.RequestedBy, env.Digest, string(env.Document), raw, p.ExpiresAt, consulted)
 		return err
 	})
 }

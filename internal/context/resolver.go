@@ -40,8 +40,8 @@ type Request struct {
 	MaxAgeDays         int          `json:"maxAgeDays,omitempty"`
 	SensitivityCeiling string       `json:"sensitivityCeiling,omitempty"` // may only lower the principal's ceiling
 	Entities           []cmi.Entity `json:"entities,omitempty"`           // only content referencing one of these business objects (D13)
-	KnowledgeBases     []string     `json:"knowledgeBases,omitempty"`     // only knowledge in these bases, by name; visibility is as without (1.7.0, D72)
-	DocTypes           []string     `json:"docTypes,omitempty"`           // only knowledge of these document types (1.7.0, D72)
+	KnowledgeBases     []string     `json:"knowledgeBases,omitempty"`     // only knowledge in these bases, by name; visibility is as without (1.7.0, D71)
+	DocTypes           []string     `json:"docTypes,omitempty"`           // only knowledge of these document types (1.7.0, D71)
 }
 
 // Validate checks a request.
@@ -233,13 +233,13 @@ func (r *Resolver) rerank(ctx context.Context, query string, cands []candidate, 
 // Resolve assembles, seals and stores a package for the principal.
 func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibility, req Request) (*cmi.Package, *cmi.Envelope, error) {
 	if err := req.Validate(); err != nil {
-		return nil, nil, err
+		return nil, nil, invalid(err)
 	}
 	now := r.now()
 	at := now // the business time items must be valid at
 	if req.AsOf != nil {
 		if err := req.AsOf.Validate(now); err != nil {
-			return nil, nil, err
+			return nil, nil, invalid(err)
 		}
 		req.AsOf.Normalize(now)
 		at = req.AsOf.Valid
@@ -269,6 +269,26 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 	if err != nil {
 		return nil, nil, err
 	}
+	// D53: the default scope is the enterprise bases, the caller's units and the caller's own personal base. Another
+	// member's personal base is read only when the request names that member's subject scope (the API
+	// has checked the caller may, and audits the read of its chunks).
+	vk := v // the view for knowledge: v, plus the other members' personal bases the request names
+	if wantKnowledge {
+		named := map[string]bool{}
+		for _, sc := range append(append([]cmi.Scope{}, req.Scopes...), scopeList(req.Scope)...) {
+			if sc.Kind == cmi.ScopeSubject && sc.ID != v.Subject && !named[sc.ID] {
+				named[sc.ID] = true
+				vk.NamedSubjects = append(vk.NamedSubjects, sc.ID)
+			}
+		}
+	}
+	// naming another member's personal base in knowledgeBases is audited once per resolve, whatever the kinds and the
+	// query (D71): the reach is the record, not what came of it
+	if len(req.KnowledgeBases) > 0 {
+		if err := r.Store.AuditNamedBases(ctx, tenant, v, req.KnowledgeBases); err != nil {
+			return nil, nil, err
+		}
+	}
 	q := postgres.Query{TSQuery: TSQuery(req.Query), Entities: cmi.EntityKeys(req.Entities), IncludeFlagged: policy.IncludeFlagged, Limit: 200, AsOf: req.AsOf, KnowledgeBases: req.KnowledgeBases, DocTypes: req.DocTypes}
 	if r.Embedder != nil {
 		if vecs, err := r.Embedder.Embed(ctx, []string{req.Query}); err == nil && len(vecs) == 1 {
@@ -283,7 +303,6 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 	}
 	var cands []candidate
 	var memoryScopes []cmi.Scope
-	vk := v // the view for knowledge: v, plus the other members' personal bases the request names (D53)
 	if q.TSQuery != "" || len(q.Vector) > 0 {
 		if wantMemory {
 			// D22: tenant, the caller, the caller's units, and what the request names (unit scopes it names
@@ -335,16 +354,6 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 			}
 		}
 		if wantKnowledge {
-			// D53: the default scope is the enterprise bases, the caller's units and the caller's own personal base. Another
-			// member's personal base is read only when the request names that member's subject scope (the API
-			// has checked the caller may, and audits the read of its chunks).
-			named := map[string]bool{}
-			for _, sc := range append(append([]cmi.Scope{}, req.Scopes...), scopeList(req.Scope)...) {
-				if sc.Kind == cmi.ScopeSubject && sc.ID != v.Subject && !named[sc.ID] {
-					named[sc.ID] = true
-					vk.NamedSubjects = append(vk.NamedSubjects, sc.ID)
-				}
-			}
 			hits, err := r.Store.SearchKnowledge(ctx, tenant, q, req.Sources, vk)
 			if err != nil {
 				return nil, nil, err

@@ -3,8 +3,10 @@ package context
 import (
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
+	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/cmi"
 )
 
@@ -130,7 +132,7 @@ func TestAWindowIsCutBetweenCharactersAndCentredOnTheHit(t *testing.T) {
 	text := strings.Repeat("字", 400) + "needle" + strings.Repeat("词", 400) // 2400 + 6 + 1200 bytes
 	hit := hitsOf(text, "needle")[0]
 	for _, max := range []int{7, 20, 100, 1500} {
-		w := window(text, hit, max)
+		w := windowAround(text, hit, max).text
 		if !utf8.ValidString(w) {
 			t.Fatalf("max %d: the window is not valid UTF-8", max)
 		}
@@ -145,20 +147,58 @@ func TestAWindowIsCutBetweenCharactersAndCentredOnTheHit(t *testing.T) {
 		}
 	}
 	// centred: about as much before as after
-	w := window(text, hit, 1500)
+	w := windowAround(text, hit, 1500).text
 	before, after := strings.Index(w, "needle"), len(w)-strings.Index(w, "needle")-6
 	if before < 500 || after < 500 {
 		t.Errorf("the hit is not in the middle of the window: %d bytes before, %d after", before, after)
 	}
 	// a hit longer than the window shows its beginning, still whole characters
 	long := strings.Repeat("字", 600)
-	w = window(long, cmi.TextHit{Offset: 0, Length: 600}, 100)
+	w = windowAround(long, cmi.TextHit{Offset: 0, Length: 600}, 100).text
 	if !utf8.ValidString(w) || len(strings.Trim(w, "…")) > 100 || !strings.HasSuffix(w, "…") {
 		t.Errorf("a long hit: %q", w)
 	}
 	// a text that fits is whole
-	if w := window("short text", cmi.TextHit{Offset: 2, Length: 3}, 1500); w != "short text" {
+	if w := windowAround("short text", cmi.TextHit{Offset: 2, Length: 3}, 1500).text; w != "short text" {
 		t.Errorf("%q", w)
+	}
+}
+
+// the hits of an item are offsets into the excerpt as it is returned: after the section line and after the ellipsis of a cut
+// start; a hit the window cuts is not listed (D75)
+func TestHitsAreOffsetsIntoTheExcerptAsReturned(t *testing.T) {
+	text := "  " + strings.Repeat("字", 400) + " needle " + strings.Repeat("词", 400) + " needle again " + strings.Repeat("句", 300)
+	hits := hitsOf(text, "needle")
+	if len(hits) != 2 {
+		t.Fatalf("%v", hits)
+	}
+	section := "Rates › Morning\n"
+	w := windowAround(text, hits[0], 1500)
+	excerpt := []rune(section + w.text)
+	placed := w.place(hits, utf8.RuneCountInString(section))
+	if len(placed) == 0 || len(placed) > 2 {
+		t.Fatalf("%v", placed)
+	}
+	for _, h := range placed {
+		if got := string(excerpt[h.Offset : h.Offset+h.Length]); got != "needle" {
+			t.Errorf("hit %v is %q in the excerpt", h, got)
+		}
+	}
+	// a window that fits the whole text keeps white space out of the offsets
+	short := "\n\n  one needle here  \n"
+	h := hitsOf(short, "needle")
+	w = windowAround(short, h[0], 1500)
+	if got := w.place(h, 0); len(got) != 1 || w.text[got[0].Offset:got[0].Offset+got[0].Length] != "needle" {
+		t.Errorf("%q %v", w.text, got)
+	}
+	// a hit that the cut window does not hold whole is not listed
+	two := strings.Repeat("a", 1400) + " needle " + strings.Repeat("b", 1400)
+	h = hitsOf(two, "needle")
+	if got := windowAround(two, h[0], 100).place(h, 0); len(got) != 1 {
+		t.Errorf("the hit at the centre: %v", got)
+	}
+	if got := windowAround(two, cmi.TextHit{Offset: 0, Length: 6}, 100).place(h, 0); len(got) != 0 {
+		t.Errorf("a hit outside the window is listed: %v", got)
 	}
 }
 
@@ -166,5 +206,108 @@ func TestFoldTextKeepsWhereEachCharacterWas(t *testing.T) {
 	f := foldFull("A \n b")
 	if string(f.runes) != "a b" || f.start[1] != 1 || f.end[1] != 4 || f.start[2] != 4 {
 		t.Fatalf("%+v", f)
+	}
+}
+
+func chunksOf(loc *cmi.Locator, texts ...string) []postgres.DocChunk {
+	var out []postgres.DocChunk
+	for i, t := range texts {
+		out = append(out, postgres.DocChunk{Seq: i, Content: t, Locator: loc})
+	}
+	return out
+}
+
+// a text that runs across the cut between two chunks of one section is found, on the chunk where it begins, once (D73)
+func TestFindCrossesTheSeamBetweenChunks(t *testing.T) {
+	cut := strings.Repeat("字", 100) + "取件时"
+	chunks := chunksOf(&cmi.Locator{Headings: []string{"Rates"}}, cut, "间是上午七点。"+strings.Repeat("词", 50), "取件时间again")
+	got := findInChunks(chunks, foldText("取件时间"))
+	if len(got[0]) != 1 || got[0][0] != (cmi.TextHit{Offset: 100, Length: 3}) {
+		t.Fatalf("on the chunk where it begins, clipped to its end: %v", got)
+	}
+	if len(got[1]) != 0 {
+		t.Fatalf("counted again on the next chunk: %v", got[1])
+	}
+	if len(got[2]) != 1 || got[2][0].Offset != 0 {
+		t.Fatalf("a text inside a chunk: %v", got[2])
+	}
+	// a cut where the white space went: one space joins the two sides
+	got = findInChunks(chunksOf(nil, "the late", "pickup slot"), foldText("late pickup"))
+	if len(got[0]) != 1 || got[0][0] != (cmi.TextHit{Offset: 4, Length: 4}) || len(got[1]) != 0 {
+		t.Fatalf("%v", got)
+	}
+	// the characters a seam match used are not matched again by the next chunk
+	got = findInChunks(chunksOf(nil, "xaa", "abab"), foldText("aab"))
+	if len(got[0]) != 1 || len(got[1]) != 0 {
+		t.Fatalf("%v", got)
+	}
+	// a seam match that would overlap a hit inside the chunk it begins in is not a second hit
+	got = findInChunks(chunksOf(nil, "aaaa", "abxx"), foldText("aaa"))
+	if len(got[0]) != 1 || got[0][0].Offset != 0 || len(got[1]) != 0 {
+		t.Fatalf("%v", got)
+	}
+	// the characters a seam match used are not a hit of the next chunk again
+	got = findInChunks(chunksOf(nil, "xab", "abab"), foldText("aba"))
+	if len(got[0]) != 1 || got[0][0] != (cmi.TextHit{Offset: 1, Length: 2}) || len(got[1]) != 0 {
+		t.Fatalf("%v", got)
+	}
+	// chunks of different sections, and rows of a table, are not one run of text
+	if got := findInChunks(chunksOf(nil, "取件时")[:1], foldText("取件时间")); len(got) != 0 {
+		t.Fatalf("%v", got)
+	}
+	a, b := chunksOf(&cmi.Locator{Headings: []string{"A"}}, "取件时"), chunksOf(&cmi.Locator{Headings: []string{"B"}}, "间")
+	if got := findInChunks(append(a, b...), foldText("取件时间")); len(got) != 0 {
+		t.Fatalf("across two sections: %v", got)
+	}
+	tab := &cmi.Locator{Table: "T"}
+	if got := findInChunks(chunksOf(tab, "| 取件时", "间 |"), foldText("取件时间")); len(got) != 0 {
+		t.Fatalf("across the rows of a table: %v", got)
+	}
+}
+
+// the work of a find is linear in the text whatever the text is: a document of the largest size that has the worst case for a
+// search that starts again at every character takes a moment (D73)
+func TestFindIsLinearOnAPathologicalDocument(t *testing.T) {
+	const size = 4 << 20
+	needle := foldText(strings.Repeat("a", 2999) + "b")
+	var chunks []postgres.DocChunk
+	for n := 0; n < size; n += 1500 {
+		chunks = append(chunks, postgres.DocChunk{Seq: len(chunks), Content: strings.Repeat("a", 1500)})
+	}
+	start := time.Now()
+	if got := findInChunks(chunks, needle); len(got) != 0 {
+		t.Fatalf("%d chunks have hits", len(got))
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("a find over %d bytes took %v", size, d)
+	}
+	start = time.Now()
+	one := strings.Repeat("a", size)
+	if got := findAll(one, needle); len(got) != 0 {
+		t.Fatal("hit")
+	}
+	if got := findAll(one, foldText(strings.Repeat("a", 1000))); len(got) != size/1000 {
+		t.Fatalf("%d hits", len(got))
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("a find in one chunk of %d bytes took %v", size, d)
+	}
+}
+
+func TestAReadQueryFitsAPackageAndIsNotEscaped(t *testing.T) {
+	id := "11111111-1111-4111-8111-111111111111"
+	long := &cmi.Locator{Headings: []string{"A & B <c>"}}
+	for i := 0; i < 200; i++ {
+		long.Headings = append(long.Headings, strings.Repeat("标题", 10))
+	}
+	q := readQuery(ReadRequest{DocumentID: id, Locator: long})
+	if len(q) > 4096 || !utf8.ValidString(q) || !strings.HasPrefix(q, "read "+id+` {"headings":["A & B <c>"`) {
+		t.Fatalf("%d bytes: %.120q", len(q), q)
+	}
+	if got := readQuery(ReadRequest{DocumentID: id, Locator: &cmi.Locator{Page: 2}}); got != "read "+id+` {"page":2}` {
+		t.Fatalf("%q", got)
+	}
+	if got := readQuery(ReadRequest{DocumentID: id}); got != "read "+id {
+		t.Fatalf("%q", got)
 	}
 }

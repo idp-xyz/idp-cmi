@@ -76,10 +76,10 @@ PDF、Word、PowerPoint、Excel 的原件存进对象存储之后，由一个**�
 解析给的是"最像的几块"；模型要核对一个条款、读一个表格范围时需要的是**这份文档的这个位置**或**这段原话**。两个新接口在一份文档里做这件事，可见范围与解析是同一条 SQL 谓词（D7、D52、D53），产出的包与解析的包一样密封、保存、可核验、会被擦除。
 
 - **`POST /v1/context/read`** `{documentId, locator?, around?, budget?, purpose?, asOf?, sensitivityCeiling?}`：按 `locator` 取这份文档里的块，按文档顺序，前后各带 `around` 块（缺省 1，最多 5），不超过预算（放不下的在 `omitted.budget`）。`page`、`slide` 精确；`headings` 按标题路径前缀；`sheet` 精确、`range` 有重叠即算；给出几项就要全部成立；不给 `locator` 从开头读到预算用完。
-- **`POST /v1/context/find`** `{documentId, text, maxHits?, budget?, purpose?, asOf?, sensitivityCeiling?}`：子串匹配，空白先规范化，只对 ASCII 字母不分大小写，中文按字。条目是含这段文字的块，`match` 为 `exact`，`hits: [{offset, length}]` 是在块正文里的位置（按字符，即 Unicode 码点），摘录以第一处为中心；`maxHits` 缺省 20，最多 100。
+- **`POST /v1/context/find`** `{documentId, text, maxHits?, budget?, purpose?, asOf?, sensitivityCeiling?}`：子串匹配，空白先规范化，只对 ASCII 字母不分大小写，中文按字。条目是含这段文字的块，`match` 为 `exact`，`hits: [{offset, length}]` 是在这一项**摘录**里的位置（按字符，即 Unicode 码点，摘录是返回的原样，标题行与开头的 `…` 都算；只列完全落在摘录里的），`hitCount` 是这一块里命中的总数，摘录以第一处为中心；线性匹配，跨过两块之间的接缝的话也找得到（记在它开始的那一块上）；`maxHits` 缺省 20，最多 100。
 - **文档 id 指的是一份文档**：读到的是 `asOf`（缺省现在）那一刻这个 id 所在的库与 uri 的现行版本（D52）；`pending` 的版本不读；擦除了或撤回了的版本，它的 id 什么也指不到。看不到的文档一律 404，原因不说（另一个租户的、别的成员的个人库、超出敏感上限、ACL 之外、被撤回、过期、被擦除、不存在）。读或找另一个成员个人库里的文档要有点名权（写入服务与管理员），记 `knowledge.read_other`。
-- **解析的 `knowledgeBases` 与 `docTypes`**（可选）：只取这些库（按名）、这些文档类别的知识条目；记忆条目不受影响；不扩大可见范围；点名别人的个人库记 `knowledge.read_other`。
-- **契约 `idp.telos.cmi` 1.7.0**（只做新增）：`ContextItem.match` 增 `exact`、增 `hits`；OpenAPI 增两个路由和解析请求的两个字段。没有迁移。
+- **解析的 `knowledgeBases` 与 `docTypes`**（可选）：只取这些库（按名，`me` 是自己的个人库）、这些文档类别的知识条目；记忆条目不受影响；不扩大可见范围；点名别人的个人库记 `knowledge.read_other`。
+- **契约 `idp.telos.cmi` 1.7.0**（只做新增）：`ContextItem.match` 增 `exact`、增 `hits`；OpenAPI 增两个路由和解析请求的两个字段。**迁移 0019**（评审之后，D76）：`knowledge_documents.in_force_since`（版本变成 active 的那一刻，asOf 视图只从这一刻起才看得到它；回填的判断见迁移文件与 D76）与 `context_packages.consulted`（读与找查过的版本，没有条目的包也能被擦除找到）。**升级**：迁移在启动时自动做，不改写已有行的内容。**部署规则**：HOST 调用 `read`、`find` 必须带成员换来的令牌，不用它自己的服务令牌（写入服务与管理员能按 id 读任何成员的个人库，D74）。
 
 ## 许可证
 

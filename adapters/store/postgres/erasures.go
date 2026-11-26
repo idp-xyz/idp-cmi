@@ -599,15 +599,19 @@ func (s *Store) redactPackages(ctx context.Context, tx pgx.Tx, e *Erasure, n *in
 			return err
 		}
 	}
-	rows, err := tx.Query(ctx, `SELECT id::text, document FROM context_packages WHERE item_refs @> ANY(SELECT jsonb_build_array(jsonb_build_object('id', x)) FROM unnest($1::text[]) AS x)`, all)
+	rows, err := tx.Query(ctx, `SELECT id::text, document, consulted && $2::uuid[] FROM context_packages
+		WHERE item_refs @> ANY(SELECT jsonb_build_array(jsonb_build_object('id', x)) FROM unnest($1::text[]) AS x) OR consulted && $2::uuid[]`, all, orEmpty(e.DocumentIDs))
 	if err != nil {
 		return err
 	}
-	type pkg struct{ id, doc string }
+	type pkg struct {
+		id, doc   string
+		consulted bool // a read or a find looked into an erased document (D76), whatever it returned
+	}
 	var pkgs []pkg
 	for rows.Next() {
 		var p pkg
-		if err := rows.Scan(&p.id, &p.doc); err != nil {
+		if err := rows.Scan(&p.id, &p.doc, &p.consulted); err != nil {
 			rows.Close()
 			return err
 		}
@@ -623,14 +627,20 @@ func (s *Store) redactPackages(ctx context.Context, tx pgx.Tx, e *Erasure, n *in
 			return err
 		}
 		items, _ := doc["items"].([]any)
-		changed, searched := false, false
+		changed := p.consulted
 		for _, it := range items {
 			m, _ := it.(map[string]any)
 			if id, _ := m["id"].(string); targets[id] {
 				m["excerpt"] = Erased
-				if _, ok := m["hits"]; ok { // where a text sits in the erased chunk (find, D72)
-					delete(m, "hits")
-					searched = true
+				delete(m, "hits") // where a text sits in the erased chunk (find, D73)
+				delete(m, "hitCount")
+				if loc, ok := m["locator"].(map[string]any); ok { // the section, worksheet and table names are text of the document (D76)
+					delete(loc, "headings")
+					delete(loc, "sheet")
+					delete(loc, "table")
+					if len(loc) == 0 {
+						delete(m, "locator")
+					}
 				}
 				if ref, _ := m["ref"].(string); ref != "" && uris[id] != "" {
 					if i := strings.LastIndex(ref, "#"); i >= 0 {
@@ -649,8 +659,9 @@ func (s *Store) redactPackages(ctx context.Context, tx pgx.Tx, e *Erasure, n *in
 		if !changed {
 			continue
 		}
-		// the text a find looked for is text of the erased document, and what a read asked for names its sections (D72)
-		if q, _ := doc["query"].(string); searched || (len(q) > 41 && strings.HasPrefix(q, "read ") && IsUUID(q[5:41])) {
+		// what a find looked for is text of the erased document, and what a read asked for names its sections (D75, D76): the
+		// query of a package that consulted the document goes, with or without items
+		if p.consulted {
 			doc["query"] = Erased
 		}
 		raw, err := canonical.Canonical(doc)

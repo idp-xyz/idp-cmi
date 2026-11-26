@@ -559,7 +559,7 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 	const from = ` FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id JOIN sources s ON s.id = d.source_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x`
 	const locator = `, c.heading_path, c.page, c.table_name, c.slide, c.sheet, c.cell_range`
 	// the placeholders after $9 differ by retriever: the lexical statement has the base and type filters at $10 and $11, the
-	// vector one has the model at $10 and the filters at $11 and $12 (D72); a bitemporal view follows them.
+	// vector one has the model at $10 and the filters at $11 and $12 (D71); a bitemporal view follows them.
 	filters := func(usable, kb, dt string) string {
 		return ` AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))` + usable + kbScopeSQL + ` AND ($6 OR cardinality(c.flags) = 0)` + entityFilterSQL("knowledge", "d.id", "$7") + excludeSQL("$9") + baseDocTypeSQL(kb, dt)
 	}
@@ -654,14 +654,14 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 				return err
 			}
 		}
-		if err := auditNamedBases(ctx, tx, tenant, v, q.KnowledgeBases); err != nil {
-			return err
-		}
 		counts := map[string]int{}
 		for _, h := range byKey {
 			if h.Semantic > 0 || h.Lexical > 0 {
 				counts[h.Document.KnowledgeBase]++
 			}
+		}
+		for _, name := range q.KnowledgeBases { // a base the request names was audited by the resolver, once (D71)
+			delete(counts, name)
 		}
 		return auditNamedHits(ctx, tx, tenant, v, counts)
 	})
