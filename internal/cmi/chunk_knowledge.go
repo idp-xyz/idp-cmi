@@ -41,6 +41,7 @@ type LocatedChunk struct {
 	Sheet    string // the worksheet of a spreadsheet's text ("" for other text)
 	Range    string // the cells a piece of a worksheet's table covers, e.g. A12:F40
 	Table    string // set when this piece is rows of a named table
+	CutAfter bool   // the piece ends at a hard cut of a long line: the text goes on in the next piece with nothing between (D77)
 }
 
 // SplitHeadingPath is the inverse of Path.
@@ -264,8 +265,9 @@ func rowNumber(line string) int {
 
 func locatePlain(text string, headings []string, page int) []LocatedChunk {
 	var out []LocatedChunk
-	for _, body := range Chunk(text, KnowledgeChunkBytes) {
-		out = append(out, LocatedChunk{Body: body, Headings: append([]string(nil), headings...), Page: page})
+	bodies, cuts := ChunkCuts(text, KnowledgeChunkBytes)
+	for i, body := range bodies {
+		out = append(out, LocatedChunk{Body: body, Headings: append([]string(nil), headings...), Page: page, CutAfter: cuts[i]})
 	}
 	return out
 }

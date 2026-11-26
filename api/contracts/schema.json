@@ -713,6 +713,10 @@
           "format": "date-time",
           "description": "应复核的时间"
         },
+        "awaitsOriginal": {
+          "type": "boolean",
+          "description": "写入字段（1.7.0，D77）：这一版一开始就是 pending，等着随后存进来的 PDF 或 Office 原件转成的文本；文本提交的那一刻它才生效。已经生效的版本不会再换文本：给它存要转换的原件是 409，写一个新版本"
+        },
         "original": {
           "type": "object",
           "additionalProperties": false,

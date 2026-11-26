@@ -335,3 +335,26 @@ func TestAPageOrSlideNumberThatIsNoNumberOfTheDatabaseIsNoLocation(t *testing.T)
 		t.Fatalf("%+v", c[3])
 	}
 }
+
+// a chunk that ends where a long line was cut is marked: the text goes on in the next chunk with nothing between (D77)
+func TestChunkCutsSaysWhichChunksEndAtAHardCut(t *testing.T) {
+	long := strings.Repeat("字", 1100) // 3300 bytes: cut at 1500 and 1500
+	bodies, cuts := ChunkCuts(long, KnowledgeChunkBytes)
+	if len(bodies) != 3 || !cuts[0] || !cuts[1] || cuts[2] {
+		t.Fatalf("%d chunks, cuts %v", len(bodies), cuts)
+	}
+	if strings.Join(bodies, "") != long {
+		t.Fatal("the pieces do not make the line")
+	}
+	paras := strings.Repeat("a paragraph of some words.\n\n", 100)
+	_, cuts = ChunkCuts(paras, KnowledgeChunkBytes)
+	for i, c := range cuts {
+		if c {
+			t.Fatalf("chunk %d of paragraphs is a hard cut", i)
+		}
+	}
+	got := ChunkKnowledge("# Part\n\n" + long)
+	if len(got) != 3 || !got[0].CutAfter || got[2].CutAfter {
+		t.Fatalf("%+v", got)
+	}
+}

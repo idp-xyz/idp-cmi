@@ -105,9 +105,10 @@ func findAll(text string, needle folded) []cmi.TextHit {
 
 // scanned is a chunk already searched, kept for the seam with the next one.
 type scanned struct {
-	f       folded
-	origLen int // characters of the original text
-	lastEnd int // where in f the last hit ended
+	f        folded
+	origLen  int  // characters of the original text
+	lastEnd  int  // where in f the last hit, or the last character a text begun before this chunk used, ended
+	cutAfter bool // the chunk ends at a hard cut (D77)
 }
 
 // sameSection says two consecutive chunks are cuts of one run of text, so that a text may run across the seam between them:
@@ -132,8 +133,9 @@ func sameSection(a, b *cmi.Locator) bool {
 
 // seamHit looks for a text that begins at the end of a chunk and goes on at the start of the next (D73): the chunker cuts a
 // long paragraph where the size is reached, in the middle of a word or a Chinese phrase, or between paragraphs. The end of
-// the first chunk and the start of the second are joined with nothing and with one space (the white space at a cut is gone)
-// and searched. It returns the hit in the first chunk, its length clipped to that chunk's end, and how many characters of
+// the first chunk and the start of the second are joined and searched: with nothing when the first was cut where the size
+// limit was reached (the text goes on with the next character), with exactly one space everywhere else (the chunk ended at
+// a line or a paragraph, whose white space is gone, as a run of white space inside a chunk is one space) (D77). It returns the hit in the first chunk, its length clipped to that chunk's end, and how many characters of
 // the second chunk the text used.
 func seamHit(prev *scanned, next folded, needle folded, fail []int) (cmi.TextHit, int, bool) {
 	n := len(needle.runes)
@@ -142,7 +144,11 @@ func seamHit(prev *scanned, next folded, needle folded, fail []int) (cmi.TextHit
 	head := next.runes[:min(n-1, len(next.runes))]
 	best, bestUsed, found := cmi.TextHit{}, 0, false
 	bestAt := 0
-	for _, join := range [][]rune{nil, {' '}} {
+	join := []rune{' '}
+	if prev.cutAfter {
+		join = nil
+	}
+	{
 		joined := append(append(append([]rune{}, tail...), join...), head...)
 		for _, m := range kmpAll(joined, needle.runes, fail) {
 			used := m[1] - len(tail) - len(join)
@@ -179,7 +185,7 @@ func findInChunks(chunks []postgres.DocChunk, needle folded) map[int][]cmi.TextH
 				skip = used
 			}
 		}
-		cur := &scanned{f: f, origLen: utf8.RuneCountInString(c.Content)}
+		cur := &scanned{f: f, origLen: utf8.RuneCountInString(c.Content), cutAfter: c.CutAfter, lastEnd: skip} // what a seam match used is not matched again
 		for _, m := range kmpAll(f.runes, needle.runes, fail) {
 			if m[0] < skip {
 				continue

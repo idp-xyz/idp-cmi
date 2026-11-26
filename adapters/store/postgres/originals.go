@@ -220,8 +220,8 @@ func (s *Store) PutOriginal(ctx context.Context, tenant, id string, v Visibility
 			return err
 		}
 		// the row is re-read under the lock: an erasure that began after the permission check is seen here
-		var status string
-		if err := tx.QueryRow(ctx, `SELECT coalesce(d.original_key, ''), d.erasure_id IS NOT NULL, d.status FROM knowledge_documents d WHERE d.id = $1 FOR UPDATE`, target.id).Scan(&current, &erased, &status); err != nil {
+		var status, source, oldSum string
+		if err := tx.QueryRow(ctx, `SELECT coalesce(d.original_key, ''), d.erasure_id IS NOT NULL, d.status, d.text_source, coalesce(d.original_sha256, '') FROM knowledge_documents d WHERE d.id = $1 FOR UPDATE`, target.id).Scan(&current, &erased, &status, &source, &oldSum); err != nil {
 			return err
 		}
 		// a version still waiting for its first text is not given an original that is not converted: nothing would ever
@@ -231,6 +231,12 @@ func (s *Store) PutOriginal(ctx context.Context, tenant, id string, v Visibility
 		}
 		if erased {
 			return fail("NOT_FOUND", "document not found")
+		}
+		// a version that is or was in force keeps its text (D77): a convertible original goes with a new version
+		if _, convert := IngestExtension(media); convert && s.Conversion.Enabled {
+			if err := checkSourceTextUnchanged(target.id, status, source, oldSum == sum); err != nil {
+				return err
+			}
 		}
 		// the permission is decided again under the locks: the base may have been archived, or the caller may have
 		// stopped managing it, since the first check

@@ -375,7 +375,7 @@ func TestReadAndFindTakeTheVersionCurrentAtAsOf(t *testing.T) {
 	}
 
 	// a pending version is never read, and never replaces the version in force (D64)
-	sqlAsOwner(t, e, `UPDATE knowledge_documents SET status = 'pending' WHERE id = $1`, v2)
+	sqlAsOwner(t, e, `UPDATE knowledge_documents SET status = 'pending', in_force_since = NULL WHERE id = $1`, v2) // as a version written with awaitsOriginal is
 	for name, extra := range map[string]map[string]any{"now": nil, "as of now": {"asOf": map[string]any{"valid": time.Now().UTC().Format(time.RFC3339)}}} {
 		got := read(v2, extra)
 		if !strings.Contains(excerpts(got), "oldtariff") || strings.Contains(excerpts(got), "newtariff") || items(got)[0]["id"] != v1 {
@@ -387,7 +387,7 @@ func TestReadAndFindTakeTheVersionCurrentAtAsOf(t *testing.T) {
 	}
 	// a document that has only a pending version is not found
 	only := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://fresh", "", "freshword"))["documentId"].(string)
-	sqlAsOwner(t, e, `UPDATE knowledge_documents SET status = 'pending' WHERE id = $1`, only)
+	sqlAsOwner(t, e, `UPDATE knowledge_documents SET status = 'pending', in_force_since = NULL WHERE id = $1`, only)
 	for _, extra := range []map[string]any{nil, {"asOf": map[string]any{"valid": time.Now().UTC().Format(time.RFC3339)}}} {
 		body := map[string]any{"documentId": only, "purpose": "p"}
 		for k, v := range extra {
@@ -988,8 +988,18 @@ func TestReadAndFindAskThePDP(t *testing.T) {
 	}
 	for _, asOf = range []bool{false, true} {
 		answer = `{"result": {"allow": false, "reason": "probe"}}`
-		if a, b := ask(); a != 403 || b != 403 {
+		denies := auditCount(e, "pdp.deny", "")
+		if a, b := ask(); a != 404 || b != 404 { // a denial is told as a document that is not there (D77)
 			t.Fatalf("a deny-all PDP: %d %d", a, b)
+		}
+		if auditCount(e, "pdp.deny", "") != denies+2 {
+			t.Fatal("the denials are not audited")
+		}
+		// the answer is the one for an id that does not exist: it does not say which ids are there
+		_, denied := e.call("POST", "/v1/context/read", "carol", map[string]any{"documentId": id, "purpose": "p"})
+		_, missing := e.call("POST", "/v1/context/read", "carol", map[string]any{"documentId": "11111111-2222-4333-8444-555555555555", "purpose": "p"})
+		if fmt.Sprint(denied) != fmt.Sprint(missing) {
+			t.Fatalf("a denial answers differently from a missing document: %v / %v", denied, missing)
 		}
 		for name, obligations := range map[string]string{"excludeSources": `"excludeSources": ["handbook"]`, "maxSensitivity": `"maxSensitivity": "public"`} {
 			answer = `{"result": {"allow": true, "obligations": {` + obligations + `}}}`

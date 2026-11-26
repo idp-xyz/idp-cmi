@@ -410,8 +410,11 @@ type Document struct {
 	ReviewDue     time.Time   `json:"reviewDue,omitzero"`
 	Original      *Original   `json:"original,omitempty"`
 	Ingest        *Ingest     `json:"ingest,omitempty"` // where the conversion of its original into text stands (1.6.0, D63)
-	CreatedBy     string      `json:"createdBy"`
-	CreatedAt     time.Time   `json:"createdAt"`
+	// AwaitsOriginal (a write field, 1.7.0, D77) makes the new version start pending: it waits for the text of the PDF or Office
+	// original that is stored next, and is in force from the moment that text is committed.
+	AwaitsOriginal bool      `json:"awaitsOriginal,omitempty"`
+	CreatedBy      string    `json:"createdBy"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
 // Original is the stored file behind a document version. The object key stays in the database.
@@ -602,14 +605,24 @@ func ValidateDocument(d *Document, text string) error {
 
 // Chunk splits text into index units of about chunkSize bytes on paragraph, then line, boundaries.
 func Chunk(text string, chunkSize int) []string {
+	out, _ := ChunkCuts(text, chunkSize)
+	return out
+}
+
+// ChunkCuts is Chunk that also says, for each chunk, whether it ends at a hard cut: a long line was cut where the size was
+// reached, in the middle of a word or a phrase, so that the text goes on at the start of the next chunk with nothing between
+// (D77). A chunk that ends at a paragraph or a line boundary has white space after it, which is gone.
+func ChunkCuts(text string, chunkSize int) ([]string, []bool) {
 	if chunkSize <= 0 {
 		chunkSize = 1500
 	}
 	var out []string
+	var cuts []bool
 	var cur strings.Builder
-	flush := func() {
+	flush := func(hard bool) {
 		if s := strings.TrimSpace(cur.String()); s != "" {
 			out = append(out, s)
+			cuts = append(cuts, hard)
 		}
 		cur.Reset()
 	}
@@ -619,7 +632,7 @@ func Chunk(text string, chunkSize int) []string {
 			continue
 		}
 		if cur.Len()+len(para)+2 > chunkSize && cur.Len() > 0 {
-			flush()
+			flush(false)
 		}
 		if len(para) > chunkSize { // a long paragraph: split on lines, then hard
 			for _, line := range strings.Split(para, "\n") {
@@ -629,11 +642,11 @@ func Chunk(text string, chunkSize int) []string {
 						cut--
 					}
 					cur.WriteString(line[:cut])
-					flush()
+					flush(true)
 					line = line[cut:]
 				}
 				if cur.Len()+len(line)+1 > chunkSize && cur.Len() > 0 {
-					flush()
+					flush(false)
 				}
 				cur.WriteString(line)
 				cur.WriteString("\n")
@@ -643,8 +656,8 @@ func Chunk(text string, chunkSize int) []string {
 		cur.WriteString(para)
 		cur.WriteString("\n\n")
 	}
-	flush()
-	return out
+	flush(false)
+	return out, cuts
 }
 
 func utf8Boundary(s string, i int) bool { return i >= len(s) || (s[i]&0xC0) != 0x80 }

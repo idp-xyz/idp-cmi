@@ -128,6 +128,15 @@ func (c *conv) pending() bool {
 // stub is a version a member wrote for an original: a placeholder text; the original then arrives.
 func (c *conv) stub(who, path, text string) string {
 	c.t.Helper()
+	body := kbDoc("member-notes", "kb://me/"+path, "", text)
+	body["awaitsOriginal"] = true // the version waits for the text of the original that is stored next, and is in force from that commit (D77)
+	d := c.e.must(201, "POST", "/v1/knowledge/documents", who, body)
+	return d["documentId"].(string)
+}
+
+// plain is a version written active with its text, as a member writes one that has no original to wait for.
+func (c *conv) plain(who, path, text string) string {
+	c.t.Helper()
 	d := c.e.must(201, "POST", "/v1/knowledge/documents", who, kbDoc("member-notes", "kb://me/"+path, "", text))
 	return d["documentId"].(string)
 }
@@ -169,7 +178,7 @@ func locatorOf(it map[string]any) map[string]any {
 
 func TestAPdfOriginalBecomesSearchableTextWithPages(t *testing.T) {
 	c := newConv(t)
-	old := c.stub("bob", "handbook", "the older handbook says ZqxOldRule applies")
+	old := c.plain("bob", "handbook", "the older handbook says ZqxOldRule applies")
 	if len(c.hits("bob", "ZqxOldRule")) != 1 {
 		t.Fatal("the first version is searchable")
 	}
@@ -292,7 +301,7 @@ func TestConversionErrorsArePermanentAndLeaveTheOldVersionCurrent(t *testing.T) 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newConv(t)
-			c.stub("bob", "doc", "the older ZqxKept version")
+			c.plain("bob", "doc", "the older ZqxKept version")
 			id := c.stub("bob", "doc", "placeholder")
 			c.output("TAG", tc.out)
 			c.put("bob", id, mediaPDF, "%PDF TAG")
@@ -483,7 +492,9 @@ func TestAConversionOverTheQuotaFailsWithoutCommitting(t *testing.T) {
 	c := newConv(t)
 	c.e.must(201, "POST", "/api/v1/knowledge/bases", "alice", kbBase("small", "tenant", "", "handbook", map[string]any{"roles": []string{"cmi-admin"}}, 0, 400))
 	c.output("TAG", convtest.Output{Markdown: "<!-- page: 1 -->\n" + strings.Repeat("ZqxBig words in a long text. ", 60)})
-	d := c.e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "kb://small/big", "small", "placeholder"))
+	big := kbDoc("handbook", "kb://small/big", "small", "placeholder")
+	big["awaitsOriginal"] = true
+	d := c.e.must(201, "POST", "/api/v1/knowledge/documents", "alice", big)
 	id := d["documentId"].(string)
 	st, _, raw := c.e.callBytes(http.MethodPut, "/v1/knowledge/documents/"+id+"/original", "alice", mediaPDF, []byte("%PDF TAG"))
 	if st != 200 {
@@ -499,7 +510,7 @@ func TestAConversionOverTheQuotaFailsWithoutCommitting(t *testing.T) {
 func TestWithoutConversionOriginalsAreOnlyStored(t *testing.T) {
 	c := newConv(t)
 	c.e.store.Conversion.Enabled = false
-	id := c.stub("bob", "doc", "the text ZqxStays as written")
+	id := c.plain("bob", "doc", "the text ZqxStays as written")
 	doc := c.put("bob", id, mediaPDF, "%PDF anything")
 	if doc["status"] != "active" || doc["ingest"] != nil {
 		t.Fatalf("%v", doc)
@@ -511,7 +522,7 @@ func TestWithoutConversionOriginalsAreOnlyStored(t *testing.T) {
 
 func TestAMarkdownOriginalIsNotConverted(t *testing.T) {
 	c := newConv(t)
-	id := c.stub("bob", "doc", "the notes ZqxNotes text")
+	id := c.plain("bob", "doc", "the notes ZqxNotes text")
 	doc := c.put("bob", id, "text/markdown", "# notes")
 	if doc["status"] != "active" || doc["ingest"] != nil {
 		t.Fatalf("a text original is its own text: %v", doc)
@@ -539,7 +550,7 @@ func TestRetryingAFailedConversion(t *testing.T) {
 		t.Fatalf("%v", d)
 	}
 	// a text original has nothing to convert
-	md := c.stub("bob", "notes", "plain")
+	md := c.plain("bob", "notes", "plain")
 	c.put("bob", md, "text/markdown", "# x")
 	c.e.must(422, "POST", "/v1/knowledge/documents/"+md+"/ingest", "bob", nil)
 }

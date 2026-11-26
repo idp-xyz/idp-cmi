@@ -21,10 +21,11 @@ type DocQuery struct {
 
 // DocChunk is one chunk of the document with where it sits. Content is empty when only the places were asked for.
 type DocChunk struct {
-	Seq     int
-	Content string
-	Flags   []string
-	Locator *cmi.Locator
+	Seq      int
+	Content  string
+	Flags    []string
+	Locator  *cmi.Locator
+	CutAfter bool // ends at a hard cut of a long line: the text goes on in the next chunk with nothing between (D77)
 }
 
 // DocView is the version of a document the caller may read, with its chunks in document order.
@@ -135,7 +136,7 @@ func (s *Store) DocumentChunks(ctx context.Context, tenant string, v Visibility,
 		if content {
 			cols = `, c.content`
 		}
-		rows, err := tx.Query(ctx, `SELECT c.seq, c.flags, c.heading_path, c.page, c.table_name, c.slide, c.sheet, c.cell_range`+cols+docChunkFrom+`
+		rows, err := tx.Query(ctx, `SELECT c.seq, c.flags, c.heading_path, c.page, c.table_name, c.slide, c.sheet, c.cell_range, c.cut_after`+cols+docChunkFrom+`
 			WHERE d.id = $5`+visibleDocSQL(q.AsOf != nil)+` ORDER BY c.seq`, docArgs(v, q, view.Document.ID)...)
 		if err != nil {
 			return err
@@ -145,7 +146,7 @@ func (s *Store) DocumentChunks(ctx context.Context, tenant string, v Visibility,
 			var c DocChunk
 			var path, table, sheet, cells string
 			var page, slide *int
-			dest := []any{&c.Seq, &c.Flags, &path, &page, &table, &slide, &sheet, &cells}
+			dest := []any{&c.Seq, &c.Flags, &path, &page, &table, &slide, &sheet, &cells, &c.CutAfter}
 			if content {
 				dest = append(dest, &c.Content)
 			}
@@ -191,33 +192,58 @@ func locatorOf(path string, page *int, table string, slide *int, sheet, cells st
 	return l
 }
 
-// ChunkContents returns the text of some chunks of the version q.DocumentID names (the id DocumentChunks resolved, not a
-// sibling): the visibility predicate is applied again. A chunk that is no longer readable is missing from the result.
-func (s *Store) ChunkContents(ctx context.Context, tenant string, v Visibility, q DocQuery, seqs []int) (map[int]string, error) {
-	out := map[int]string{}
+// ChunkContents returns the chunks the seqs name of the version q.DocumentID names (the id DocumentChunks resolved, not a
+// sibling), with their text, flags and place as they are now, from one statement that carries the visibility predicate and the
+// revision of the document the places were read at (D77): a conversion that replaced the chunks since (it deletes and inserts
+// them and bumps the revision) leaves no row, so the text of one version is never paired with the places or the flags of
+// another, and a new injection flag is seen. A chunk that is no longer readable is missing from the result; when the document
+// is there but at another revision the answer is a CONFLICT: read it again.
+func (s *Store) ChunkContents(ctx context.Context, tenant string, v Visibility, q DocQuery, revision int, seqs []int) (map[int]DocChunk, error) {
+	out := map[int]DocChunk{}
 	if len(seqs) == 0 {
 		return out, nil
+	}
+	if s.OnChunkContents != nil {
+		s.OnChunkContents()
 	}
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		v, err := bindDocView(ctx, tx, v, q.DocumentID)
 		if err != nil {
 			return err
 		}
-		args := append(docArgs(v, q, q.DocumentID), seqs)
-		rows, err := tx.Query(ctx, `SELECT c.seq, c.content`+docChunkFrom+` WHERE d.id = $5 AND c.seq = ANY($`+itoaSQL(len(args))+`::int[])`+visibleDocSQL(q.AsOf != nil), args...)
+		args := append(docArgs(v, q, q.DocumentID), seqs, revision)
+		n := len(args)
+		rows, err := tx.Query(ctx, `SELECT c.seq, c.content, c.flags, c.heading_path, c.page, c.table_name, c.slide, c.sheet, c.cell_range, c.cut_after`+docChunkFrom+
+			` WHERE d.id = $5 AND c.seq = ANY($`+itoaSQL(n-1)+`::int[]) AND d.revision = $`+itoaSQL(n)+visibleDocSQL(q.AsOf != nil), args...)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var seq int
-			var content string
-			if err := rows.Scan(&seq, &content); err != nil {
+			var c DocChunk
+			var path, table, sheet, cells string
+			var page, slide *int
+			if err := rows.Scan(&c.Seq, &c.Content, &c.Flags, &path, &page, &table, &slide, &sheet, &cells, &c.CutAfter); err != nil {
 				return err
 			}
-			out[seq] = content
+			if len(c.Flags) == 0 {
+				c.Flags = nil
+			}
+			c.Locator = locatorOf(path, page, table, slide, sheet, cells)
+			out[c.Seq] = c
 		}
-		return rows.Err()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		rows.Close()
+		if len(out) < len(seqs) {
+			var now int
+			err := tx.QueryRow(ctx, `SELECT d.revision`+` FROM knowledge_documents d JOIN sources s ON s.id = d.source_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x WHERE d.id = $5`+visibleDocSQL(q.AsOf != nil), docArgs(v, q, q.DocumentID)...).Scan(&now)
+			if err == nil && now != revision {
+				return fail("CONFLICT", "the document changed while it was being read; read it again")
+			}
+		}
+		return nil
 	})
 	return out, err
 }

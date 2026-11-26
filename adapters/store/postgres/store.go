@@ -56,6 +56,9 @@ type Store struct {
 	OnEmbedFailure func(kind string)
 	Knowledge      KnowledgeSettings  // the operator's knowledge-base settings (config file section knowledge)
 	Conversion     ConversionSettings // the conversion of originals into text (D61 to D70)
+	// OnChunkContents, when set, runs before a read fetches the text of chunks: the tests change the document there, as a
+	// conversion that commits between the two statements of a read would (D77).
+	OnChunkContents func()
 
 	vec vectorState
 

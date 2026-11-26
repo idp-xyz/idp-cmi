@@ -217,10 +217,19 @@ func chunksOf(loc *cmi.Locator, texts ...string) []postgres.DocChunk {
 	return out
 }
 
+// hardCut marks every chunk but the last as cut where the size limit was reached (D77).
+func hardCut(chunks []postgres.DocChunk) []postgres.DocChunk {
+	for i := 0; i+1 < len(chunks); i++ {
+		chunks[i].CutAfter = true
+	}
+	return chunks
+}
+
 // a text that runs across the cut between two chunks of one section is found, on the chunk where it begins, once (D73)
 func TestFindCrossesTheSeamBetweenChunks(t *testing.T) {
 	cut := strings.Repeat("字", 100) + "取件时"
-	chunks := chunksOf(&cmi.Locator{Headings: []string{"Rates"}}, cut, "间是上午七点。"+strings.Repeat("词", 50), "取件时间again")
+	chunks := hardCut(chunksOf(&cmi.Locator{Headings: []string{"Rates"}}, cut, "间是上午七点。"+strings.Repeat("词", 50), "取件时间again"))
+	chunks[1].CutAfter = false
 	got := findInChunks(chunks, foldText("取件时间"))
 	if len(got[0]) != 1 || got[0][0] != (cmi.TextHit{Offset: 100, Length: 3}) {
 		t.Fatalf("on the chunk where it begins, clipped to its end: %v", got)
@@ -237,30 +246,51 @@ func TestFindCrossesTheSeamBetweenChunks(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 	// the characters a seam match used are not matched again by the next chunk
-	got = findInChunks(chunksOf(nil, "xaa", "abab"), foldText("aab"))
+	got = findInChunks(hardCut(chunksOf(nil, "xaa", "abab")), foldText("aab"))
 	if len(got[0]) != 1 || len(got[1]) != 0 {
 		t.Fatalf("%v", got)
 	}
 	// a seam match that would overlap a hit inside the chunk it begins in is not a second hit
-	got = findInChunks(chunksOf(nil, "aaaa", "abxx"), foldText("aaa"))
+	got = findInChunks(hardCut(chunksOf(nil, "aaaa", "abxx")), foldText("aaa"))
 	if len(got[0]) != 1 || got[0][0].Offset != 0 || len(got[1]) != 0 {
 		t.Fatalf("%v", got)
 	}
 	// the characters a seam match used are not a hit of the next chunk again
-	got = findInChunks(chunksOf(nil, "xab", "abab"), foldText("aba"))
+	got = findInChunks(hardCut(chunksOf(nil, "xab", "abab")), foldText("aba"))
 	if len(got[0]) != 1 || got[0][0] != (cmi.TextHit{Offset: 1, Length: 2}) || len(got[1]) != 0 {
 		t.Fatalf("%v", got)
+	}
+	// a cut that is not a hard cut is a line or a paragraph: one space, never nothing - "firstMonday" is not in "on the first" and
+	// "Monday of the month", nor 附加费 in 本条规定附加 and 费用另计 (D77)
+	got = findInChunks(chunksOf(nil, "on the first", "Monday of the month."), foldText("firstMonday"))
+	if len(got) != 0 {
+		t.Fatalf("joined with nothing: %v", got)
+	}
+	got = findInChunks(chunksOf(nil, "on the first", "Monday of the month."), foldText("first Monday"))
+	if len(got[0]) != 1 || len(got[1]) != 0 {
+		t.Fatalf("joined with one space: %v", got)
+	}
+	if got := findInChunks(chunksOf(nil, "本条规定附加", "费用另计。"), foldText("附加费")); len(got) != 0 {
+		t.Fatalf("a Chinese paragraph end and the next paragraph start: %v", got)
+	}
+	if got := findInChunks(hardCut(chunksOf(nil, "本条规定附加", "费用另计。")), foldText("附加费")); len(got[0]) != 1 {
+		t.Fatalf("a hard cut in the middle of a phrase: %v", got)
+	}
+	// two seams do not give a text the characters of a chunk twice (the chunks zab | ab | abz hold abab once)
+	got = findInChunks(hardCut(chunksOf(nil, "zab", "ab", "abz")), foldText("abab"))
+	if n := len(got[0]) + len(got[1]) + len(got[2]); n != 1 {
+		t.Fatalf("%d hits: %v", n, got)
 	}
 	// chunks of different sections, and rows of a table, are not one run of text
 	if got := findInChunks(chunksOf(nil, "取件时")[:1], foldText("取件时间")); len(got) != 0 {
 		t.Fatalf("%v", got)
 	}
 	a, b := chunksOf(&cmi.Locator{Headings: []string{"A"}}, "取件时"), chunksOf(&cmi.Locator{Headings: []string{"B"}}, "间")
-	if got := findInChunks(append(a, b...), foldText("取件时间")); len(got) != 0 {
+	if got := findInChunks(hardCut(append(a, b...)), foldText("取件时间")); len(got) != 0 {
 		t.Fatalf("across two sections: %v", got)
 	}
 	tab := &cmi.Locator{Table: "T"}
-	if got := findInChunks(chunksOf(tab, "| 取件时", "间 |"), foldText("取件时间")); len(got) != 0 {
+	if got := findInChunks(hardCut(chunksOf(tab, "| 取件时", "间 |")), foldText("取件时间")); len(got) != 0 {
 		t.Fatalf("across the rows of a table: %v", got)
 	}
 }

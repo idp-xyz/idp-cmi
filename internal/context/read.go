@@ -159,6 +159,7 @@ type prepared struct {
 	view     *postgres.DocView
 	omitted  cmi.Omitted
 	purposed string
+	asked    string // the id the caller named, which may be another version of the document than the one read (D77)
 }
 
 // viewOf is the caller's view for one request: the as-of view checked and normalized, the request's ceiling lowering the
@@ -223,16 +224,17 @@ func (r *Resolver) prepare(ctx context.Context, tenant string, v postgres.Visibi
 	if purpose == "" {
 		purpose = via
 	}
-	return &prepared{v: v, q: q, asOf: asOf, budget: budget, policy: policy, view: view, purposed: purpose}, nil
+	return &prepared{v: v, q: q, asOf: asOf, budget: budget, policy: policy, view: view, purposed: purpose, asked: id}, nil
 }
 
-// contents fetches the text of chunks of the version that was found, under the visibility predicate again (D74).
-func (r *Resolver) contents(ctx context.Context, tenant string, p *prepared, idx []int) (map[int]string, error) {
+// contents fetches the chunks of the version that was found, with their text, flags and places as they are now, under the
+// visibility predicate and the revision of the document again (D74, D77).
+func (r *Resolver) contents(ctx context.Context, tenant string, p *prepared, idx []int) (map[int]postgres.DocChunk, error) {
 	seqs := make([]int, len(idx))
 	for i, j := range idx {
 		seqs[i] = p.view.Chunks[j].Seq
 	}
-	got, err := r.Store.ChunkContents(ctx, tenant, p.v, p.q, seqs)
+	got, err := r.Store.ChunkContents(ctx, tenant, p.v, p.q, p.view.Document.Revision, seqs)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +280,11 @@ func (r *Resolver) seal(ctx context.Context, tenant string, p *prepared, query s
 		return nil, nil, err
 	}
 	// the package names the version it consulted, items or none (D76)
-	if err := r.Store.SaveConsultingPackage(ctx, tenant, env, pkg, []string{p.view.Document.ID}); err != nil {
+	consulted := []string{p.view.Document.ID}
+	if p.asked != p.view.Document.ID { // erasing only the version the caller named finds the package too
+		consulted = append(consulted, p.asked)
+	}
+	if err := r.Store.SaveConsultingPackage(ctx, tenant, env, pkg, consulted); err != nil {
 		return nil, nil, err
 	}
 	return pkg, env, nil
@@ -326,11 +332,16 @@ func (r *Resolver) Read(ctx context.Context, tenant string, v postgres.Visibilit
 		}
 		for n := start; n < end; n++ {
 			i := order[n]
-			body := excerpt(text[chunks[i].Seq], readExcerptBytes)
+			fresh := text[chunks[i].Seq]
+			if !p.usable(fresh) { // flagged since the places were read (D12)
+				p.omitted.Flagged++
+				continue
+			}
+			body := excerpt(fresh.Content, readExcerptBytes)
 			if body == "" {
 				continue
 			}
-			it := p.item(chunks[i], body)
+			it := p.item(fresh, body)
 			it.Score = 1
 			if len(given) >= p.budget.MaxItems || tokens+it.Tokens > p.budget.MaxTokens {
 				stopped = n
@@ -365,11 +376,12 @@ func (r *Resolver) Read(ctx context.Context, tenant string, v postgres.Visibilit
 				return nil, nil, err
 			}
 			for _, j := range near[start:end] {
-				body := excerpt(text[chunks[j].Seq], readExcerptBytes)
-				if body == "" {
+				fresh := text[chunks[j].Seq]
+				body := excerpt(fresh.Content, readExcerptBytes)
+				if body == "" || !p.usable(fresh) {
 					continue
 				}
-				it := p.item(chunks[j], body)
+				it := p.item(fresh, body)
 				if len(given) >= p.budget.MaxItems || tokens+it.Tokens > p.budget.MaxTokens {
 					continue // context that does not fit is not a loss to report: the matches are what was asked
 				}

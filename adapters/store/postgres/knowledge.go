@@ -145,6 +145,9 @@ func (s *Store) CreateMemberDocument(ctx context.Context, tenant string, in cmi.
 }
 
 func (s *Store) createDocument(ctx context.Context, tenant string, in cmi.Document, text, by string, v Visibility, strictURI bool) (*cmi.Document, error) {
+	if in.AwaitsOriginal && !s.Conversion.Enabled {
+		return nil, fail("NOT_CONFIGURED", "originals are not converted on this service: a version cannot wait for the text of its original")
+	}
 	defaultSensitivity := in.Sensitivity == ""
 	if defaultSensitivity {
 		in.Sensitivity = cmi.SensitivityInternal // replaced by the base's default once the base is known
@@ -242,9 +245,13 @@ func (s *Store) createDocument(ctx context.Context, tenant string, in cmi.Docume
 			reviewDue = in.ReviewDue
 		}
 		id := NewUUID()
-		if _, err := tx.Exec(ctx, `INSERT INTO knowledge_documents (id, tenant_id, source_id, knowledge_base_id, uri, title, version, content_sha256, byte_size, chunk_count, valid_from, valid_until, doc_type, owner, review_due, sensitivity, acl_subjects, acl_roles, created_by, flags)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-			id, tenant, src.ID, b.ID, in.URI, in.Title, version, cmi.ContentSHA256(text), len(text), len(parts), validFrom, validUntil, in.DocType, in.Owner, reviewDue, in.Sensitivity, in.ACL.Subjects, in.ACL.Roles, by, docFlags); err != nil {
+		status := "active"
+		if in.AwaitsOriginal { // the version waits for the text of the original that is stored next; it is in force from that commit (D77)
+			status = "pending"
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO knowledge_documents (id, tenant_id, source_id, knowledge_base_id, uri, title, version, content_sha256, byte_size, chunk_count, valid_from, valid_until, doc_type, owner, review_due, sensitivity, acl_subjects, acl_roles, created_by, flags, status)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+			id, tenant, src.ID, b.ID, in.URI, in.Title, version, cmi.ContentSHA256(text), len(text), len(parts), validFrom, validUntil, in.DocType, in.Owner, reviewDue, in.Sensitivity, in.ACL.Subjects, in.ACL.Roles, by, docFlags, status); err != nil {
 			return err
 		}
 		batch := &pgx.Batch{}
@@ -686,9 +693,9 @@ func queueChunk(batch *pgx.Batch, tenant, docID string, seq int, part cmi.Locate
 	if part.Slide > 0 {
 		slide = part.Slide
 	}
-	batch.Queue(`INSERT INTO knowledge_chunks (tenant_id, document_id, seq, content, index_text, heading_path, page, table_name, slide, sheet, cell_range, search, flags, embedding, embedding_model)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, to_tsvector('simple', $5) || to_tsvector('simple', $12), $13, $14, $15)`,
-		tenant, docID, seq, part.Body, index, part.Path(), page, part.Table, slide, part.Sheet, part.Range, cmi.Bigrams(index), flags, vec, model)
+	batch.Queue(`INSERT INTO knowledge_chunks (tenant_id, document_id, seq, content, index_text, heading_path, page, table_name, slide, sheet, cell_range, search, flags, embedding, embedding_model, cut_after)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, to_tsvector('simple', $5) || to_tsvector('simple', $12), $13, $14, $15, $16)`,
+		tenant, docID, seq, part.Body, index, part.Path(), page, part.Table, slide, part.Sheet, part.Range, cmi.Bigrams(index), flags, vec, model, part.CutAfter)
 }
 
 // decodeIngest reads the JSON of ingestSQL.

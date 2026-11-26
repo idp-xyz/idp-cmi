@@ -1172,6 +1172,12 @@ func (a *API) Handler() http.Handler {
 			}
 			o, err := a.authorize(r, p, "knowledge.read", pdp.Resource{Kind: "knowledge", ID: t.ID, Source: t.Source, Sensitivity: t.Sensitivity}, purpose())
 			if err != nil {
+				// a denial is the same 404 as a document that is not there, or the answer would say which ids exist (the denial is
+				// still audited by authorize) (D77)
+				var pb *transport.Problem
+				if errors.As(err, &pb) && pb.Code == "PDP_DENIED" {
+					return 0, nil, transport.Fail(http.StatusNotFound, "NOT_FOUND", "document not found")
+				}
 				return 0, nil, err
 			}
 			pkg, env, err := run(r.Context(), p.Tenant, narrow(v, o), t.ID)

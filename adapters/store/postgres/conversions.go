@@ -115,22 +115,31 @@ type Conversion struct {
 // conversionCols are the columns of Conversion, in the order scanConversion reads them.
 const conversionCols = `j.id::text, j.tenant_id::text, j.document_id::text, j.document_version, j.original_key, j.original_sha256, j.media_type, j.byte_size, j.requested_by, j.attempts, coalesce(j.workspace_id, '')`
 
-// enqueueConversion queues the conversion of the original a document now has (the caller holds the document row). The version is
-// not in force until its text has been extracted, unless it already holds extracted text: a first conversion keeps the
-// supplied placeholder out of retrieval, so the version it would replace stays current while this one is made (D64).
-// Earlier jobs of the document that are still open are given up.
+// checkSourceTextUnchanged is the rule of D77: a version that is or was in force never changes its source text. Only a version
+// that waits for its first text (pending: it was written with awaitsOriginal) takes a convertible original; a version that
+// holds extracted text takes the conversion of the same original again (a retry, a converter that was upgraded), the one
+// in-place correction there is; every other version - active with the text its writer supplied, superseded, revoked, expired -
+// is refused: the writer writes a new version with the original. sameOriginal says the original is the one the document has.
+func checkSourceTextUnchanged(docID, status, source string, sameOriginal bool) error {
+	switch {
+	case status == "pending":
+		return nil
+	case (status == "active" || status == "superseded") && source == "extracted" && sameOriginal:
+		return nil
+	}
+	return fail("CONFLICT", "version %s is %s and has been in force: its text does not change. Write a new version (awaitsOriginal) and store the original with it", docID, status)
+}
+
+// enqueueConversion queues the conversion of the original a document now has (the caller holds the document row). A version
+// that waits for its first text is not in force until it is extracted (D64, D77); one that holds extracted text is corrected in
+// place. Earlier jobs of the document that are still open are given up.
 func enqueueConversion(ctx context.Context, tx pgx.Tx, tenant, docID, by, media, key, sum string, size int64) (stale []string, err error) {
 	var status, source string
 	if err := tx.QueryRow(ctx, `SELECT status, text_source FROM knowledge_documents WHERE id = $1`, docID).Scan(&status, &source); err != nil {
 		return nil, err
 	}
-	if status != "active" && status != "superseded" && status != "pending" {
-		return nil, nil // revoked, expired or erased: there is nothing to make searchable
-	}
-	if status == "active" && source == "supplied" {
-		if _, err := tx.Exec(ctx, `UPDATE knowledge_documents SET status = 'pending', revision = revision + 1 WHERE id = $1`, docID); err != nil {
-			return nil, err
-		}
+	if err := checkSourceTextUnchanged(docID, status, source, true); err != nil {
+		return nil, err
 	}
 	// the staged text of a job that is given up is plaintext under the document's prefix: its object goes after the commit
 	rows, err := tx.Query(ctx, `WITH old AS (SELECT id, result_key FROM knowledge_conversions WHERE document_id = $1 AND state IN ('queued', 'running') FOR UPDATE)

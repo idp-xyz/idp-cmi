@@ -27,8 +27,14 @@ func nano(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 func TestAsOfShowsAVersionOnlyFromTheMomentItWasInForce(t *testing.T) {
 	e := newEnv(t)
 	kbSources(e)
+	e.store.Conversion.Enabled = true // a version may wait for the text of its original
 	up := func(uri, text string) string {
 		return e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", uri, "", text))["documentId"].(string)
+	}
+	awaiting := func(uri, text string) string { // written with awaitsOriginal: pending, never in force until its text is committed (D77)
+		d := kbDoc("handbook", uri, "", text)
+		d["awaitsOriginal"] = true
+		return e.must(201, "POST", "/api/v1/knowledge/documents", "alice", d)["documentId"].(string)
 	}
 	view := func(id string, recorded time.Time) (read, find, resolve string) {
 		asOf := map[string]any{"recorded": nano(recorded)}
@@ -40,8 +46,7 @@ func TestAsOfShowsAVersionOnlyFromTheMomentItWasInForce(t *testing.T) {
 	// 1. pending, then withdrawn: its placeholder text is never read and it hides nothing at a time inside its pending period
 	v1 := up("handbook://pend-revoked", "asofquartz the old text")
 	time.Sleep(50 * time.Millisecond)
-	v2 := up("handbook://pend-revoked", "asofquartz placeholder")
-	sqlAsOwner(t, e, `UPDATE knowledge_documents SET status = 'pending' WHERE id = $1`, v2) // the original was stored: the text is awaited
+	v2 := awaiting("handbook://pend-revoked", "asofquartz placeholder")
 	time.Sleep(50 * time.Millisecond)
 	inside := time.Now()
 	time.Sleep(50 * time.Millisecond)
@@ -61,8 +66,7 @@ func TestAsOfShowsAVersionOnlyFromTheMomentItWasInForce(t *testing.T) {
 	// 2. pending, then committed: before the commit the old version is the one read
 	w1 := up("handbook://pend-active", "asofquartz the first text")
 	time.Sleep(50 * time.Millisecond)
-	w2 := up("handbook://pend-active", "asofquartz placeholder")
-	sqlAsOwner(t, e, `UPDATE knowledge_documents SET status = 'pending' WHERE id = $1`, w2)
+	w2 := awaiting("handbook://pend-active", "asofquartz placeholder")
 	time.Sleep(50 * time.Millisecond)
 	before := time.Now()
 	time.Sleep(50 * time.Millisecond)
@@ -126,7 +130,7 @@ func TestTheBackfillOfInForceSince(t *testing.T) {
 	for name, want := range map[string]struct {
 		id  string
 		set bool
-	}{"active": {active, true}, "pending": {pending, false}, "revoked while pending (its jobs never committed)": {revokedPending, false},
+	}{"active": {active, true}, "pending": {pending, false}, "revoked, its jobs never committed (the data cannot tell it from one that was in force: taken to have been)": {revokedPending, true},
 		"revoked after its text was committed": {revokedConverted, true}, "revoked with no conversion at all": {revokedPlain, true}} {
 		var set bool
 		var same bool
@@ -314,7 +318,7 @@ func TestThePDPIsAskedAboutTheVersionReadAfterValidation(t *testing.T) {
 		if path == "/v1/context/read" {
 			delete(body, "text")
 		}
-		if st, out := e.call("POST", path, "carol", body); st != 403 || errCode(out) != "PDP_DENIED" {
+		if st, out := e.call("POST", path, "carol", body); st != 404 || errCode(out) != "NOT_FOUND" {
 			t.Fatalf("%s by the id of the older version: %d %v", path, st, out)
 		}
 		if len(asked) != 1 || asked[0] != v2 {
@@ -477,5 +481,147 @@ func TestTheVersionReadIsTheOneTheCallerWasClearedFor(t *testing.T) {
 	withText, err := e.store.DocumentChunks(ctx, e.tenantA, v, postgres.DocQuery{DocumentID: v2, Via: "find"}, true)
 	if err != nil || !strings.Contains(withText.Chunks[0].Content, "clearedquartz new") {
 		t.Fatalf("%v %v", withText, err)
+	}
+}
+
+// ADR-0001 D77: the join of a seam is nothing only at a hard cut; at the end of a line or a paragraph it is one space, so a
+// text that is not in the document is not found
+func TestFindDoesNotJoinParagraphsWithNothing(t *testing.T) {
+	e := newEnv(t)
+	kbSources(e)
+	p1 := strings.Repeat("A paragraph of plain words for the size. ", 25) + "The meeting is on the first"
+	p2 := "Monday of the month. " + strings.Repeat("Another paragraph of plain words. ", 25)
+	c1 := strings.Repeat("字", 395) + "本条规定附加"
+	c2 := "费用另计。" + strings.Repeat("词", 395)
+	id := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://paras", "", p1+"\n\n"+p2+"\n\n"+c1+"\n\n"+c2))["documentId"].(string)
+	find := func(text string) []map[string]any {
+		return items(findDoc(e, "carol", map[string]any{"documentId": id, "text": text, "purpose": "p"}))
+	}
+	if got := find("firstMonday"); len(got) != 0 {
+		t.Fatalf("firstMonday is not in the text: %v", refs(map[string]any{"package": map[string]any{"items": []any{got[0]}}}))
+	}
+	if got := find("first Monday"); len(got) != 1 {
+		t.Fatalf("the end of one paragraph and the start of the next are one space apart: %d items", len(got))
+	}
+	if got := find("附加费"); len(got) != 0 {
+		t.Fatalf("附加费 is not in the text: %d items", len(got))
+	}
+	if got := find("附加 费用"); len(got) != 1 {
+		t.Fatalf("附加 费用 across the paragraphs: %d items", len(got))
+	}
+}
+
+// the text and the flags of a chunk are read in one statement with the revision of the document (D77)
+func TestAReadDoesNotMixWhatTwoStatementsSaw(t *testing.T) {
+	e := newEnv(t)
+	kbSources(e)
+	text := "# A\n\nmixquartz first part.\n\n# B\n\nmixquartz second part.\n\n# C\n\nmixquartz third part.\n"
+	id := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://mix", "", text))["documentId"].(string)
+	defer func() { e.store.OnChunkContents = nil }()
+	// a chunk is flagged between the statement that read the places and the one that reads the text: it is not given
+	var once sync.Once
+	e.store.OnChunkContents = func() {
+		once.Do(func() {
+			sqlAsOwner(t, e, `UPDATE knowledge_chunks SET flags = ARRAY['injection:instruction_override'] WHERE document_id = $1 AND seq = 1`, id)
+		})
+	}
+	got := readDoc(e, "carol", map[string]any{"documentId": id, "purpose": "p"})
+	if len(items(got)) != 2 || strings.Contains(excerpts(got), "second part") || omittedFlagged(got) != 1 {
+		t.Fatalf("a chunk flagged since the places were read: %v, omitted %v", refs(got), got["package"].(map[string]any)["omitted"])
+	}
+	// the same for the neighbour of a match
+	e.must(200, "PUT", "/api/v1/policy", "alice", map[string]any{"readerCeiling": "internal", "writerCeiling": "confidential", "defaultMemoryTtlDays": 0, "packageTtlSeconds": 3600, "includeFlagged": false})
+	sqlAsOwner(t, e, `UPDATE knowledge_chunks SET flags = '{}' WHERE document_id = $1`, id)
+	var third sync.Once
+	e.store.OnChunkContents = func() {
+		third.Do(func() {
+			sqlAsOwner(t, e, `UPDATE knowledge_chunks SET flags = ARRAY['injection:instruction_override'] WHERE document_id = $1 AND seq = 2`, id)
+		})
+	}
+	near := readDoc(e, "carol", map[string]any{"documentId": id, "purpose": "p", "locator": map[string]any{"headings": []string{"B"}}, "around": 1})
+	if len(items(near)) != 2 || strings.Contains(excerpts(near), "third part") {
+		t.Fatalf("a neighbour flagged since the places were read: %v", refs(near))
+	}
+	sqlAsOwner(t, e, `UPDATE knowledge_chunks SET flags = '{}' WHERE document_id = $1`, id)
+	// the chunks are replaced (a re-conversion deletes and inserts them and bumps the revision): the old places are not paired
+	// with the new text; the caller is told to read again
+	e.store.OnChunkContents = nil
+	var again sync.Once
+	e.store.OnChunkContents = func() {
+		again.Do(func() {
+			sqlAsOwner(t, e, `UPDATE knowledge_chunks SET content = 'mixquartz REPLACED text' WHERE document_id = $1`, id)
+			sqlAsOwner(t, e, `UPDATE knowledge_documents SET revision = revision + 1 WHERE id = $1`, id)
+		})
+	}
+	st, out := e.call("POST", "/v1/context/read", "carol", map[string]any{"documentId": id, "purpose": "p"})
+	if st != 409 || errCode(out) != "CONFLICT" || strings.Contains(fmt.Sprint(out), "REPLACED") {
+		t.Fatalf("%d %v", st, out)
+	}
+	e.store.OnChunkContents = nil
+	if got := readDoc(e, "carol", map[string]any{"documentId": id, "purpose": "p"}); !strings.Contains(excerpts(got), "REPLACED") {
+		t.Fatalf("read again: %v", items(got))
+	}
+}
+
+// the id the caller named is recorded too: erasing only that version redacts the package that was made for it (D77)
+func TestErasingTheVersionTheCallerNamedRedactsThePackage(t *testing.T) {
+	e := newEnv(t)
+	kbSources(e)
+	v1 := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://named", "", "# Terms\n\nnamedquartz the old clause\n"))["documentId"].(string)
+	e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://named", "", "# Terms\n\nnamedquartz the new clause\n"))
+	f := findDoc(e, "carol", map[string]any{"documentId": v1, "text": "namedquartz the new", "purpose": "p"})
+	if len(items(f)) != 1 || items(f)[0]["id"] == v1 {
+		t.Fatalf("setup: the id of the older version reads the newer: %v", items(f))
+	}
+	e.must(201, "POST", "/api/v1/erasures", "alice", map[string]any{"documentIds": []string{v1}, "reason": "legal"})
+	if _, err := e.store.Purge(context.Background(), e.tenantA, 5); err != nil {
+		t.Fatal(err)
+	}
+	got := e.must(200, "GET", "/v1/context/packages/"+f["packageId"].(string), "carol", nil)
+	if got["redacted"] != true || got["package"].(map[string]any)["query"] != "[erased]" {
+		t.Fatalf("%v", got)
+	}
+}
+
+// the backfill of cut_after in migration 0019: a chunk of prose nearly as long as the limit and followed by a chunk of the same
+// section was cut where the size was reached (ADR-0001 D77)
+func TestTheBackfillOfCutAfter(t *testing.T) {
+	e := newEnv(t)
+	kbSources(e)
+	var long []rune
+	for i := 0; i < 1300; i++ {
+		long = append(long, rune(0x4e00+i))
+	}
+	cut := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://cut", "", string(long)))["documentId"].(string)
+	paras := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://paras2", "", strings.Repeat("A paragraph of plain words for the size.\n\n", 80)))["documentId"].(string)
+	flags := func(id string) string {
+		rows := ""
+		for seq := 0; seq < 4; seq++ {
+			var f *bool
+			if err := ownerQuery(t, e.ownerURL, `SELECT cut_after FROM knowledge_chunks WHERE document_id = $1 AND seq = $2`, &f, id, seq); err == nil && f != nil {
+				rows += fmt.Sprint(*f, " ")
+			}
+		}
+		return strings.TrimSpace(rows)
+	}
+	if got := flags(cut); got != "true true false" {
+		t.Fatalf("the chunker marks the cuts: %q", got)
+	}
+	if got := flags(paras); strings.Contains(got, "true") {
+		t.Fatalf("paragraphs are not hard cuts: %q", got)
+	}
+	raw, err := fs.ReadFile(migrations.FS, "0019_kb8_in_force.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	backfill := text[strings.Index(text, "-- cut backfill begin")+len("-- cut backfill begin") : strings.Index(text, "-- cut backfill end")]
+	sqlAsOwner(t, e, `UPDATE knowledge_chunks SET cut_after = false`)
+	sqlAsOwner(t, e, backfill)
+	if got := flags(cut); got != "true true false" {
+		t.Fatalf("the backfill infers the cuts: %q", got)
+	}
+	if got := flags(paras); strings.Contains(got, "true") {
+		t.Fatalf("the backfill takes paragraphs for cuts: %q", got)
 	}
 }

@@ -27,7 +27,9 @@ func TestVersionsWaitingForTheirTextCountAgainstTheQuota(t *testing.T) {
 	body := "%PDF " + strings.Repeat("x", 2500)
 	accepted := 0
 	for i := 0; i < 4; i++ {
-		d := c.e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", fmt.Sprintf("kb://small/doc-%d", i), "small", "placeholder"))
+		doc := kbDoc("handbook", fmt.Sprintf("kb://small/doc-%d", i), "small", "placeholder")
+		doc["awaitsOriginal"] = true
+		d := c.e.must(201, "POST", "/api/v1/knowledge/documents", "alice", doc)
 		st, _, _ := c.e.callBytes(http.MethodPut, "/v1/knowledge/documents/"+d["documentId"].(string)+"/original", "alice", mediaPDF, []byte(body))
 		if st == 200 {
 			accepted++
@@ -46,6 +48,7 @@ func TestAConversionOfAVersionThatStartsLaterReplacesNothingYetAndFreesNothing(t
 	c.e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "kb://ops/rates", "ops", "the older ZqxOldRates rates"))
 	later := kbDoc("handbook", "kb://ops/rates", "ops", "placeholder")
 	later["validFrom"] = time.Now().Add(48 * time.Hour).UTC().Format(time.RFC3339)
+	later["awaitsOriginal"] = true
 	d := c.e.must(201, "POST", "/api/v1/knowledge/documents", "alice", later)
 	id := d["documentId"].(string)
 	c.output("TAG", convtest.Output{Markdown: "<!-- page: 1 -->\nThe ZqxFutureRates rates.\n"})
@@ -385,3 +388,74 @@ func TestPresentedTicketsAreForgottenAfterTheyWouldHaveExpired(t *testing.T) {
 var _ = io.Discard
 var _ = cmi.MaxDocument
 var _ convert.Gateway
+
+// ADR-0001 D77: a version that is or was in force never changes its source text. A convertible original goes with a version
+// that starts pending (awaitsOriginal); the one in-place correction is the same original converted again.
+func TestAVersionThatWasInForceKeepsItsText(t *testing.T) {
+	c := newConv(t)
+	c.output("TAG", convtest.Output{Markdown: "<!-- page: 1 -->\nZqxConverted text.\n"})
+	putStatus := func(id, media, body string) int {
+		st, _, _ := c.e.callBytes(http.MethodPut, "/v1/knowledge/documents/"+id+"/original", "bob", media, []byte(body))
+		return st
+	}
+	real := c.plain("bob", "doc", "ZqxReal text a reader saw")
+	time.Sleep(60 * time.Millisecond)
+	seen := time.Now() // a view as of this moment returned the real text
+	time.Sleep(60 * time.Millisecond)
+	if st := putStatus(real, mediaPDF, "%PDF TAG"); st != 409 {
+		t.Fatalf("a convertible original on a version that is in force: %d", st)
+	}
+	// nothing was changed: not the text, not the status, and not what a view of the past returned
+	if d := c.doc("bob", real); d["status"] != "active" || d["original"] != nil || d["ingest"] != nil {
+		t.Fatalf("%v", d)
+	}
+	asOf := map[string]any{"recorded": nano(seen)}
+	if got := excerpts(readDoc(c.e, "bob", map[string]any{"documentId": real, "purpose": "p", "asOf": asOf})); !strings.Contains(got, "ZqxReal") {
+		t.Fatalf("as of the moment it was seen: %q", got)
+	}
+	if len(c.hits("bob", "ZqxReal")) != 1 {
+		t.Fatal("the text of the version in force is searchable")
+	}
+	// a text original is its own text and is not a change of the text the version was written with
+	if st := putStatus(real, "text/markdown", "# notes"); st != 200 {
+		t.Fatalf("a markdown original: %d", st)
+	}
+	// a replaced version and a withdrawn one take none either
+	older := c.plain("bob", "two", "ZqxOlder")
+	c.plain("bob", "two", "ZqxNewer")
+	if st := putStatus(older, mediaPDF, "%PDF TAG"); st != 409 {
+		t.Fatalf("a replaced version: %d", st)
+	}
+	gone := c.plain("bob", "three", "ZqxGone")
+	c.e.must(200, "DELETE", "/v1/knowledge/documents/"+gone+"?reason=x", "bob", nil)
+	if st := putStatus(gone, mediaPDF, "%PDF TAG"); st != 409 {
+		t.Fatalf("a withdrawn version: %d", st)
+	}
+	// a version written to wait for its original takes it, and is in force from the commit
+	wait := c.stub("bob", "four", "placeholder")
+	before := time.Now()
+	time.Sleep(60 * time.Millisecond)
+	if st := putStatus(wait, mediaPDF, "%PDF TAG"); st != 200 {
+		t.Fatalf("the original of a version that waits for it: %d", st)
+	}
+	c.drain()
+	if d := c.doc("bob", wait); d["status"] != "active" || ingestOf(d)["state"] != "succeeded" || len(c.hits("bob", "ZqxConverted")) != 1 {
+		t.Fatalf("%v", d)
+	}
+	c.e.must(404, "POST", "/v1/context/read", "bob", map[string]any{"documentId": wait, "purpose": "p", "asOf": map[string]any{"recorded": nano(before)}})
+	// the one in-place correction: the same original converted again; another original is a new version
+	if st := putStatus(wait, mediaPDF, "%PDF TAG"); st != 200 {
+		t.Fatalf("the same original again: %d", st)
+	}
+	c.drain()
+	c.e.must(202, "POST", "/v1/knowledge/documents/"+wait+"/ingest", "bob", nil)
+	c.drain()
+	if st := putStatus(wait, mediaPDF, "%PDF TAG and more"); st != 409 {
+		t.Fatalf("another original on a version that holds converted text: %d", st)
+	}
+	// a document written to wait needs a service that converts
+	c.e.store.Conversion.Enabled = false
+	body := kbDoc("member-notes", "kb://me/five", "", "placeholder")
+	body["awaitsOriginal"] = true
+	c.e.must(503, "POST", "/v1/knowledge/documents", "bob", body)
+}
