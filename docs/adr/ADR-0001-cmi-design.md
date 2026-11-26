@@ -639,3 +639,78 @@ R04、R05 在评测测试（`TestRetrievalOnTheLargeSet`、`TestRetrievalOnTheHe
 | R220 | presented tickets are forgotten after they would have expired | `TestPresentedTicketsAreForgottenAfterTheyWouldHaveExpired` |
 
 没有单独一行的控制：**提交前才跑注入扫描（不在库行锁之下）**，没有测试，是锁持有时间的问题；**票据的头必须正是我们的**（`Verify` 里的算法固定）——签名覆盖头，改了头签名就不对，所以这一道被签名那一道遮住，单独删掉不会让测试失败，它是第二道防线；**作业行与文档行各自核对原件的键和摘要**互相遮住，R147 把两处一起删；**写票据的"这次尝试还没有结果"在核对时与记录结果时各查一次**，R149 把两处一起删；**提交时核对文档的原件仍是作业所指的那份**被作业状态（存原件时旧作业已作废）遮住，同样是第二道防线；**`SKIP LOCKED`**：并发的取作业在 READ COMMITTED 下不会重复，只会少取，删掉它没有测试会失败，但换成别的锁语句会让多副本互相等待，所以保留；文件端点的并发读上限（`maxConcurrentReads`）与缺少票据的 401 有代码，没有单独的测试。
+
+## 27. 读一份文档的指定位置、按原词找、按库与类别过滤（2026-11-25，KB8）
+
+计划在平台仓库 `docs/adr/knowledge-base-plan.md` 第 2.9、2.11 节第 5 条与第 8 节 KB8；HOST 一侧的三个内置检索工具要调的接口在 `docs/adr/kb8-cmi-api.md`（两边共同遵守，文末有这一刀的细化说明）。这一刀只做 CMI 一侧：解析增加 `knowledgeBases` 与 `docTypes`，新增 `POST /v1/context/read` 与 `POST /v1/context/find`，契约 `idp.telos.cmi` 1.7.0（只做新增）。没有迁移，没有新表；块上已有的 `document_id` 索引保证按文档取块不扫表。
+
+| # | 决策 | 理由 |
+|---|---|---|
+| D71 | **解析的两个过滤条件**：`knowledgeBases`（库名，至多 32 个）与 `docTypes`（文档类别，至多 32 个）只作用于知识条目，记忆条目不受影响；它们在 SQL 里和来源、实体一样是谓词（词面与向量两条检索、`omitted` 的计数都带上，所以别的库里被隔离的块不会算进这一次的 `omitted.flagged`）。**点名不扩大可见范围**：点名一个自己看不到的库，结果是空，与它不存在一样；点名**别的成员的个人库**按 D53 记 `knowledge.read_other`（`via: resolve.knowledgeBases`，不管有没有取到块，因为伸手这一下就是该留的痕迹），点名自己的库不记。名字按库名与文档类别的写法校验，不合法是 422 | 模型要说"只看销售库的政策类文档"，这要在检索里做而不是取回来再筛，否则预算被不要的东西占掉；点名不能成为越权的路，所以可见范围的谓词一个字不动；审计是 D53 的延伸：谁伸手去够谁的库 |
+| D72 | **`POST /v1/context/read`**：`{documentId, locator?, around?, budget?, purpose?, asOf?, sensitivityCeiling?}`，应答与解析一样是 `{packageId, digest, package}`。**文档 id 指一份文档**：读到的是 `asOf`（缺省现在）那一刻 **这个 id 所在的库与 uri 的现行版本**（D52），所以拿着一个被取代的旧版本的 id 读，读到的是现行的那一版，条目里的 `id` 是它的；`pending` 的版本从不读；**擦除了或撤回了的版本，它的 id 什么也指不到**（404，不会借它回到上一版）。`locator` 的每一项给出了就必须成立：`page`、`slide`、`table` 精确；`headings` 按标题路径**逐级**做前缀（`Rates` 不是 `Rates Appendix` 的前缀，也不是 `Rates › Morning` 里 `Morning` 的前缀）；`sheet` 精确，`range`（`A12:F40`）与块的单元格范围**有重叠即算**（含只碰到一个角；不给 `sheet` 就是每个工作表里有重叠的块）。**不给 `locator`：从文档开头按文档顺序读，直到预算用完**。条目按文档顺序，前后各带 `around` 块（缺省 1，最多 5；没有 `locator` 时无意义），条目的形状与解析的知识条目一样（摘录是标题路径一行加正文，`locator`、`trust`、`sensitivity`、`entities`，不带 `match`；命中的块 `score` 为 1，`around` 带来的为 0）。**预算**：`maxTokens` 缺省 3000，`maxItems` 缺省 100（解析是 20，读要的是连续的一段）；命中的块先装，装到第一个放不下的就停（读是连续的，不跳过去装后面小一点的），那一块和它之后的命中块数进 `omitted.budget`；`around` 的块只用命中块剩下的预算，放不下的不记（它们是陪衬，不是请求要的）。注入扫描的标记照解析：被标记的块除非租户策略 `includeFlagged` 否则不给，命中了的数进 `omitted.flagged`，`around` 悄悄略过；给出时条目带 `flags`。包的 `purpose` 是调用者给的，没给是 `read`；`query` 是 `read <documentId>` 加上（有 `locator` 时）它的 JSON | 读一个条款、一个表格范围需要的是位置而不是相关度；用 id 找文档而不是 uri，是因为模型手里只有包里的条目，条目的 `id` 就是版本的 id，一个小时前取的 id 在文档更新之后仍要能读到现行的内容；"撤回的 id 不回到上一版"是因为被撤回的东西不该因为换了个入口又出现；预算按"连续一段"取，是因为读表格或条款时跳过中间一块比读不全更糟 |
+| D73 | **`POST /v1/context/find`**：`{documentId, text, maxHits?, budget?, purpose?, asOf?, sensitivityCeiling?}`。匹配：**子串**；**空白先规范化**（连续的空白是一个空格，两边的空白去掉，文本里的与要找的都一样；全角空格等 Unicode 空白也算）；**只对 ASCII 字母不分大小写**；其余文字按字原样匹配（中文按字，不分词），所以"附加费"能在"附加费用"里找到；命中不重叠，从前往后。条目是含有这段文字的块，按文档顺序，`match` 为 `exact`，`score` 为 1；**`hits: [{offset, length}]`** 是在块**正文**里的位置，**按字符（Unicode 码点）**，不是字节；`length` 是命中的那段在正文里原样的长度（空白被规范化，所以可能与 `text` 不同）。**摘录以第一处命中为中心**：块不超过 1500 字节时是整块（标题路径一行加正文），更长时是 1500 字节以内的一段，从命中处向两边长，**只在字符之间切**，被切的一端加 `…`；命中本身比窗口长时给它的开头。`maxHits`（缺省 20，最多 100，超出是 422）是**整个包里**命中的总数；超出的命中所在的块不装，数进 `omitted.budget`；预算（token、条目）放不下的含命中的块也数进 `omitted.budget`。没有命中的包是空包，照样密封保存。`text` 不能只有空白，至多 1000 个字符。被标记的块同 D72。包的 `query` 是 `text`，`purpose` 缺省 `find` | 找原话是核对用的：模型要看到的是"这一句话在哪、前后是什么"，所以摘录以命中为中心，位置按字符给，是因为 JSON 的消费者（TypeScript、Go、Python）里字节偏移只有 Go 能用；只折 ASCII 大小写，是因为别的文字的大小写与变音规则按语言而不同，原话核对不该替人猜 |
+| D74 | **一条可见路径**（D7、D11）：读与找**不另造权限**。`DocumentChunks` 的谓词是解析查知识用的那几段：敏感上限与 ACL（`aclSQL`）、PDP 排除的来源（`excludeSQL`）、调用者的库范围（`kbScopeSQL`，D53）、现行版本（`knowledgeCurrentSQL`，或带 `asOf` 时 `knowledgeAsOfSQL`，D52）；**取文档的语句与取它的块的语句各带一遍谓词**，所以两条语句之间被撤回的文档不会漏出块。**看不到一律 404，不说原因**（别的租户的、别的成员个人库里的、超出敏感上限的、ACL 之外的、被撤回的、过期的、被擦除的、还没生效的、`pending` 的、根本不存在的——应答逐字相同；格式不对的 id 是 422，那是调用者的写法错）。租户隔离还是行级安全。`sensitivityCeiling` 只能压低调用者的上限；PDP 以动作 `knowledge.read`、资源 `{knowledge, documentId}` 问，义务（敏感上限、排除来源）与解析一样收窄。**别的成员个人库里的文档**：只有可以点名别人个人库的调用者（写入服务与管理员，同解析里点名 `subject` 作用域；`Visibility.MayNameMembers`）看得到，别人得 404；读成功时记 `knowledge.read_other`（`via: read` 或 `find`，带库、文档、谁的、`client` 与 `actor`），自己读自己的库不记。**顺带修了一个已有的缺口**：`knowledgeAsOfSQL`（解析带 `asOf` 时用）原来不认 `pending`，一个还在等文本的新版本会在"某一刻的现行版本"里取代旧版本、自己又不可读，于是文档在转换期间从 asOf 视图里消失；现在 `pending` 的版本在 asOf 视图里既不读也不取代任何版本，与 D64 一致 | 权限只有一处写，才不会出现"解析看不到、读得到"；"取文档"与"取块"各带谓词，是因为一个事务里的两条语句在 READ COMMITTED 下各看各的快照 |
+| D75 | **包与契约**：读与找的包用 `SavePackage` 存、`cmi.Seal` 密封，与解析的包一样；`GET /v1/context/packages/{id}` 读回（只有请求的人与管理员），`verify` 逐条核验（版本被取代、撤回、过期、擦除都是 `stale`）。**擦除（D20、D57）**：引用被擦除文档的条目的摘录、标题、实体换成墓碑（已有），**`hits` 删掉**（它说明被擦掉的文字在块里的位置）；**`find` 包的 `query`（要找的原话，是文档里的文字）与 `read` 包的 `query`（带着标题路径）一并换成墓碑**；`redacted: true`、摘要仍是密封时的。主体擦除（D57）照旧把这个成员请求的包的 `query`、`purpose`、`requestedBy` 换掉，读与找的包也在其内。**契约 `idp.telos.cmi` 1.7.0，只做新增**：`ContextItem.match` 增 `exact`，增 `hits`（`offset` 从 0、`length` 至少 1，至多 100 项）；`examples.json` 里的 ContextPackage 示例增一个 `find` 的条目；OpenAPI 增 `POST /v1/context/read`、`POST /v1/context/find`（`ReadRequest`、`FindRequest`）与解析请求的 `knowledgeBases`、`docTypes`。对 `kb8-cmi-api.md` 的细化（`hits` 的单位、`purpose`、文档 id 与版本、预算与 `omitted`、点名、PDP）写在那份文件的文末，没有改动它的条文 | 一个包是不是 read、find 或 resolve 做的，消费者的处理应当一样：看 `items`、`omitted`、`verify`；擦除要连"这段话在哪"一起擦，否则擦掉的文字可以从位置和要找的原话里复原一部分 |
+
+### 删除表（KB8：每一行都在隔离的副本里删掉那一处控制、跑对应的测试、看到它失败；2026-11-25）
+
+| # | 删掉的控制（每行只删这一处） | 失败的测试 |
+|---|---|---|
+| R221 | the knowledgeBases filter is applied | `TestResolveFiltersByBaseAndDocType` |
+| R222 | the docTypes filter is applied | `TestResolveFiltersByBaseAndDocType` |
+| R223 | the omitted counts follow the base and type filters | `TestResolveFiltersByBaseAndDocType` |
+| R224 | naming another member's personal base in knowledgeBases is audited | `TestReadingAndNamingAnotherMembersBaseIsAudited` |
+| R225 | the filter names are checked | `TestResolveFiltersByBaseAndDocType` |
+| R226 | a pending version is not current in a view by time | `TestReadAndFindTakeTheVersionCurrentAtAsOf` |
+| R227 | a pending version replaces nothing in a view by time | `TestReadAndFindTakeTheVersionCurrentAtAsOf` |
+| R228 | the version read is the one current for the id's base and uri | `TestReadAndFindTakeTheVersionCurrentAtAsOf` |
+| R229 | a revoked version names nothing | `TestAWithdrawnVersionIsNotAWayToItsPredecessor` |
+| R230 | the bases of the caller's scope (D53) bound read and find | `TestReadAndFindRefuseWhatTheCallerCannotSeeWithoutSayingWhy` |
+| R231 | the sensitivity ceiling and ACL bound read and find (now) | `TestReadAndFindRefuseWhatTheCallerCannotSeeWithoutSayingWhy` |
+| R232 | the sensitivity ceiling and ACL bound read and find (as of) | `TestReadAndFindRefuseWhatTheCallerCannotSeeWithoutSayingWhy` |
+| R233 | sources a policy excludes are not read | `TestReadAndFindAskThePDP` |
+| R234 | only the version in force is read (now) | `TestReadAndFindRefuseWhatTheCallerCannotSeeWithoutSayingWhy` |
+| R235 | the writing service and administrators may name a member's base by a document id | `TestReadingAndNamingAnotherMembersBaseIsAudited` |
+| R236 | a reader may not name a member's base by a document id | `TestReadingAndNamingAnotherMembersBaseIsAudited` |
+| R237 | reading or finding in another member's personal base is audited | `TestReadingAndNamingAnotherMembersBaseIsAudited` |
+| R238 | the PDP is asked for read and find | `TestReadAndFindAskThePDP` |
+| R239 | the request's ceiling lowers the caller's | `TestReadAndFindRefuseWhatTheCallerCannotSeeWithoutSayingWhy` |
+| R240 | the request's ceiling can not raise the caller's | `TestReadAndFindRefuseWhatTheCallerCannotSeeWithoutSayingWhy` |
+| R241 | a flagged chunk is not given unless the policy lets it through | `TestReadAndFindKeepTheInjectionFlags` |
+| R242 | a flagged chunk a read matched is counted | `TestReadAndFindKeepTheInjectionFlags` |
+| R243 | a flagged chunk a find matched is counted | `TestReadAndFindKeepTheInjectionFlags` |
+| R244 | a flagged chunk is no neighbour | `TestReadAndFindKeepTheInjectionFlags` |
+| R245 | the flags are shown when the policy lets flagged content through | `TestReadAndFindKeepTheInjectionFlags` |
+| R246 | around chunks come with the matches | `TestReadByEveryKindOfLocator` |
+| R247 | around is at most 5 | `TestReadRequestIsValidated` |
+| R248 | the token budget bounds the matches of a read | `TestReadBudgetSaysWhatItLeftOut` |
+| R249 | the item budget bounds the matches of a read | `TestReadBudgetSaysWhatItLeftOut` |
+| R250 | what a read's budget left out is counted in omitted | `TestReadBudgetSaysWhatItLeftOut` |
+| R251 | around chunks take only what the matches left of the budget | `TestReadBudgetSaysWhatItLeftOut` |
+| R252 | a page is exact | `TestLocatorMatching`、`TestReadByEveryKindOfLocator` |
+| R253 | a slide is exact | `TestLocatorMatching`、`TestReadByEveryKindOfLocator` |
+| R254 | headings match as a prefix of the path, heading by heading | `TestLocatorMatching`、`TestReadByEveryKindOfLocator` |
+| R255 | a sheet is exact | `TestLocatorMatching`、`TestReadByEveryKindOfLocator` |
+| R256 | a range matches only when the cells overlap | `TestLocatorMatching`、`TestReadByEveryKindOfLocator` |
+| R257 | ranges that lie apart in rows do not overlap | `TestLocatorMatching`、`TestReadByEveryKindOfLocator` |
+| R258 | ranges that lie apart in columns do not overlap | `TestLocatorMatching` |
+| R259 | a table is exact | `TestLocatorMatching` |
+| R260 | a range is a range of cells | `TestReadRequestIsValidated` |
+| R261 | white space is normalized in a find | `TestFindByCharactersCaseAndWhiteSpace`、`TestFindMatchesByCharactersCaseAndWhiteSpace` |
+| R262 | a find folds ASCII case | `TestFindByCharactersCaseAndWhiteSpace`、`TestFindMatchesByCharactersCaseAndWhiteSpace` |
+| R263 | the places a find gives are over the whole package at most maxHits | `TestFindByCharactersCaseAndWhiteSpace` |
+| R264 | after maxHits no more chunks are given, and the rest is counted | `TestFindByCharactersCaseAndWhiteSpace` |
+| R265 | a find's excerpt is centred on the first hit | `TestFindExcerptIsAWindowAroundTheFirstHit` |
+| R266 | a find needs a text | `TestFindByCharactersCaseAndWhiteSpace`、`TestReadRequestIsValidated` |
+| R267 | maxHits is at most 100 | `TestReadRequestIsValidated` |
+| R268 | what a find's budget left out is counted in omitted | `TestFindByCharactersCaseAndWhiteSpace` |
+| R269 | a read or find package is stored | `TestReadAndFindPackagesAreVerifiedAndRedactedByErasure` |
+| R270 | erasure takes the places of a find out of its package | `TestReadAndFindPackagesAreVerifiedAndRedactedByErasure` |
+| R271 | erasure takes the text a find looked for out of its package | `TestReadAndFindPackagesAreVerifiedAndRedactedByErasure` |
+| R272 | erasure takes the sections a read named out of its package | `TestReadAndFindPackagesAreVerifiedAndRedactedByErasure` |
+| R273 | a package without a purpose says whether it is a read or a find | `TestReadByEveryKindOfLocator` |
+| R274 | a document id is an id | `TestReadRequestIsValidated` |
+
+测试在 `internal/context/read_test.go`（定位规则、请求校验、按字符的匹配、窗口）与 `tests/integration/knowledge_read_test.go`（真实 PostgreSQL：每一种定位、`around`、预算与 `omitted`、带未来生效版本与 `pending` 版本的 `asOf`、CJK、大小写、空白、`maxHits`、看不到的文档含别的租户与两种视图、解析的过滤条件与实体、作用域、审计、注入标记、PDP、核验、文档擦除与主体擦除）。
+
+没有单独一行的控制：**被擦除的版本的 id 什么也指不到**——擦除把那一行的 uri 改写成 `kb://<库>/erased-<id>`，按它取同 uri 的版本本来就取不到别的版本，所以 `n.erasure_id IS NULL` 是第二道防线，单独删掉不会让测试失败（撤回的那道有自己的行，R229）；**取块的语句再带一遍谓词**没有测试：它防的是两条语句之间文档被撤回，这在测试里要插进事务中间才造得出来；**`DocumentChunks` 与请求校验各查一遍文档 id 的格式**，互相遮住；**租户隔离**是行级安全，删不了"一处"，由 `TestReadAndFindRefuseWhatTheCallerCannotSeeWithoutSayingWhy` 里别的租户的请求验证；**`read` 的命中块先装、`around` 后装**的次序由 `TestReadBudgetSaysWhatItLeftOut` 里的 `tight` 一例验证，但它由两段循环的先后决定，没有可删的单行。

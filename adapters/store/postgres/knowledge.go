@@ -558,15 +558,18 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 	}
 	const from = ` FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id JOIN sources s ON s.id = d.source_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x`
 	const locator = `, c.heading_path, c.page, c.table_name, c.slide, c.sheet, c.cell_range`
-	filters := func(usable string) string {
-		return ` AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))` + usable + kbScopeSQL + ` AND ($6 OR cardinality(c.flags) = 0)` + entityFilterSQL("knowledge", "d.id", "$7") + excludeSQL("$9")
+	// the placeholders after $9 differ by retriever: the lexical statement has the base and type filters at $10 and $11, the
+	// vector one has the model at $10 and the filters at $11 and $12 (D72); a bitemporal view follows them.
+	filters := func(usable, kb, dt string) string {
+		return ` AND (cardinality($5::text[]) = 0 OR s.name = ANY($5))` + usable + kbScopeSQL + ` AND ($6 OR cardinality(c.flags) = 0)` + entityFilterSQL("knowledge", "d.id", "$7") + excludeSQL("$9") + baseDocTypeSQL(kb, dt)
 	}
-	lexPred, vecPred := filters(aclSQL+knowledgeCurrentSQL), filters(aclSQL+knowledgeCurrentSQL)
+	lexPred, vecPred := filters(aclSQL+knowledgeCurrentSQL, "$10", "$11"), filters(aclSQL+knowledgeCurrentSQL, "$11", "$12")
 	var asOfArgs []any
 	if q.AsOf != nil {
-		lexPred, vecPred = filters(knowledgeAsOfSQL("$10", "$11")), filters(knowledgeAsOfSQL("$11", "$12"))
+		lexPred, vecPred = filters(knowledgeAsOfSQL("$12", "$13"), "$10", "$11"), filters(knowledgeAsOfSQL("$13", "$14"), "$11", "$12")
 		asOfArgs = []any{q.AsOf.Valid, q.AsOf.RecordedArg()}
 	}
+	filterArgs := []any{orEmpty(q.KnowledgeBases), orEmpty(q.DocTypes)}
 	type key struct {
 		id  string
 		seq int
@@ -627,7 +630,7 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 			// Equal scores are common (a CJK query matches by bigrams): they are ordered by uri, version and chunk, so the
 			// order does not depend on the plan the database chose (ADR-0001 D56).
 			rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, c.flags, ts_rank(c.search, q)::float8 AS r, s.trust`+locator+from+`, to_tsquery('simple', $4) q
-				WHERE c.search @@ q`+lexPred+` ORDER BY r DESC, d.uri, d.version, c.seq LIMIT $8`, append([]any{v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), q.TSQuery, sources, q.IncludeFlagged, entities, limit, excluded(v)}, asOfArgs...)...)
+				WHERE c.search @@ q`+lexPred+` ORDER BY r DESC, d.uri, d.version, c.seq LIMIT $8`, append(append([]any{v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), q.TSQuery, sources, q.IncludeFlagged, entities, limit, excluded(v)}, filterArgs...), asOfArgs...)...)
 			if err != nil {
 				return err
 			}
@@ -643,13 +646,16 @@ func (s *Store) SearchKnowledge(ctx context.Context, tenant string, q Query, sou
 				}
 			}
 			rows, err := tx.Query(ctx, `SELECT `+docCols+`, c.seq, c.content, c.flags, `+score+` AS r, s.trust`+locator+from+`
-				WHERE c.embedding IS NOT NULL AND c.embedding_model = $10`+vfilter+vecPred+` ORDER BY `+order+` LIMIT $8`, append([]any{v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), q.Vector, sources, q.IncludeFlagged, entities, limit, excluded(v), q.Model}, asOfArgs...)...)
+				WHERE c.embedding IS NOT NULL AND c.embedding_model = $10`+vfilter+vecPred+` ORDER BY `+order+` LIMIT $8`, append(append([]any{v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), q.Vector, sources, q.IncludeFlagged, entities, limit, excluded(v), q.Model}, filterArgs...), asOfArgs...)...)
 			if err != nil {
 				return err
 			}
 			if err := scan(rows, true); err != nil {
 				return err
 			}
+		}
+		if err := auditNamedBases(ctx, tx, tenant, v, q.KnowledgeBases); err != nil {
+			return err
 		}
 		counts := map[string]int{}
 		for _, h := range byKey {

@@ -40,6 +40,8 @@ type Request struct {
 	MaxAgeDays         int          `json:"maxAgeDays,omitempty"`
 	SensitivityCeiling string       `json:"sensitivityCeiling,omitempty"` // may only lower the principal's ceiling
 	Entities           []cmi.Entity `json:"entities,omitempty"`           // only content referencing one of these business objects (D13)
+	KnowledgeBases     []string     `json:"knowledgeBases,omitempty"`     // only knowledge in these bases, by name; visibility is as without (1.7.0, D72)
+	DocTypes           []string     `json:"docTypes,omitempty"`           // only knowledge of these document types (1.7.0, D72)
 }
 
 // Validate checks a request.
@@ -74,6 +76,19 @@ func (r *Request) Validate() error {
 	for _, k := range r.Kinds {
 		if k != cmi.ItemMemory && k != cmi.ItemKnowledge {
 			return errors.New("kinds entries must be memory or knowledge")
+		}
+	}
+	if len(r.KnowledgeBases) > 32 || len(r.DocTypes) > 32 {
+		return errors.New("at most 32 knowledgeBases and 32 docTypes")
+	}
+	for _, n := range r.KnowledgeBases {
+		if !cmi.ValidName(n) {
+			return errors.New("knowledgeBases entries must be knowledge base names")
+		}
+	}
+	for _, n := range r.DocTypes {
+		if !cmi.ValidName(n) {
+			return errors.New("docTypes entries must be document types")
 		}
 	}
 	if r.MaxAgeDays < 0 || r.MaxAgeDays > 3650 {
@@ -254,7 +269,7 @@ func (r *Resolver) Resolve(ctx context.Context, tenant string, v postgres.Visibi
 	if err != nil {
 		return nil, nil, err
 	}
-	q := postgres.Query{TSQuery: TSQuery(req.Query), Entities: cmi.EntityKeys(req.Entities), IncludeFlagged: policy.IncludeFlagged, Limit: 200, AsOf: req.AsOf}
+	q := postgres.Query{TSQuery: TSQuery(req.Query), Entities: cmi.EntityKeys(req.Entities), IncludeFlagged: policy.IncludeFlagged, Limit: 200, AsOf: req.AsOf, KnowledgeBases: req.KnowledgeBases, DocTypes: req.DocTypes}
 	if r.Embedder != nil {
 		if vecs, err := r.Embedder.Embed(ctx, []string{req.Query}); err == nil && len(vecs) == 1 {
 			q.Vector, q.Model = vecs[0], r.Embedder.Model()

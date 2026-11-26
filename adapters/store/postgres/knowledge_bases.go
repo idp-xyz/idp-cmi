@@ -510,3 +510,36 @@ func auditPersonalRead(ctx context.Context, tx pgx.Tx, tenant string, v Visibili
 	}
 	return Audit(ctx, tx, tenant, v.Subject, "knowledge.read_other", id, map[string]any{"via": via, "subject": scopeID, "document": docID, "client": v.Client, "actor": v.Actor})
 }
+
+// auditNamedBases records that a resolve named another member's personal base in its knowledgeBases filter (D72): a
+// knowledge.read_other for each such base, like naming it in a scope (D53). Naming does not widen what is visible; the
+// event says who reached for whose.
+func auditNamedBases(ctx context.Context, tx pgx.Tx, tenant string, v Visibility, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	rows, err := tx.Query(ctx, `SELECT id::text, scope_id FROM knowledge_bases WHERE name = ANY($1::text[]) AND scope_kind = 'subject' AND scope_id <> $2 ORDER BY name`, names, v.Subject)
+	if err != nil {
+		return err
+	}
+	type named struct{ id, subject string }
+	var hits []named
+	for rows.Next() {
+		var n named
+		if err := rows.Scan(&n.id, &n.subject); err != nil {
+			rows.Close()
+			return err
+		}
+		hits = append(hits, n)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, n := range hits {
+		if err := Audit(ctx, tx, tenant, v.Subject, "knowledge.read_other", n.id, map[string]any{"via": "resolve.knowledgeBases", "subject": n.subject, "client": v.Client, "actor": v.Actor}); err != nil {
+			return err
+		}
+	}
+	return nil
+}

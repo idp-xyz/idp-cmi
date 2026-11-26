@@ -11,7 +11,8 @@ IDP TELOS 的 Context, Memory & Knowledge Infrastructure（CMI）：可信的企
 | `/api/v1/connectors`、`…/{ref}/sync`、`…/{ref}/jobs` | `cmi-admin` | 连接器登记、立即同步、抓取任务（D16） |
 | `/api/v1/evaluations` | `cmi-admin` | 跑治理套件并读回证据（D17） |
 | `/v1/memory/records`、`/v1/memory/revoke` | `cmi-writer` | 追加记忆（必须带来历与已登记的来源；敏感级别受写者上限约束；可带 `entities`；写入时扫描注入模式并打 `flags`）、撤销；`?flagged=true`（管理员）审阅隔离区 |
-| `/v1/context/resolve`、`/v1/context/packages/{id}` | `cmi-reader` | 解析上下文包（全文 + 向量混合检索，`entities` 过滤）、读回（含 `stale` 与失效条目） |
+| `/v1/context/resolve`、`/v1/context/packages/{id}` | `cmi-reader` | 解析上下文包（全文 + 向量混合检索，`entities`、`knowledgeBases`、`docTypes` 过滤）、读回（含 `stale` 与失效条目） |
+| `/v1/context/read`、`/v1/context/find` | `cmi-reader` | 按文档 id 读一份文档的指定位置（页、幻灯片、标题前缀、工作表加范围）或按原词找（D71–D75）；产出的包与解析的包一样可核验 |
 | `/v1/entities/{type}/{id}` | `cmi-reader` | 引用该业务对象的、调用者可见的记忆与文档 |
 | `/v1/context/packages/{id}/verify`、`/v1/units`、`/v1/memory/records/{id}/share`、`…/{id}/transitions` | `cmi-reader` / `cmi-writer` / `cmi-admin` | 消费时复验（D24）、我的单元、显式共享（D22）、状态转换（D21） |
 | `/api/v1/units`、`/api/v1/erasures`、`/api/v1/projections` | `cmi-admin` | 单元目录（D22）、受控擦除（D20）、投影积压（D26） |
@@ -69,6 +70,16 @@ PDF、Word、PowerPoint、Excel 的原件存进对象存储之后，由一个**�
 - **一个版本的文本**：这一版（调用者先写一段占位文本，再存原件）在第一次转换成功之前是 `pending`——不检索、不取代它要取代的那一版；成功时它的文本在一个事务里被换成提取出来的，定位信息（页、幻灯片、标题路径、工作表与单元格范围）随块出来，向量由现有的投影接着做。失败时它仍是 `pending`、前一版照常可取；`GET /v1/knowledge/documents/{id}` 的 `ingest` 给出状态、失败原因码和给上传者的说明，`POST /v1/knowledge/documents/{id}/ingest` 重新排队。
 - **契约 `idp.telos.cmi` 1.6.0**（只做新增）：`KnowledgeDocument.ingest`、`status` 增 `pending`、`ContextItem.locator` 增 `slide`、`sheet`、`range`。
 - **升级**：迁移 0018 新建两张表、给 `knowledge_documents` 与 `knowledge_chunks` 各加列（不改写已有行）。
+
+## 读文档的指定位置与按原词找（KB8，ADR-0001 第 27 节）
+
+解析给的是"最像的几块"；模型要核对一个条款、读一个表格范围时需要的是**这份文档的这个位置**或**这段原话**。两个新接口在一份文档里做这件事，可见范围与解析是同一条 SQL 谓词（D7、D52、D53），产出的包与解析的包一样密封、保存、可核验、会被擦除。
+
+- **`POST /v1/context/read`** `{documentId, locator?, around?, budget?, purpose?, asOf?, sensitivityCeiling?}`：按 `locator` 取这份文档里的块，按文档顺序，前后各带 `around` 块（缺省 1，最多 5），不超过预算（放不下的在 `omitted.budget`）。`page`、`slide` 精确；`headings` 按标题路径前缀；`sheet` 精确、`range` 有重叠即算；给出几项就要全部成立；不给 `locator` 从开头读到预算用完。
+- **`POST /v1/context/find`** `{documentId, text, maxHits?, budget?, purpose?, asOf?, sensitivityCeiling?}`：子串匹配，空白先规范化，只对 ASCII 字母不分大小写，中文按字。条目是含这段文字的块，`match` 为 `exact`，`hits: [{offset, length}]` 是在块正文里的位置（按字符，即 Unicode 码点），摘录以第一处为中心；`maxHits` 缺省 20，最多 100。
+- **文档 id 指的是一份文档**：读到的是 `asOf`（缺省现在）那一刻这个 id 所在的库与 uri 的现行版本（D52）；`pending` 的版本不读；擦除了或撤回了的版本，它的 id 什么也指不到。看不到的文档一律 404，原因不说（另一个租户的、别的成员的个人库、超出敏感上限、ACL 之外、被撤回、过期、被擦除、不存在）。读或找另一个成员个人库里的文档要有点名权（写入服务与管理员），记 `knowledge.read_other`。
+- **解析的 `knowledgeBases` 与 `docTypes`**（可选）：只取这些库（按名）、这些文档类别的知识条目；记忆条目不受影响；不扩大可见范围；点名别人的个人库记 `knowledge.read_other`。
+- **契约 `idp.telos.cmi` 1.7.0**（只做新增）：`ContextItem.match` 增 `exact`、增 `hits`；OpenAPI 增两个路由和解析请求的两个字段。没有迁移。
 
 ## 许可证
 

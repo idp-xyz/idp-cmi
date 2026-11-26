@@ -740,6 +740,7 @@ type Item struct {
 	Scope       *Scope    `json:"scope,omitempty"`    // the memory's scope (D22); knowledge has none
 	Match       string    `json:"match,omitempty"`    // which retriever found it: lexical, semantic or both (D11)
 	Locator     *Locator  `json:"locator,omitempty"`  // where in the document a knowledge chunk is: its heading path, page and table (D49)
+	Hits        []TextHit `json:"hits,omitempty"`     // where the searched text is in the chunk's body, set by find (1.7.0, D72)
 	Flags       []string  `json:"flags,omitempty"`    // present only when the tenant policy lets flagged content through (D12)
 }
 
@@ -759,7 +760,15 @@ const (
 	MatchLexical  = "lexical"
 	MatchSemantic = "semantic"
 	MatchBoth     = "both"
+	MatchExact    = "exact" // the text a find asked for is in the chunk, word for word (1.7.0, D72)
 )
+
+// TextHit is one place a find matched in a chunk's body: Offset and Length count Unicode code points of the body (the
+// chunk text without its heading line), and Length is that of the matched text as it stands in the body (D72).
+type TextHit struct {
+	Offset int `json:"offset"`
+	Length int `json:"length"`
+}
 
 // Omitted counts what a resolve matched but did not pack, by reason (D28), so a consumer knows
 // the package is not "everything there is". Visibility exclusions (ACL, ceiling, other tenants) are

@@ -28,7 +28,7 @@ var update = flag.Bool("update", false, "regenerate api/contracts/examples.json 
 
 const (
 	contractDir = "../../api/contracts"
-	contractID  = "urn:idp:telos:cmi:1.6.0"
+	contractID  = "urn:idp:telos:cmi:1.7.0"
 )
 
 type noLoader struct{}
@@ -121,7 +121,10 @@ func examplePackage() *cmi.Package {
 				Locator: &cmi.Locator{Sheet: "Rates 2026", Range: "A12:B12"}},
 			{Kind: cmi.ItemKnowledge, ID: "5b6c7d8e-0000-4000-8000-000000000022", Source: "handbook", Trust: cmi.TrustAuthoritative, Ref: "kb://handbook/onboarding.pptx#2", Title: "Onboarding deck",
 				Excerpt: "Pickup slots are booked in the portal.", ObservedAt: at.Add(-24 * time.Hour), Sensitivity: cmi.SensitivityInternal, Score: 0.62, Tokens: 9, Match: cmi.MatchSemantic,
-				Locator: &cmi.Locator{Headings: []string{"Booking"}, Slide: 7}}},
+				Locator: &cmi.Locator{Headings: []string{"Booking"}, Slide: 7}},
+			{Kind: cmi.ItemKnowledge, ID: "5b6c7d8e-0000-4000-8000-000000000020", Source: "handbook", Trust: cmi.TrustAuthoritative, Ref: "handbook://pickup#1", Title: "Pickup handbook",
+				Excerpt: "Pickup › Surcharges\nThe surcharge for a late pickup is 5 euro; 取件附加费 applies.", ObservedAt: at.Add(-48 * time.Hour), Sensitivity: cmi.SensitivityInternal, Score: 1, Tokens: 24, Match: cmi.MatchExact,
+				Hits: []cmi.TextHit{{Offset: 4, Length: 9}, {Offset: 43, Length: 5}}, Locator: &cmi.Locator{Headings: []string{"Pickup", "Surcharges"}, Page: 4}}},
 		Budget: cmi.Budget{MaxTokens: 2000, UsedTokens: 42, MaxItems: 20}, AssembledAt: at, ExpiresAt: at.Add(time.Hour)}
 }
 
@@ -233,7 +236,7 @@ func buildExamples(t *testing.T) []byte {
 			{Kind: cmi.ItemMemory, ID: "c3d4e5f6-0000-4000-8000-000000000058", Status: cmi.StatusActive, Version: 1, Usable: true}},
 		ExpiresAt: at.Add(time.Hour), VerifiedAt: at.Add(30 * time.Minute)})
 	b, err := json.MarshalIndent(examplesFile{
-		Description: "idp.telos.cmi 1.6.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
+		Description: "idp.telos.cmi 1.7.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
 		GeneratedBy: "go test ./internal/cmi -run TestContract -update",
 		Examples:    out,
 	}, "", "  ")

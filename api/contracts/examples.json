@@ -1,5 +1,5 @@
 {
-  "description": "idp.telos.cmi 1.6.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
+  "description": "idp.telos.cmi 1.7.0 的示例：每一个都是 idp-cmi 实际产出的文档（ContextPackage 经 cmi.Seal 密封，其余是 API 返回的记录）。",
   "generatedBy": "go test ./internal/cmi -run TestContract -update",
   "examples": [
     {
@@ -137,6 +137,37 @@
             "title": "Onboarding deck",
             "tokens": 9,
             "trust": "authoritative"
+          },
+          {
+            "excerpt": "Pickup › Surcharges\nThe surcharge for a late pickup is 5 euro; 取件附加费 applies.",
+            "hits": [
+              {
+                "length": 9,
+                "offset": 4
+              },
+              {
+                "length": 5,
+                "offset": 43
+              }
+            ],
+            "id": "5b6c7d8e-0000-4000-8000-000000000020",
+            "kind": "knowledge",
+            "locator": {
+              "headings": [
+                "Pickup",
+                "Surcharges"
+              ],
+              "page": 4
+            },
+            "match": "exact",
+            "observedAt": "2026-11-02T09:00:00Z",
+            "ref": "handbook://pickup#1",
+            "score": 1,
+            "sensitivity": "internal",
+            "source": "handbook",
+            "title": "Pickup handbook",
+            "tokens": 24,
+            "trust": "authoritative"
           }
         ],
         "omitted": {
@@ -162,7 +193,7 @@
     {
       "definition": "Envelope",
       "value": {
-        "digest": "sha256:c818df5fde2da4a0a94e272eef33ea406c93c41f931ac753e62c4deafb74eae5",
+        "digest": "sha256:b0784657a3fc06e9985ee8c235031796be1909a3d7034788f99654241f051949",
         "document": {
           "asOf": {
             "recorded": "2026-11-04T09:00:00Z",
@@ -295,6 +326,37 @@
               "source": "handbook",
               "title": "Onboarding deck",
               "tokens": 9,
+              "trust": "authoritative"
+            },
+            {
+              "excerpt": "Pickup › Surcharges\nThe surcharge for a late pickup is 5 euro; 取件附加费 applies.",
+              "hits": [
+                {
+                  "length": 9,
+                  "offset": 4
+                },
+                {
+                  "length": 5,
+                  "offset": 43
+                }
+              ],
+              "id": "5b6c7d8e-0000-4000-8000-000000000020",
+              "kind": "knowledge",
+              "locator": {
+                "headings": [
+                  "Pickup",
+                  "Surcharges"
+                ],
+                "page": 4
+              },
+              "match": "exact",
+              "observedAt": "2026-11-02T09:00:00Z",
+              "ref": "handbook://pickup#1",
+              "score": 1,
+              "sensitivity": "internal",
+              "source": "handbook",
+              "title": "Pickup handbook",
+              "tokens": 24,
               "trust": "authoritative"
             }
           ],

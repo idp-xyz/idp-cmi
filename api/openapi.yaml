@@ -241,6 +241,16 @@ paths:
       summary: Assemble, seal and store a ContextPackage for the caller (ADR-0001 D5)
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ResolveRequest'}}}}
       responses: {'200': {description: 'the package (contract idp.telos.cmi ContextPackage) with its id and digest; package.omitted counts what matched but was not packed (budget, flagged, candidate, disputed, forbidden, lowSimilarity; ADR-0001 D28)'}, '422': {$ref: '#/components/responses/Problem'}}
+  /v1/context/read:
+    post:
+      summary: 'Read a place in one document (ADR-0001 D71, contract 1.7.0): the chunks a locator matches, in document order, with around chunks on each side, as far as the budget goes. The package is sealed and stored like resolve''s (purpose is the caller''s, default read)'
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReadRequest'}}}}
+      responses: {'200': {description: 'packageId, digest and the package (contract idp.telos.cmi ContextPackage); package.omitted.budget counts matched chunks the budget did not take. The document is the version current at asOf for the id''s base and uri; a pending version is never read'}, '404': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+  /v1/context/find:
+    post:
+      summary: 'Find a text word for word in one document (ADR-0001 D72, contract 1.7.0): substring match, white space normalized, ASCII case-insensitive, other scripts by character. The items are the chunks that hold it, in document order, match exact, with hits offsets into the chunk body'
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FindRequest'}}}}
+      responses: {'200': {description: 'packageId, digest and the package (contract idp.telos.cmi ContextPackage); package.omitted.budget counts chunks with hits left out by the budget or by maxHits'}, '404': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
   /v1/context/packages/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -353,6 +363,28 @@ components:
     Policy:
       type: object
       properties: {readerCeiling: {type: string}, writerCeiling: {type: string}, defaultMemoryTtlDays: {type: integer}, packageTtlSeconds: {type: integer}, includeFlagged: {type: boolean, description: 'let flagged content into packages, items then carry flags (ADR-0001 D12); default false'}, consolidateMinRecords: {type: integer, description: 'episodic records a group needs before it is distilled (D15, default 5)'}, consolidatedTtlDays: {type: integer, description: 'validity of distilled statements (D15, default 90)'}, consolidatedAsCandidate: {type: boolean, description: 'distilled statements are written as candidates for an administrator to admit (D21)'}, requireApproval: {type: boolean, description: 'admitting a candidate (candidate -> active) needs an approvalRef (D30)'}, externalModelCeiling: {type: string, enum: [public, internal, confidential, restricted], description: 'content above this level is never sent to an external model: no vectors, no consolidation (D29); default internal. Lowering it removes existing vectors above it'}, updatedBy: {type: string}, updatedAt: {type: string, format: date-time}, default: {type: boolean}}
+    ReadRequest:
+      type: object
+      required: [documentId]
+      properties:
+        documentId: {type: string, description: 'a version of the document; the version read is the one current at asOf for its base and uri'}
+        locator: {type: object, description: 'page and slide: exact; headings: a prefix of the chunk''s heading path; sheet: exact, with range: the cells overlap; table: exact. Every field given must hold. None = from the start of the document until the budget is used', properties: {headings: {type: array, items: {type: string}}, page: {type: integer, minimum: 1}, slide: {type: integer, minimum: 1}, sheet: {type: string}, range: {type: string, pattern: '^[A-Z]{1,3}[0-9]+:[A-Z]{1,3}[0-9]+$'}, table: {type: string}}}
+        around: {type: integer, minimum: 0, maximum: 5, description: 'chunks before and after the matches (default 1; not with no locator)'}
+        budget: {type: object, properties: {maxTokens: {type: integer, description: 'default 3000, at most 32000'}, maxItems: {type: integer, description: default 100, at most 100}}}
+        purpose: {type: string, maxLength: 200}
+        asOf: {type: object, properties: {valid: {type: string, format: date-time}, recorded: {type: string, format: date-time}}}
+        sensitivityCeiling: {type: string, enum: [public, internal, confidential, restricted], description: may only lower the caller's ceiling}
+    FindRequest:
+      type: object
+      required: [documentId, text]
+      properties:
+        documentId: {type: string, description: 'a version of the document; the version searched is the one current at asOf for its base and uri'}
+        text: {type: string, maxLength: 1000}
+        maxHits: {type: integer, minimum: 1, maximum: 100, description: 'places over the whole package (default 20)'}
+        budget: {type: object, properties: {maxTokens: {type: integer, description: 'default 3000, at most 32000'}, maxItems: {type: integer, description: default 100, at most 100}}}
+        purpose: {type: string, maxLength: 200}
+        asOf: {type: object, properties: {valid: {type: string, format: date-time}, recorded: {type: string, format: date-time}}}
+        sensitivityCeiling: {type: string, enum: [public, internal, confidential, restricted], description: may only lower the caller's ceiling}
     ResolveRequest:
       type: object
       required: [query]
@@ -368,3 +400,5 @@ components:
         maxAgeDays: {type: integer}
         sensitivityCeiling: {type: string, enum: [public, internal, confidential, restricted], description: may only lower the caller's ceiling}
         entities: {type: array, maxItems: 32, items: {$ref: '#/components/schemas/Entity'}, description: only content referencing one of these business objects (ADR-0001 D13)}
+        knowledgeBases: {type: array, maxItems: 32, items: {type: string}, description: 'only knowledge in these bases, by name (1.7.0, ADR-0001 D71); naming does not widen what is visible; naming another member''s personal base is audited as knowledge.read_other; memory items are not affected'}
+        docTypes: {type: array, maxItems: 32, items: {type: string}, description: only knowledge of these document types (1.7.0, ADR-0001 D71); memory items are not affected}

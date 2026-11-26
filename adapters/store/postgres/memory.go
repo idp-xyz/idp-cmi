@@ -57,6 +57,9 @@ type Visibility struct {
 	// to name them was checked by the API. Client and Actor say who is asking, for the audit of such a read.
 	NamedSubjects []string
 	Client, Actor string
+	// MayNameMembers says the caller may name another member's personal base: the writing service and administrators (D42,
+	// D53). A read or find of a document by its id uses it in place of the request's scope list (D72).
+	MayNameMembers bool
 }
 
 // visibleSQL is the predicate every read of memory and knowledge applies (D7): tenant rows only (RLS),
@@ -86,9 +89,9 @@ func memoryAsOfSQL(v, r string) string {
 // without validFrom is valid from the beginning.
 func knowledgeAsOfSQL(v, r string) string {
 	r = `coalesce(` + r + `::timestamptz, now())`
-	return ` AND d.erasure_id IS NULL AND d.created_at <= ` + r + ` AND (d.revoked_at IS NULL OR d.revoked_at > ` + r + `) AND ` + windowSQL("d", v) + `
+	return ` AND d.status <> 'pending' AND d.erasure_id IS NULL AND d.created_at <= ` + r + ` AND (d.revoked_at IS NULL OR d.revoked_at > ` + r + `) AND ` + windowSQL("d", v) + `
 	AND NOT EXISTS (SELECT 1 FROM knowledge_documents d2 WHERE d2.knowledge_base_id = d.knowledge_base_id AND d2.uri = d.uri AND d2.version > d.version AND d2.created_at <= ` + r + `
-		AND d2.erasure_id IS NULL AND (d2.revoked_at IS NULL OR d2.revoked_at > ` + r + `) AND (d2.valid_from IS NULL OR d2.valid_from <= ` + v + `))` + aclSQL
+		AND d2.status <> 'pending' AND d2.erasure_id IS NULL AND (d2.revoked_at IS NULL OR d2.revoked_at > ` + r + `) AND (d2.valid_from IS NULL OR d2.valid_from <= ` + v + `))` + aclSQL
 }
 
 func rank(sensitivity string) int {

@@ -22,6 +22,10 @@ type Query struct {
 	IncludeFlagged bool
 	Limit          int
 	AsOf           *cmi.AsOf // a bitemporal view instead of "now" (D25)
+	// KnowledgeBases and DocTypes narrow the knowledge items to those bases (by name) and document types; empty = no filter.
+	// They narrow what is visible, never widen it (D72).
+	KnowledgeBases []string
+	DocTypes       []string
 }
 
 // Hit is how a retriever matched: lexical rank (ts_rank), semantic rank (cosine) and the summary.
@@ -58,6 +62,20 @@ func excluded(v Visibility) []string {
 		return []string{}
 	}
 	return v.ExcludeSources
+}
+
+// baseDocTypeSQL keeps knowledge rows in the named bases and of the named document types ($kb and $dt are text[] parameters;
+// an empty array = no filter).
+func baseDocTypeSQL(kb, dt string) string {
+	return ` AND (cardinality(` + kb + `::text[]) = 0 OR EXISTS (SELECT 1 FROM knowledge_bases kbn WHERE kbn.id = d.knowledge_base_id AND kbn.name = ANY(` + kb + `)))` +
+		` AND (cardinality(` + dt + `::text[]) = 0 OR d.doc_type = ANY(` + dt + `))`
+}
+
+func orEmpty(l []string) []string {
+	if l == nil {
+		return []string{}
+	}
+	return l
 }
 
 // entityFilterSQL keeps rows that reference any of the requested entities (no entities = no filter).

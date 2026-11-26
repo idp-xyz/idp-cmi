@@ -623,11 +623,15 @@ func (s *Store) redactPackages(ctx context.Context, tx pgx.Tx, e *Erasure, n *in
 			return err
 		}
 		items, _ := doc["items"].([]any)
-		changed := false
+		changed, searched := false, false
 		for _, it := range items {
 			m, _ := it.(map[string]any)
 			if id, _ := m["id"].(string); targets[id] {
 				m["excerpt"] = Erased
+				if _, ok := m["hits"]; ok { // where a text sits in the erased chunk (find, D72)
+					delete(m, "hits")
+					searched = true
+				}
 				if ref, _ := m["ref"].(string); ref != "" && uris[id] != "" {
 					if i := strings.LastIndex(ref, "#"); i >= 0 {
 						m["ref"] = uris[id] + ref[i:]
@@ -644,6 +648,10 @@ func (s *Store) redactPackages(ctx context.Context, tx pgx.Tx, e *Erasure, n *in
 		}
 		if !changed {
 			continue
+		}
+		// the text a find looked for is text of the erased document, and what a read asked for names its sections (D72)
+		if q, _ := doc["query"].(string); searched || (len(q) > 41 && strings.HasPrefix(q, "read ") && IsUUID(q[5:41])) {
+			doc["query"] = Erased
 		}
 		raw, err := canonical.Canonical(doc)
 		if err != nil {
