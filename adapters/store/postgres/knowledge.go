@@ -309,14 +309,21 @@ func (s *Store) resolveBase(ctx context.Context, tx pgx.Tx, tenant string, src *
 	return b, nil
 }
 
-// GetDocument returns a document's metadata (administrators). A document in another member's personal base is read
-// by naming its id, and the read is audited (D53).
+// GetDocument returns a document's metadata (administrators). A document in another member's personal base is read only
+// when the request names its owner (D53, D78), and the read is audited.
 func (s *Store) GetDocument(ctx context.Context, tenant, id string, v Visibility) (*cmi.Document, error) {
 	var out *cmi.Document
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) (err error) {
 		out, err = scanDoc(tx.QueryRow(ctx, `SELECT `+docCols+` FROM knowledge_documents d JOIN sources s ON s.id = d.source_id WHERE d.id = $1`, id))
 		if err != nil {
 			return err
+		}
+		// another member's personal base: only by naming the member, as everywhere else (D78)
+		var owner string
+		if err := tx.QueryRow(ctx, `SELECT coalesce(kb.scope_id, '') FROM knowledge_bases kb WHERE kb.name = $1 AND kb.scope_kind = 'subject'`, out.KnowledgeBase).Scan(&owner); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		} else if err == nil && owner != v.Subject && !(v.MayNameMembers && v.NamedOwner == owner) {
+			return fail("NOT_FOUND", "document not found")
 		}
 		return auditPersonalRead(ctx, tx, tenant, v, out.KnowledgeBase, out.ID, "document")
 	})
@@ -435,14 +442,25 @@ func (s *Store) RevokeDocument(ctx context.Context, tenant, id, by, reason strin
 	return out, err
 }
 
+// kbOtherPersonalSQL leaves out the documents of another member's personal base that the request does not name (placeholder $1
+// is the caller's subject; the named members are the transaction's app.kb_named, as in kbScopeSQL).
+const kbOtherPersonalSQL = `
+	AND NOT EXISTS (SELECT 1 FROM knowledge_bases kbp WHERE kbp.id = d.knowledge_base_id AND kbp.scope_kind = 'subject' AND kbp.scope_id <> $1
+		AND NOT (kbp.scope_id = ANY(string_to_array(coalesce(current_setting('app.kb_named', true), ''), E'\x1f'))))`
+
 // memberDocSQL is what a member route may read of a document: not erased, within the caller's sensitivity ceiling
 // and ACL (D7), not from an excluded source (D23), in a base of the caller's default scope (D53). An administrator
-// naming a document by its id reads it from any base (a personal one audited), so the base scope is left to the caller.
+// naming a document by its id reads it from any base, so the base scope is left to the caller - for a write. A read of a
+// document (its metadata, its original) is bound to the bases of the caller's scope for everyone, administrators included:
+// another member's personal base is read only when the request names its owner and the caller may name members (D53, D78).
 // Placeholders: $1 subject, $2 roles, $3 ceiling rank, $4 excluded sources.
-func memberDocSQL(v Visibility) string {
+func memberDocSQL(v Visibility, read bool) string {
 	scope := kbScopeSQL
 	if isAdmin(v.Roles) {
 		scope = ""
+		if read { // an administrator reads every base but another member's personal one, unless the member is named (D78)
+			scope = kbOtherPersonalSQL
+		}
 	}
 	return ` AND d.erasure_id IS NULL` + aclSQL + excludeSQL("$4") + scope
 }
@@ -451,11 +469,12 @@ func memberDocSQL(v Visibility) string {
 func (s *Store) GetMemberDocument(ctx context.Context, tenant, id string, v Visibility) (*cmi.Document, error) {
 	var out *cmi.Document
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) (err error) {
-		if err := bindView(ctx, tx, v); err != nil {
+		v, err := bindDocView(ctx, tx, v, id, v.NamedOwner)
+		if err != nil {
 			return err
 		}
 		out, err = scanDoc(tx.QueryRow(ctx, `SELECT `+docCols+` FROM knowledge_documents d JOIN sources s ON s.id = d.source_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x
-			WHERE d.id = $5`+memberDocSQL(v), v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), excluded(v), id))
+			WHERE d.id = $5`+memberDocSQL(v, true), v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), excluded(v), id))
 		if err != nil {
 			return err
 		}
@@ -508,7 +527,7 @@ func (s *Store) RevokeMemberDocument(ctx context.Context, tenant, id, reason str
 		}
 		var name string
 		err := tx.QueryRow(ctx, `SELECT kb.name FROM knowledge_documents d JOIN sources s ON s.id = d.source_id JOIN knowledge_bases kb ON kb.id = d.knowledge_base_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x
-			WHERE d.id = $5`+memberDocSQL(v), v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), excluded(v), id).Scan(&name)
+			WHERE d.id = $5`+memberDocSQL(v, false), v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), excluded(v), id).Scan(&name)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fail("NOT_FOUND", "no revocable document %s", id)
 		}

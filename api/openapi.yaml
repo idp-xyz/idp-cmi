@@ -75,7 +75,8 @@ paths:
   /v1/knowledge/documents/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
-      summary: Document metadata the caller can read. A document in someone else's personal base is 404 (an administrator naming it by id reads it, audited as knowledge.read_other)
+      summary: Document metadata the caller can read. A document in someone else's personal base is 404 unless the request names its owner with `subject` (D78; the caller must be allowed to name members, and the read is audited as knowledge.read_other)
+      parameters: [{name: subject, in: query, schema: {type: string}, description: 'the member whose personal base the document is in (ADR-0001 D78): another member''s personal-base document, its metadata and its original are served only when the request names the owner and the caller may name members (the writing service, administrators); otherwise the 404 of a document that is not there; naming is audited as knowledge.read_other'}]
       responses: {'200': {description: document}, '404': {$ref: '#/components/responses/Problem'}}
     delete:
       summary: Revoke a document in a knowledge base the caller may write and can read. If-Match that no longer matches is 409
@@ -98,6 +99,7 @@ paths:
       requestBody: {required: true, content: {'*/*': {schema: {type: string, format: binary}}}}
       responses: {'200': {description: document metadata including original}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}, '429': {$ref: '#/components/responses/Problem'}, '503': {$ref: '#/components/responses/Problem'}}
     get:
+      parameters: [{name: subject, in: query, schema: {type: string}, description: 'the member whose personal base the document is in (ADR-0001 D78): another member''s personal-base document, its metadata and its original are served only when the request names the owner and the caller may name members (the writing service, administrators); otherwise the 404 of a document that is not there; naming is audited as knowledge.read_other'}]
       summary: >-
         Download the original, always as an attachment (Content-Disposition: attachment, X-Content-Type-Options: nosniff, Content-Security-Policy: sandbox).
         A caller who cannot read the document gets 404. The bytes are checked against the stored digest (a mismatch is a 500, logged)
@@ -124,7 +126,7 @@ paths:
       responses: {'200': {description: documents}}
   /api/v1/knowledge/documents/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
-    get: {summary: "Get a document's metadata. A document in another member's personal base is read by this naming of its id and audited (knowledge.read_other)", responses: {'200': {description: document}, '404': {$ref: '#/components/responses/Problem'}}}
+    get: {summary: "Get a document's metadata. A document in another member's personal base is read only when the request names its owner with `subject` (D78), and audited (knowledge.read_other)", parameters: [{name: subject, in: query, schema: {type: string}, description: 'the member whose personal base the document is in (ADR-0001 D78): another member''s personal-base document, its metadata and its original are served only when the request names the owner and the caller may name members (the writing service, administrators); otherwise the 404 of a document that is not there; naming is audited as knowledge.read_other'}], responses: {'200': {description: document}, '404': {$ref: '#/components/responses/Problem'}}}
     delete:
       summary: Revoke a document (ADR-0001 D6); it leaves retrieval and packages citing it read as stale. If-Match (D19) names the expected revision
       parameters: [{name: reason, in: query, schema: {type: string}}, {$ref: '#/components/parameters/ifMatch'}]
@@ -258,7 +260,7 @@ paths:
   /v1/context/packages/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
-      summary: Read a package back (its requester or an administrator); stale lists the cited items that have since expired, been revoked or superseded
+      summary: Read a package back (its requester, or an administrator - the one deliberate exception, for verification and audit, recorded as package.read_other, ADR-0001 D78); stale lists the cited items that have since expired, been revoked or superseded
       responses: {'200': {description: 'package, digest, stale, staleItems, expiresAt, redacted (true when erased items'' plaintext was removed from the stored document; the digest is of the sealed original)'}, '404': {$ref: '#/components/responses/Problem'}}
   /v1/context/packages/{id}/verify:
     parameters: [{$ref: '#/components/parameters/id'}]

@@ -486,6 +486,7 @@ func (a *API) Handler() http.Handler {
 		if err != nil {
 			return 0, nil, err
 		}
+		v.NamedOwner = r.URL.Query().Get("subject") // another member's personal base is read only by naming the member (D78)
 		out, err := a.Store.GetDocument(r.Context(), p.Tenant, r.PathValue("id"), v)
 		return 200, out, err
 	}, admin))
@@ -550,6 +551,7 @@ func (a *API) Handler() http.Handler {
 		if err != nil {
 			return 0, nil, err
 		}
+		v.NamedOwner = r.URL.Query().Get("subject")
 		out, err := a.Store.GetMemberDocument(r.Context(), p.Tenant, r.PathValue("id"), v)
 		return 200, out, err
 	}, reader, writer))
@@ -645,6 +647,7 @@ func (a *API) Handler() http.Handler {
 			return 0, nil, pb
 		}
 		release := func() { releaseAll(); releaseCaller() }
+		v.NamedOwner = r.URL.Query().Get("subject")
 		f, err := a.Store.GetOriginal(r.Context(), p.Tenant, r.PathValue("id"), v)
 		if err != nil {
 			release()
@@ -1222,7 +1225,7 @@ func (a *API) Handler() http.Handler {
 		if p.Has(admin) {
 			requester = ""
 		}
-		out, err := a.Store.GetPackage(r.Context(), p.Tenant, r.PathValue("id"), requester)
+		out, err := a.Store.GetPackage(r.Context(), p.Tenant, r.PathValue("id"), requester, p.Subject)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -1234,7 +1237,7 @@ func (a *API) Handler() http.Handler {
 		if p.Has(admin) {
 			requester = ""
 		}
-		out, err := a.Store.VerifyPackage(r.Context(), p.Tenant, r.PathValue("id"), requester)
+		out, err := a.Store.VerifyPackage(r.Context(), p.Tenant, r.PathValue("id"), requester, p.Subject)
 		return 200, out, err
 	}, reader, writer))
 

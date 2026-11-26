@@ -67,8 +67,11 @@ func TestAdministratorReadsAPersonalBaseOnlyByNamingIt(t *testing.T) {
 	e.must(404, "GET", "/v1/knowledge/documents/"+id, "carol", nil)
 	e.must(200, "GET", "/v1/knowledge/documents/"+id, "bob", nil)
 	before := auditCount(e, "knowledge.read_other", "")
-	e.must(200, "GET", "/v1/knowledge/documents/"+id, "alice", nil)
-	e.must(200, "GET", "/api/v1/knowledge/documents/"+id, "alice", nil)
+	// by its id alone the administrator gets the 404 of a document that is not there; naming the member serves it (D78)
+	e.must(404, "GET", "/v1/knowledge/documents/"+id, "alice", nil)
+	e.must(404, "GET", "/api/v1/knowledge/documents/"+id, "alice", nil)
+	e.must(200, "GET", "/v1/knowledge/documents/"+id+"?subject=bob", "alice", nil)
+	e.must(200, "GET", "/api/v1/knowledge/documents/"+id+"?subject=bob", "alice", nil)
 	if auditCount(e, "knowledge.read_other", "") != before+2 {
 		t.Fatalf("by-id reads were audited %d times, want 2", auditCount(e, "knowledge.read_other", "")-before)
 	}
@@ -88,7 +91,10 @@ func TestAdministratorReadsAPersonalBaseOnlyByNamingIt(t *testing.T) {
 		t.Fatalf("carol's download: %d", st)
 	}
 	before = auditCount(e, "knowledge.read_other", "")
-	if st, _, body := e.callBytes(http.MethodGet, "/v1/knowledge/documents/"+id+"/original", "alice", "", nil); st != 200 || string(body) != "%PDF diary" {
+	if st, _, _ := e.callBytes(http.MethodGet, "/v1/knowledge/documents/"+id+"/original", "alice", "", nil); st != 404 {
+		t.Fatalf("administrator's download without naming the member: %d", st)
+	}
+	if st, _, body := e.callBytes(http.MethodGet, "/v1/knowledge/documents/"+id+"/original?subject=bob", "alice", "", nil); st != 200 || string(body) != "%PDF diary" {
 		t.Fatalf("administrator's download: %d", st)
 	}
 	if auditCount(e, "knowledge.read_other", "") != before+1 {

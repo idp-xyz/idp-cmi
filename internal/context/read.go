@@ -325,6 +325,10 @@ func (r *Resolver) seal(ctx context.Context, tenant string, p *prepared, query s
 	if err := r.Store.SaveConsultingPackage(ctx, tenant, env, pkg, consulted); err != nil {
 		return nil, nil, err
 	}
+	// the read of another member's personal base is recorded once, now that it has succeeded (D78)
+	if err := r.Store.AuditDocumentRead(ctx, tenant, p.v, p.view.Document.KnowledgeBase, p.view.Document.ID, p.q.Via); err != nil {
+		return nil, nil, err
+	}
 	return pkg, env, nil
 }
 

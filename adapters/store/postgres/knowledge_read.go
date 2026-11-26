@@ -72,6 +72,9 @@ func docArgs(v Visibility, q DocQuery, id string) []any {
 // caller who may name it (the writing service, an administrator): the document id names it, as a subject scope does in a
 // resolve (D53).
 func bindDocView(ctx context.Context, tx pgx.Tx, v Visibility, id, named string) (Visibility, error) {
+	if !IsUUID(id) {
+		return v, fail("NOT_FOUND", "document not found")
+	}
 	var owner string
 	err := tx.QueryRow(ctx, `SELECT kb.scope_id FROM knowledge_documents d JOIN knowledge_bases kb ON kb.id = d.knowledge_base_id WHERE d.id = $1 AND kb.scope_kind = 'subject'`, id).Scan(&owner)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -126,7 +129,8 @@ func (s *Store) ResolveDocument(ctx context.Context, tenant string, v Visibility
 // (ChunkContents). Every statement carries the visibility predicate of resolve, so a document the caller cannot see -
 // another tenant's, another member's, above the ceiling, outside the ACL, erased, revoked, expired, not yet in force, still
 // pending - is the same NOT_FOUND as one that does not exist. Reading a document of another member's personal base is
-// audited (D53).
+// audited (D53) by AuditDocumentRead, once, after the read has succeeded (D78): a read that is repeated, or fails, leaves no
+// second record or none.
 func (s *Store) DocumentChunks(ctx context.Context, tenant string, v Visibility, q DocQuery, content bool) (*DocView, error) {
 	if !IsUUID(q.DocumentID) {
 		return nil, fail("INVALID", "documentId must be a document id")
@@ -176,9 +180,6 @@ func (s *Store) DocumentChunks(ctx context.Context, tenant string, v Visibility,
 		rows.Close()
 		if len(view.Chunks) == 0 {
 			return fail("NOT_FOUND", "document not found")
-		}
-		if err := auditPersonalRead(ctx, tx, tenant, v, view.Document.KnowledgeBase, view.Document.ID, q.Via); err != nil {
-			return err
 		}
 		out = view
 		return nil
@@ -264,4 +265,12 @@ func itoaSQL(n int) string {
 		return string(rune('0' + n))
 	}
 	return string(rune('0'+n/10)) + string(rune('0'+n%10))
+}
+
+// AuditDocumentRead records that the caller read or found in a document of another member's personal base (D53): once, by the
+// resolver, after the read succeeded; the caller named the member (D78).
+func (s *Store) AuditDocumentRead(ctx context.Context, tenant string, v Visibility, baseName, docID, via string) error {
+	return s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
+		return auditPersonalRead(ctx, tx, tenant, v, baseName, docID, via)
+	})
 }

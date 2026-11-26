@@ -60,6 +60,9 @@ type Visibility struct {
 	// MayNameMembers says the caller may name another member's personal base: the writing service and administrators (D42,
 	// D53). A read or find of a document by its id uses it in place of the request's scope list (D74).
 	MayNameMembers bool
+	// NamedOwner is the member the request names (the query parameter subject of the document and original routes): another
+	// member's personal-base document is served only when it is that member's and the caller may name members (D78).
+	NamedOwner string
 }
 
 // visibleSQL is the predicate every read of memory and knowledge applies (D7): tenant rows only (RLS),

@@ -113,7 +113,7 @@ func findForOriginal(ctx context.Context, tx pgx.Tx, tenant string, v Visibility
 	var t originalTarget
 	err := tx.QueryRow(ctx, `SELECT current_tenant()::text, d.id::text, d.version, kb.name, coalesce(d.original_key, ''), coalesce(d.original_sha256, ''), coalesce(d.original_byte_size, 0), coalesce(d.original_media_type, '')
 		FROM knowledge_documents d JOIN sources s ON s.id = d.source_id JOIN knowledge_bases kb ON kb.id = d.knowledge_base_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x
-		WHERE d.id = $5`+memberDocSQL(v), v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), excluded(v), id).
+		WHERE d.id = $5`+memberDocSQL(v, !write), v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), excluded(v), id).
 		Scan(&t.tenant, &t.id, &t.version, &t.baseName, &t.key, &t.sum, &t.size, &t.media)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fail("NOT_FOUND", "document not found")
@@ -316,7 +316,8 @@ func (s *Store) GetOriginal(ctx context.Context, tenant, id string, v Visibility
 	}
 	var t *originalTarget
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) (err error) {
-		if err := bindView(ctx, tx, v); err != nil {
+		v, err := bindDocView(ctx, tx, v, id, v.NamedOwner) // another member's base only by naming the member (D78)
+		if err != nil {
 			return err
 		}
 		t, err = findForOriginal(ctx, tx, tenant, v, id, false)

@@ -53,16 +53,19 @@ func (s *Store) SaveConsultingPackage(ctx context.Context, tenant string, env *c
 // reports which cited items have since expired, been revoked or superseded. A knowledge document is current
 // by the one definition of D52: no newer version of its base and uri is in force, it is not revoked, expired or
 // erased, and its base is active.
-func (s *Store) GetPackage(ctx context.Context, tenant, id, requester string) (*StoredPackage, error) {
+func (s *Store) GetPackage(ctx context.Context, tenant, id, requester, caller string) (*StoredPackage, error) {
 	var out StoredPackage
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		var doc string
+		var doc, by string
 		var refs []byte
-		if err := tx.QueryRow(ctx, `SELECT digest, document, item_refs, expires_at, redacted FROM context_packages WHERE id = $1 AND ($2 = '' OR requested_by = $2)`, id, requester).
-			Scan(&out.Envelope.Digest, &doc, &refs, &out.ExpiredAt, &out.Redacted); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT digest, document, item_refs, expires_at, redacted, requested_by FROM context_packages WHERE id = $1 AND ($2 = '' OR requested_by = $2)`, id, requester).
+			Scan(&out.Envelope.Digest, &doc, &refs, &out.ExpiredAt, &out.Redacted, &by); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return fail("NOT_FOUND", "package not found")
 			}
+			return err
+		}
+		if err := auditPackageRead(ctx, tx, tenant, caller, by, id, "get"); err != nil {
 			return err
 		}
 		out.Envelope.Document = json.RawMessage(doc)
@@ -100,14 +103,18 @@ func (s *Store) GetPackage(ctx context.Context, tenant, id, requester string) (*
 
 // VerifyPackage reports the current state of every item a package cites (D24). The requester (or
 // an administrator, requester "") may ask; the package's validity is not extended.
-func (s *Store) VerifyPackage(ctx context.Context, tenant, id, requester string) (*cmi.Verification, error) {
+func (s *Store) VerifyPackage(ctx context.Context, tenant, id, requester, caller string) (*cmi.Verification, error) {
 	out := &cmi.Verification{PackageID: id, StaleItems: []string{}, Items: []cmi.ItemStatus{}, VerifiedAt: s.now().UTC().Truncate(time.Second)}
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		var refs []byte
-		if err := tx.QueryRow(ctx, `SELECT item_refs, expires_at, redacted FROM context_packages WHERE id = $1 AND ($2 = '' OR requested_by = $2)`, id, requester).Scan(&refs, &out.ExpiresAt, &out.Redacted); err != nil {
+		var by string
+		if err := tx.QueryRow(ctx, `SELECT item_refs, expires_at, redacted, requested_by FROM context_packages WHERE id = $1 AND ($2 = '' OR requested_by = $2)`, id, requester).Scan(&refs, &out.ExpiresAt, &out.Redacted, &by); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return fail("NOT_FOUND", "package not found")
 			}
+			return err
+		}
+		if err := auditPackageRead(ctx, tx, tenant, caller, by, id, "verify"); err != nil {
 			return err
 		}
 		var items []ItemRef
@@ -161,4 +168,14 @@ func (s *Store) Sweep(ctx context.Context) (int, error) {
 		return nil
 	})
 	return n, err
+}
+
+// auditPackageRead records that an administrator read or verified a package somebody else requested (ADR-0001 D78): the one
+// exception to "a package is read by its requester", kept for verification and audit, and not silent. caller is empty for the
+// service's own reads (the evaluation), which are not audited.
+func auditPackageRead(ctx context.Context, tx pgx.Tx, tenant, caller, requestedBy, id, via string) error {
+	if caller == "" || caller == requestedBy {
+		return nil
+	}
+	return Audit(ctx, tx, tenant, caller, "package.read_other", id, map[string]any{"via": via, "requestedBy": requestedBy})
 }

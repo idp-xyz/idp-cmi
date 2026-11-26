@@ -134,7 +134,7 @@ func (s *Suite) Run(ctx context.Context, tenant, by string) (*postgres.Evaluatio
 	if _, err := s.Store.RevokeMemory(ctx, tenant, authID, "", RecordedBy, "evaluation: revocation check", true, 0); err != nil {
 		return nil, err
 	}
-	stored, err := s.Store.GetPackage(ctx, tenant, pkg.ID, "")
+	stored, err := s.Store.GetPackage(ctx, tenant, pkg.ID, "", "")
 	if err != nil {
 		return nil, err
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"idp-cmi/adapters/blob"
 	"idp-cmi/adapters/store/postgres"
 	"idp-cmi/internal/pdp"
 	"idp-cmi/migrations"
@@ -788,5 +789,146 @@ func TestReadAndFindTakeASourcesFilterLikeResolve(t *testing.T) {
 		if st, _ := ask(kind, hand, many, false); st != 422 {
 			t.Fatalf("%s 33 sources: %d", kind, st)
 		}
+	}
+}
+
+// ADR-0001 D78: the document route and the original download follow the same rule as read and find: another member's
+// personal-base document, its metadata and its original, only by naming the owner (?subject=), and only for a caller who may
+// name members; otherwise the 404 of a document that is not there
+func TestAnotherMembersDocumentAndOriginalAreServedOnlyByNamingTheOwner(t *testing.T) {
+	e := newEnv(t)
+	kbSources(e)
+	e.store.Originals = &blob.Mem{}
+	bob := e.must(201, "POST", "/v1/knowledge/documents", "bob", kbDoc("member-notes", "kb://me/n", "", "ownerquartz note of bob"))["documentId"].(string)
+	if st, _, _ := e.callBytes(http.MethodPut, "/v1/knowledge/documents/"+bob+"/original", "bob", "application/pdf", []byte("%PDF owner")); st != 200 {
+		t.Fatal(st)
+	}
+	carol := e.must(201, "POST", "/v1/knowledge/documents", "carol", kbDoc("member-notes", "kb://me/c", "", "ownerquartz note of carol"))["documentId"].(string)
+	if st, _, _ := e.callBytes(http.MethodPut, "/v1/knowledge/documents/"+carol+"/original", "carol", "application/pdf", []byte("%PDF carol")); st != 200 {
+		t.Fatal(st)
+	}
+	missing := "11111111-2222-4333-8444-555555555555"
+	get := func(who, path string) (int, string) {
+		st, _, body := e.callBytes(http.MethodGet, path, who, "", nil)
+		return st, string(body)
+	}
+	type route struct{ name, path string }
+	routes := func(id, q string) []route {
+		return []route{{"document", "/v1/knowledge/documents/" + id + q}, {"admin document", "/api/v1/knowledge/documents/" + id + q}, {"original", "/v1/knowledge/documents/" + id + "/original" + q}}
+	}
+	for i, rt := range routes(bob, "") {
+		// the owner reads their own, named or not
+		if rt.name != "admin document" {
+			if st, _ := get("bob", rt.path); st != 200 {
+				t.Fatalf("%s: the owner: %d", rt.name, st)
+			}
+			if st, _ := get("bob", rt.path+"?subject=bob"); st != 200 {
+				t.Fatalf("%s: the owner naming themselves: %d", rt.name, st)
+			}
+		}
+		_, gone := get("alice", routes(missing, "")[i].path)
+		before := auditCount(e, "knowledge.read_other", "")
+		// an administrator without naming: the very answer for a document that is not there
+		if st, body := get("alice", rt.path); st != 404 || body != gone {
+			t.Fatalf("%s: an administrator without naming: %d %s / %s", rt.name, st, body, gone)
+		}
+		// the writing service without naming, and a reader even naming: the same
+		if rt.name != "admin document" {
+			if st, body := get("bob", routes(carol, "")[i].path); st != 404 || body != gone {
+				t.Fatalf("%s: the writing service without naming: %d", rt.name, st)
+			}
+			if st, body := get("carol", rt.path+"?subject=bob"); st != 404 || body != gone {
+				t.Fatalf("%s: a reader naming the member: %d", rt.name, st)
+			}
+		}
+		if auditCount(e, "knowledge.read_other", "") != before {
+			t.Fatalf("%s: a refused read was audited", rt.name)
+		}
+		// naming the owner: served, audited
+		if st, _ := get("alice", rt.path+"?subject=bob"); st != 200 {
+			t.Fatalf("%s: an administrator naming the owner: %d", rt.name, st)
+		}
+		if rt.name != "admin document" {
+			if st, _ := get("bob", routes(carol, "?subject=carol")[i].path); st != 200 {
+				t.Fatalf("%s: the writing service naming the owner: %d", rt.name, st)
+			}
+		}
+		// the wrong member named
+		if st, _ := get("alice", rt.path+"?subject=carol"); st != 404 {
+			t.Fatalf("%s: naming another member than the owner: %d", rt.name, st)
+		}
+	}
+	if auditCount(e, "knowledge.read_other", "") < 5 {
+		t.Fatalf("the named reads were not audited: %d", auditCount(e, "knowledge.read_other", ""))
+	}
+	// what is not in a personal base is not affected: an administrator reads an enterprise document by its id
+	ent := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://ent", "", "entquartz enterprise"))["documentId"].(string)
+	if st, _ := get("alice", "/v1/knowledge/documents/"+ent); st != 200 {
+		t.Fatalf("an enterprise document: %d", st)
+	}
+	// the lists: an administrator's list leaves personal bases out unless the base is named (by its name, audited); a member's
+	// list holds the member's own bases only
+	if body := fmt.Sprint(e.must(200, "GET", "/api/v1/knowledge/documents", "alice", nil)["documents"]); strings.Contains(body, "kb://personal") {
+		t.Fatal("the administrator's list shows personal bases")
+	}
+	if body := fmt.Sprint(e.must(200, "GET", "/v1/knowledge/documents", "alice", nil)["documents"]); strings.Contains(body, "ownerquartz") {
+		t.Fatal("an administrator's member list shows another member's documents")
+	}
+}
+
+// a package is read by its requester; an administrator may read and verify another's, and that is recorded (ADR-0001 D78)
+func TestAnAdministratorReadingAnothersPackageIsAudited(t *testing.T) {
+	e := newEnv(t)
+	kbSources(e)
+	e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://pk", "", "pkquartz text"))
+	p := resolveKnowledge(e, "carol", "pkquartz", nil)
+	id := p["packageId"].(string)
+	before := auditCount(e, "package.read_other", "")
+	e.must(200, "GET", "/v1/context/packages/"+id, "carol", nil)
+	verify(e, "carol", p)
+	if auditCount(e, "package.read_other", "") != before {
+		t.Fatal("the requester's own read was audited as another's")
+	}
+	e.must(404, "GET", "/v1/context/packages/"+id, "bob", nil)
+	e.must(200, "GET", "/v1/context/packages/"+id, "alice", nil)
+	if auditCount(e, "package.read_other", id) != before+1 {
+		t.Fatal("an administrator's read of another's package is not audited")
+	}
+	verify(e, "alice", p)
+	if auditCount(e, "package.read_other", id) != before+2 {
+		t.Fatal("an administrator's verification of another's package is not audited")
+	}
+}
+
+// the audit of reading another member's base is written once, after the read succeeded, even when the read is repeated (D78)
+func TestTheAuditOfAReadThatIsRepeatedIsWrittenOnce(t *testing.T) {
+	e := newEnv(t)
+	kbSources(e)
+	text := "# A\n\nrepeatquartz first part.\n\n# B\n\nrepeatquartz second part.\n"
+	id := e.must(201, "POST", "/v1/knowledge/documents", "bob", kbDoc("member-notes", "kb://me/r", "", text))["documentId"].(string)
+	defer func() { e.store.OnChunkContents = nil }()
+	bob := map[string]any{"kind": "subject", "id": "bob"}
+	before := auditCount(e, "knowledge.read_other", "")
+	var once sync.Once
+	e.store.OnChunkContents = func() {
+		once.Do(func() { sqlAsOwner(t, e, `UPDATE knowledge_documents SET revision = revision + 1 WHERE id = $1`, id) })
+	}
+	got := readDoc(e, "alice", map[string]any{"documentId": id, "purpose": "p", "scope": bob})
+	if len(items(got)) != 2 {
+		t.Fatalf("the retry: %v", items(got))
+	}
+	if n := auditCount(e, "knowledge.read_other", "") - before; n != 1 {
+		t.Fatalf("a read that was repeated once is audited %d times", n)
+	}
+	// a read that fails (the document changes at every attempt) is not recorded as a read
+	before = auditCount(e, "knowledge.read_other", "")
+	e.store.OnChunkContents = func() {
+		sqlAsOwner(t, e, `UPDATE knowledge_documents SET revision = revision + 1 WHERE id = $1`, id)
+	}
+	if st, _ := e.call("POST", "/v1/context/read", "alice", map[string]any{"documentId": id, "purpose": "p", "scope": bob}); st != 409 {
+		t.Fatalf("%d", st)
+	}
+	if auditCount(e, "knowledge.read_other", "") != before {
+		t.Fatal("a read that failed was audited as a read")
 	}
 }
