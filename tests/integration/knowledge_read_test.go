@@ -683,14 +683,18 @@ func TestReadingAndNamingAnotherMembersBaseIsAudited(t *testing.T) {
 	e.must(404, "POST", "/v1/context/read", "carol", map[string]any{"documentId": bobDoc, "purpose": "p"})
 	e.must(404, "POST", "/v1/context/find", "carol", map[string]any{"documentId": bobDoc, "text": "bobnote", "purpose": "p"})
 	// an administrator (and the writing service) may: the read is visible and audited with its way
-	got := readDoc(e, "alice", map[string]any{"documentId": bobDoc, "purpose": "p"})
+	// without naming the member an administrator gets the 404 of an invisible document (D78)
+	e.must(404, "POST", "/v1/context/read", "alice", map[string]any{"documentId": bobDoc, "purpose": "p"})
+	e.must(404, "POST", "/v1/context/find", "alice", map[string]any{"documentId": bobDoc, "text": "bobnote", "purpose": "p"})
+	bobScope := map[string]any{"kind": "subject", "id": "bob"}
+	got := readDoc(e, "alice", map[string]any{"documentId": bobDoc, "purpose": "p", "scope": bobScope})
 	if !strings.Contains(excerpts(got), "qzxreadother") {
 		t.Fatalf("%v", items(got))
 	}
 	if n := auditCount(e, "knowledge.read_other", "") - before; n != 1 {
 		t.Fatalf("read: %d events", n)
 	}
-	findDoc(e, "alice", map[string]any{"documentId": bobDoc, "text": "bobnote", "purpose": "p"})
+	findDoc(e, "alice", map[string]any{"documentId": bobDoc, "text": "bobnote", "purpose": "p", "scope": bobScope})
 	if n := auditCount(e, "knowledge.read_other", "") - before; n != 2 {
 		t.Fatalf("find: %d events", n)
 	}

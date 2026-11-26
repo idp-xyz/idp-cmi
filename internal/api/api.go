@@ -1199,7 +1199,7 @@ func (a *API) Handler() http.Handler {
 			return 0, nil, err
 		}
 		return lookInto(in.Validate, func(ctx context.Context, tenant string, v postgres.Visibility) (*cmictx.Target, error) {
-			return a.Resolver.TargetOf(ctx, tenant, v, in.DocumentID, in.SensitivityCeiling, in.AsOf)
+			return a.Resolver.TargetOf(ctx, tenant, v, in.DocumentID, in.SensitivityCeiling, in.AsOf, in.Scope, in.Sources)
 		}, func() string { return in.Purpose }, func(ctx context.Context, tenant string, v postgres.Visibility, version string) (*cmi.Package, *cmi.Envelope, error) {
 			in.RequireVersion = version
 			return a.Resolver.Read(ctx, tenant, v, in)
@@ -1211,7 +1211,7 @@ func (a *API) Handler() http.Handler {
 			return 0, nil, err
 		}
 		return lookInto(in.Validate, func(ctx context.Context, tenant string, v postgres.Visibility) (*cmictx.Target, error) {
-			return a.Resolver.TargetOf(ctx, tenant, v, in.DocumentID, in.SensitivityCeiling, in.AsOf)
+			return a.Resolver.TargetOf(ctx, tenant, v, in.DocumentID, in.SensitivityCeiling, in.AsOf, in.Scope, in.Sources)
 		}, func() string { return in.Purpose }, func(ctx context.Context, tenant string, v postgres.Visibility, version string) (*cmi.Package, *cmi.Envelope, error) {
 			in.RequireVersion = version
 			return a.Resolver.Find(ctx, tenant, v, in)

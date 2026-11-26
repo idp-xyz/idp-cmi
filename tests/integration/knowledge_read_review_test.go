@@ -664,3 +664,129 @@ func TestAHardCutNextToASpaceIsJoinedWithASpace(t *testing.T) {
 		t.Fatal("a seam of unknown kind is tried with a space and with nothing")
 	}
 }
+
+// ADR-0001 D78: another member's personal base is read by id only when the request names that member, and the caller may name
+// members; without it the answer is the 404 of an invisible document, for writers and administrators too
+func TestAnotherMembersPersonalBaseIsReadOnlyByNamingTheMember(t *testing.T) {
+	e := newEnv(t)
+	kbSources(e)
+	bobDoc := e.must(201, "POST", "/v1/knowledge/documents", "bob", kbDoc("member-notes", "kb://me/n", "", "namedbob quartz note of bob"))["documentId"].(string)
+	carolDoc := e.must(201, "POST", "/v1/knowledge/documents", "carol", kbDoc("member-notes", "kb://me/c", "", "namedcarol quartz note of carol"))["documentId"].(string)
+	missing := "11111111-2222-4333-8444-555555555555"
+	bob := map[string]any{"kind": "subject", "id": "bob"}
+	carol := map[string]any{"kind": "subject", "id": "carol"}
+	ask := func(who, kind, id string, scope map[string]any) (int, map[string]any) {
+		body := map[string]any{"documentId": id, "purpose": "p"}
+		path := "/v1/context/read"
+		if kind == "find" {
+			path, body["text"] = "/v1/context/find", "quartz"
+		}
+		if scope != nil {
+			body["scope"] = scope
+		}
+		return e.call("POST", path, who, body)
+	}
+	for _, kind := range []string{"read", "find"} {
+		before := auditCount(e, "knowledge.read_other", "")
+		// the owner needs no naming; naming oneself is no harm
+		if st, _ := ask("bob", kind, bobDoc, nil); st != 200 {
+			t.Fatalf("%s: the owner: %d", kind, st)
+		}
+		if st, _ := ask("bob", kind, bobDoc, bob); st != 200 {
+			t.Fatalf("%s: the owner naming themselves: %d", kind, st)
+		}
+		// an administrator and the writing service, without naming: 404, the very body of a missing document
+		_, gone := ask("alice", kind, missing, nil)
+		for _, who := range []string{"alice", "bob"} {
+			id := bobDoc
+			if who == "bob" {
+				id = carolDoc
+			}
+			if st, out := ask(who, kind, id, nil); st != 404 || fmt.Sprint(out) != fmt.Sprint(gone) {
+				t.Fatalf("%s: %s without naming: %d %v", kind, who, st, out)
+			}
+		}
+		if auditCount(e, "knowledge.read_other", "") != before {
+			t.Fatalf("%s: a refused read was audited as a read", kind)
+		}
+		// naming the member: served and audited
+		if st, _ := ask("alice", kind, bobDoc, bob); st != 200 {
+			t.Fatalf("%s: an administrator naming the member: %d", kind, st)
+		}
+		if st, _ := ask("bob", kind, carolDoc, carol); st != 200 {
+			t.Fatalf("%s: the writing service naming the member: %d", kind, st)
+		}
+		if auditCount(e, "knowledge.read_other", "") != before+2 {
+			t.Fatalf("%s: the reads of other members were not audited", kind)
+		}
+		// naming another member than the owner, or being a reader who names one: the same 404
+		if st, _ := ask("alice", kind, bobDoc, carol); st != 404 {
+			t.Fatalf("%s: naming the wrong member: %d", kind, st)
+		}
+		if st, out := ask("carol", kind, bobDoc, bob); st != 404 || fmt.Sprint(out) != fmt.Sprint(gone) {
+			t.Fatalf("%s: a reader naming another member: %d %v", kind, st, out)
+		}
+		// the field is checked: a scope that is no subject, or no id
+		if st, _ := ask("alice", kind, bobDoc, map[string]any{"kind": "team", "id": "lane"}); st != 422 {
+			t.Fatalf("%s: a team scope: %d", kind, st)
+		}
+		if st, _ := ask("alice", kind, bobDoc, map[string]any{"kind": "subject"}); st != 422 {
+			t.Fatalf("%s: a subject scope without an id: %d", kind, st)
+		}
+	}
+}
+
+// ADR-0001 D78: the sources filter of read and find is a visibility predicate: a document outside it is the 404 of a missing one
+func TestReadAndFindTakeASourcesFilterLikeResolve(t *testing.T) {
+	e := newEnv(t)
+	kbSources(e)
+	e.must(201, "POST", "/api/v1/sources", "alice", map[string]any{"name": "ops", "displayName": "Ops", "kind": "document-store", "trust": "authoritative"})
+	e.must(201, "POST", "/api/v1/knowledge/bases", "alice", kbBase("ops-kb", "tenant", "", "ops", nil, 0, 0))
+	hand := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://src", "", "srcquartz handbook text"))["documentId"].(string)
+	ops := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("ops", "kb://ops-kb/src", "ops-kb", "srcquartz ops text"))["documentId"].(string)
+	missing := "11111111-2222-4333-8444-555555555555"
+	ask := func(kind, id string, sources []string, asOf bool) (int, map[string]any) {
+		body := map[string]any{"documentId": id, "purpose": "p"}
+		path := "/v1/context/read"
+		if kind == "find" {
+			path, body["text"] = "/v1/context/find", "srcquartz"
+		}
+		if sources != nil {
+			body["sources"] = sources
+		}
+		if asOf {
+			body["asOf"] = map[string]any{"valid": nano(time.Now())}
+		}
+		return e.call("POST", path, "carol", body)
+	}
+	for _, kind := range []string{"read", "find"} {
+		for _, asOf := range []bool{false, true} {
+			if st, _ := ask(kind, hand, nil, asOf); st != 200 {
+				t.Fatalf("%s no filter (as of %v): %d", kind, asOf, st)
+			}
+			if st, out := ask(kind, hand, []string{"handbook"}, asOf); st != 200 || len(items(out)) == 0 {
+				t.Fatalf("%s in sources (as of %v): %d %v", kind, asOf, st, out)
+			}
+			if st, out := ask(kind, hand, []string{"handbook", "ops"}, asOf); st != 200 || len(items(out)) == 0 {
+				t.Fatalf("%s in sources, two named (as of %v): %d %v", kind, asOf, st, out)
+			}
+			_, gone := ask(kind, missing, []string{"handbook"}, asOf)
+			if st, out := ask(kind, ops, []string{"handbook"}, asOf); st != 404 || fmt.Sprint(out) != fmt.Sprint(gone) {
+				t.Fatalf("%s out of sources (as of %v): %d %v", kind, asOf, st, out)
+			}
+			if st, _ := ask(kind, ops, []string{"ops"}, asOf); st != 200 {
+				t.Fatalf("%s ops in its source (as of %v): %d", kind, asOf, st)
+			}
+		}
+		if st, _ := ask(kind, hand, []string{"Bad Name"}, false); st != 422 {
+			t.Fatalf("%s a source that is no name: %d", kind, st)
+		}
+		many := make([]string, 33)
+		for i := range many {
+			many[i] = fmt.Sprintf("s%d", i)
+		}
+		if st, _ := ask(kind, hand, many, false); st != 422 {
+			t.Fatalf("%s 33 sources: %d", kind, st)
+		}
+	}
+}

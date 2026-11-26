@@ -17,6 +17,11 @@ type DocQuery struct {
 	// RequireID, when set, is the version the caller has already been cleared to read (the PDP was asked about it, D76): the
 	// version found must be this one, or the document is not found.
 	RequireID string
+	// NamedOwner is the member whose personal base the request names (D78): a document in another member's personal base is
+	// served only when it is that member's and the caller may name members. Sources narrows the documents to those of the named
+	// sources, like a resolve's (D78); empty = no filter.
+	NamedOwner string
+	Sources    []string
 }
 
 // DocChunk is one chunk of the document with where it sits. Content is empty when only the places were asked for.
@@ -42,18 +47,21 @@ type DocView struct {
 // (D7, D52, D53): the caller's ceiling and ACL, the excluded sources, the bases of the caller's scope, the version that is
 // current. A version that is still waiting for its text is not current in either form (knowledgeCurrentSQL takes only active
 // and superseded; knowledgeAsOfSQL takes versions that were in force by then, D76). Placeholders: $1 subject, $2 roles, $3
-// ceiling rank, $4 excluded sources; a view adds $6 (valid) and $7 (recorded).
+// ceiling rank, $4 excluded sources; $5 is the document id, $6 the sources of the request; a view adds $7 (valid) and $8 (recorded).
 func visibleDocSQL(asOf bool) string {
 	if asOf {
-		return kbScopeSQL + excludeSQL("$4") + knowledgeAsOfSQL("$6", "$7")
+		return sourcesSQL + kbScopeSQL + excludeSQL("$4") + knowledgeAsOfSQL("$7", "$8")
 	}
-	return aclSQL + kbScopeSQL + excludeSQL("$4") + knowledgeCurrentSQL
+	return sourcesSQL + aclSQL + kbScopeSQL + excludeSQL("$4") + knowledgeCurrentSQL
 }
+
+// sourcesSQL is the request's sources filter ($6, a text[]; empty = none) (D78).
+const sourcesSQL = ` AND (cardinality($6::text[]) = 0 OR s.name = ANY($6))`
 
 const docChunkFrom = ` FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id JOIN sources s ON s.id = d.source_id, LATERAL (SELECT d.status, d.valid_until, d.sensitivity, d.acl_subjects, d.acl_roles) x`
 
 func docArgs(v Visibility, q DocQuery, id string) []any {
-	args := []any{v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), excluded(v), id}
+	args := []any{v.Subject, rolesOrEmpty(v.Roles), rank(v.Ceiling), excluded(v), id, orEmpty(q.Sources)}
 	if q.AsOf != nil {
 		args = append(args, q.AsOf.Valid, q.AsOf.RecordedArg())
 	}
@@ -63,13 +71,13 @@ func docArgs(v Visibility, q DocQuery, id string) []any {
 // bindDocView makes the view of the caller for the document the id names: the personal base of another member is visible to a
 // caller who may name it (the writing service, an administrator): the document id names it, as a subject scope does in a
 // resolve (D53).
-func bindDocView(ctx context.Context, tx pgx.Tx, v Visibility, id string) (Visibility, error) {
+func bindDocView(ctx context.Context, tx pgx.Tx, v Visibility, id, named string) (Visibility, error) {
 	var owner string
 	err := tx.QueryRow(ctx, `SELECT kb.scope_id FROM knowledge_documents d JOIN knowledge_bases kb ON kb.id = d.knowledge_base_id WHERE d.id = $1 AND kb.scope_kind = 'subject'`, id).Scan(&owner)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return v, err
 	}
-	if err == nil && owner != v.Subject && v.MayNameMembers {
+	if err == nil && owner != v.Subject && v.MayNameMembers && named == owner { // only by naming the member (D53, D78)
 		v.NamedSubjects = append(append([]string{}, v.NamedSubjects...), owner)
 	}
 	return v, bindView(ctx, tx, v)
@@ -103,7 +111,7 @@ func (s *Store) ResolveDocument(ctx context.Context, tenant string, v Visibility
 	}
 	var out *DocView
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		bv, err := bindDocView(ctx, tx, v, q.DocumentID)
+		bv, err := bindDocView(ctx, tx, v, q.DocumentID, q.NamedOwner)
 		if err != nil {
 			return err
 		}
@@ -126,7 +134,7 @@ func (s *Store) DocumentChunks(ctx context.Context, tenant string, v Visibility,
 	var out *DocView
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
 		out = nil
-		v, err := bindDocView(ctx, tx, v, q.DocumentID)
+		v, err := bindDocView(ctx, tx, v, q.DocumentID, q.NamedOwner)
 		if err != nil {
 			return err
 		}
@@ -210,7 +218,7 @@ func (s *Store) ChunkContents(ctx context.Context, tenant string, v Visibility, 
 		s.OnChunkContents()
 	}
 	err := s.InTenant(ctx, tenant, func(tx pgx.Tx) error {
-		v, err := bindDocView(ctx, tx, v, q.DocumentID)
+		v, err := bindDocView(ctx, tx, v, q.DocumentID, q.NamedOwner)
 		if err != nil {
 			return err
 		}

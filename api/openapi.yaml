@@ -377,6 +377,8 @@ components:
         budget: {type: object, properties: {maxTokens: {type: integer, description: 'default 3000, at most 32000'}, maxItems: {type: integer, description: default 100, at most 100}}}
         purpose: {type: string, maxLength: 200}
         asOf: {type: object, properties: {valid: {type: string, format: date-time}, recorded: {type: string, format: date-time}}}
+        scope: {type: object, required: [kind], properties: {kind: {type: string, enum: [subject]}, id: {type: string}}, description: 'names the member whose personal base the document is in (ADR-0001 D78): a document in another member''s personal base is served only when the request names its owner and the caller may name members (the writing service, administrators); without it the answer is the 404 of an invisible document, for them too'}
+        sources: {type: array, maxItems: 32, items: {type: string}, description: 'only documents of these sources (ADR-0001 D78), a visibility predicate like resolve''s sources: a document outside it is the 404 of a missing one'}
         sensitivityCeiling: {type: string, enum: [public, internal, confidential, restricted], description: may only lower the caller's ceiling}
     FindRequest:
       type: object
@@ -388,6 +390,8 @@ components:
         budget: {type: object, properties: {maxTokens: {type: integer, description: 'default 3000, at most 32000'}, maxItems: {type: integer, description: default 100, at most 100}}}
         purpose: {type: string, maxLength: 200}
         asOf: {type: object, properties: {valid: {type: string, format: date-time}, recorded: {type: string, format: date-time}}}
+        scope: {type: object, required: [kind], properties: {kind: {type: string, enum: [subject]}, id: {type: string}}, description: 'names the member whose personal base the document is in (ADR-0001 D78): a document in another member''s personal base is served only when the request names its owner and the caller may name members (the writing service, administrators); without it the answer is the 404 of an invisible document, for them too'}
+        sources: {type: array, maxItems: 32, items: {type: string}, description: 'only documents of these sources (ADR-0001 D78), a visibility predicate like resolve''s sources: a document outside it is the 404 of a missing one'}
         sensitivityCeiling: {type: string, enum: [public, internal, confidential, restricted], description: may only lower the caller's ceiling}
     ResolveRequest:
       type: object

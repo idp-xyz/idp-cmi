@@ -55,6 +55,8 @@ type ReadRequest struct {
 	Purpose            string       `json:"purpose,omitempty"`
 	AsOf               *cmi.AsOf    `json:"asOf,omitempty"`
 	SensitivityCeiling string       `json:"sensitivityCeiling,omitempty"`
+	Scope              *cmi.Scope   `json:"scope,omitempty"`   // names the member whose personal base the document is in (D78)
+	Sources            []string     `json:"sources,omitempty"` // only documents of these sources (D78)
 	// RequireVersion is set by the API once the PDP has been asked about this version (D76): nothing else is read.
 	RequireVersion string `json:"-"`
 }
@@ -69,6 +71,36 @@ type FindRequest struct {
 	AsOf               *cmi.AsOf   `json:"asOf,omitempty"`
 	SensitivityCeiling string      `json:"sensitivityCeiling,omitempty"`
 	RequireVersion     string      `json:"-"`
+	Scope              *cmi.Scope  `json:"scope,omitempty"`
+	Sources            []string    `json:"sources,omitempty"`
+}
+
+// validateLookup checks the two fields both requests have (D78): the member named, and the sources.
+func validateLookup(scope *cmi.Scope, sources []string) error {
+	if scope != nil {
+		if scope.Kind != cmi.ScopeSubject {
+			return errors.New("scope names the member whose personal base the document is in: kind subject")
+		}
+		if err := scope.Validate(); err != nil {
+			return err
+		}
+	}
+	if len(sources) > 32 {
+		return errors.New("at most 32 sources")
+	}
+	for _, n := range sources {
+		if !cmi.ValidName(n) {
+			return errors.New("sources entries must be source names")
+		}
+	}
+	return nil
+}
+
+func ownerOf(scope *cmi.Scope) string {
+	if scope == nil {
+		return ""
+	}
+	return scope.ID
 }
 
 var rangeRE = regexp.MustCompile(`^([A-Z]{1,3})([0-9]+):([A-Z]{1,3})([0-9]+)$`)
@@ -90,6 +122,9 @@ func (r *ReadRequest) validate() error {
 	}
 	if r.SensitivityCeiling != "" && !cmi.ValidSensitivity(r.SensitivityCeiling) {
 		return errors.New("sensitivityCeiling is not a level")
+	}
+	if err := validateLookup(r.Scope, r.Sources); err != nil {
+		return err
 	}
 	l := r.Locator
 	if l == nil {
@@ -139,6 +174,9 @@ func (r *FindRequest) validate() error {
 	if r.SensitivityCeiling != "" && !cmi.ValidSensitivity(r.SensitivityCeiling) {
 		return errors.New("sensitivityCeiling is not a level")
 	}
+	if err := validateLookup(r.Scope, r.Sources); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -185,19 +223,19 @@ type Target struct {
 }
 
 // TargetOf finds the Target; a document the caller cannot see is the NOT_FOUND of every other way of not seeing it.
-func (r *Resolver) TargetOf(ctx context.Context, tenant string, v postgres.Visibility, id, ceiling string, asOf *cmi.AsOf) (*Target, error) {
+func (r *Resolver) TargetOf(ctx context.Context, tenant string, v postgres.Visibility, id, ceiling string, asOf *cmi.AsOf, scope *cmi.Scope, sources []string) (*Target, error) {
 	v, err := r.viewOf(v, ceiling, asOf)
 	if err != nil {
 		return nil, err
 	}
-	view, err := r.Store.ResolveDocument(ctx, tenant, v, postgres.DocQuery{DocumentID: id, AsOf: asOf})
+	view, err := r.Store.ResolveDocument(ctx, tenant, v, postgres.DocQuery{DocumentID: id, AsOf: asOf, NamedOwner: ownerOf(scope), Sources: sources})
 	if err != nil {
 		return nil, err
 	}
 	return &Target{ID: view.Document.ID, Source: view.Document.Source, Sensitivity: view.Document.Sensitivity}, nil
 }
 
-func (r *Resolver) prepare(ctx context.Context, tenant string, v postgres.Visibility, id, require, purpose, ceiling, via string, asOf *cmi.AsOf, b *cmi.Budget, content bool) (*prepared, error) {
+func (r *Resolver) prepare(ctx context.Context, tenant string, v postgres.Visibility, id, require, purpose, ceiling, via string, scope *cmi.Scope, sources []string, asOf *cmi.AsOf, b *cmi.Budget, content bool) (*prepared, error) {
 	v, err := r.viewOf(v, ceiling, asOf)
 	if err != nil {
 		return nil, err
@@ -215,7 +253,7 @@ func (r *Resolver) prepare(ctx context.Context, tenant string, v postgres.Visibi
 	if err != nil {
 		return nil, err
 	}
-	q := postgres.DocQuery{DocumentID: id, AsOf: asOf, Via: via, RequireID: require}
+	q := postgres.DocQuery{DocumentID: id, AsOf: asOf, Via: via, RequireID: require, NamedOwner: ownerOf(scope), Sources: sources}
 	view, err := r.Store.DocumentChunks(ctx, tenant, v, q, content)
 	if err != nil {
 		return nil, err
@@ -314,7 +352,7 @@ func (r *Resolver) read(ctx context.Context, tenant string, v postgres.Visibilit
 	if err := req.Validate(); err != nil {
 		return nil, nil, err
 	}
-	p, err := r.prepare(ctx, tenant, v, req.DocumentID, req.RequireVersion, req.Purpose, req.SensitivityCeiling, "read", req.AsOf, req.Budget, false)
+	p, err := r.prepare(ctx, tenant, v, req.DocumentID, req.RequireVersion, req.Purpose, req.SensitivityCeiling, "read", req.Scope, req.Sources, req.AsOf, req.Budget, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -450,7 +488,7 @@ func (r *Resolver) Find(ctx context.Context, tenant string, v postgres.Visibilit
 	if err := req.Validate(); err != nil {
 		return nil, nil, err
 	}
-	p, err := r.prepare(ctx, tenant, v, req.DocumentID, req.RequireVersion, req.Purpose, req.SensitivityCeiling, "find", req.AsOf, req.Budget, true)
+	p, err := r.prepare(ctx, tenant, v, req.DocumentID, req.RequireVersion, req.Purpose, req.SensitivityCeiling, "find", req.Scope, req.Sources, req.AsOf, req.Budget, true)
 	if err != nil {
 		return nil, nil, err
 	}
