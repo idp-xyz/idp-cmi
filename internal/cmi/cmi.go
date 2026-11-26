@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"idp-cmi/internal/canonical"
 )
@@ -642,7 +643,11 @@ func ChunkCuts(text string, chunkSize int) ([]string, []bool) {
 						cut--
 					}
 					cur.WriteString(line[:cut])
-					flush(true)
+					// a cut next to white space is not a cut in the middle of a word: that space is one space between the
+					// chunks, as everywhere else (D77)
+					before, _ := utf8.DecodeLastRuneInString(line[:cut])
+					after, _ := utf8.DecodeRuneInString(line[cut:])
+					flush(!unicode.IsSpace(before) && !unicode.IsSpace(after))
 					line = line[cut:]
 				}
 				if cur.Len()+len(line)+1 > chunkSize && cur.Len() > 0 {

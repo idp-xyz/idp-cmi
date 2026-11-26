@@ -183,7 +183,22 @@ func (s *Store) PutOriginal(ctx context.Context, tenant, id string, v Visibility
 			return err
 		}
 		target, err = findForOriginal(ctx, tx, tenant, v, id, true)
-		return err
+		if err != nil {
+			return err
+		}
+		// what can be refused without the digest is refused before the body is read (D77): up to 50 MiB are not taken in to be
+		// turned away
+		var status, source string
+		if err := tx.QueryRow(ctx, `SELECT status, text_source FROM knowledge_documents WHERE id = $1`, target.id).Scan(&status, &source); err != nil {
+			return err
+		}
+		if _, convert := IngestExtension(media); convert && s.Conversion.Enabled && status != "pending" && !((status == "active" || status == "superseded") && source == "extracted") {
+			return checkSourceTextUnchanged(target.id, status, source, false)
+		}
+		if _, convert := IngestExtension(media); s.Conversion.Enabled && status == "pending" && !convert {
+			return fail("CONFLICT", "version %s is waiting for the text of its PDF or Office original; send a PDF, Word, PowerPoint or Excel file, or withdraw the version", target.id)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -220,8 +235,8 @@ func (s *Store) PutOriginal(ctx context.Context, tenant, id string, v Visibility
 			return err
 		}
 		// the row is re-read under the lock: an erasure that began after the permission check is seen here
-		var status, source, oldSum string
-		if err := tx.QueryRow(ctx, `SELECT coalesce(d.original_key, ''), d.erasure_id IS NOT NULL, d.status, d.text_source, coalesce(d.original_sha256, '') FROM knowledge_documents d WHERE d.id = $1 FOR UPDATE`, target.id).Scan(&current, &erased, &status, &source, &oldSum); err != nil {
+		var status, source, textSum string
+		if err := tx.QueryRow(ctx, `SELECT coalesce(d.original_key, ''), d.erasure_id IS NOT NULL, d.status, d.text_source, coalesce(d.text_original_sha256, '') FROM knowledge_documents d WHERE d.id = $1 FOR UPDATE`, target.id).Scan(&current, &erased, &status, &source, &textSum); err != nil {
 			return err
 		}
 		// a version still waiting for its first text is not given an original that is not converted: nothing would ever
@@ -232,10 +247,16 @@ func (s *Store) PutOriginal(ctx context.Context, tenant, id string, v Visibility
 		if erased {
 			return fail("NOT_FOUND", "document not found")
 		}
-		// a version that is or was in force keeps its text (D77): a convertible original goes with a new version
-		if _, convert := IngestExtension(media); convert && s.Conversion.Enabled {
-			if err := checkSourceTextUnchanged(target.id, status, source, oldSum == sum); err != nil {
-				return err
+		// a version that is or was in force keeps its text (D77): a convertible original goes with a new version; a version
+		// that holds extracted text takes no other original than the one its text came from, whether the service converts
+		// now or not (a switch must not be a way round the rule)
+		if _, convert := IngestExtension(media); convert {
+			if s.Conversion.Enabled {
+				if err := checkSourceTextUnchanged(target.id, status, source, textSum == sum); err != nil {
+					return err
+				}
+			} else if source == "extracted" && textSum != sum {
+				return fail("CONFLICT", "version %s holds the text of another original: write a new version (awaitsOriginal) and store the original with it", target.id)
 			}
 		}
 		// the permission is decided again under the locks: the base may have been archived, or the caller may have

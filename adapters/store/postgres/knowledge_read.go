@@ -21,11 +21,14 @@ type DocQuery struct {
 
 // DocChunk is one chunk of the document with where it sits. Content is empty when only the places were asked for.
 type DocChunk struct {
-	Seq      int
-	Content  string
-	Flags    []string
-	Locator  *cmi.Locator
-	CutAfter bool // ends at a hard cut of a long line: the text goes on in the next chunk with nothing between (D77)
+	Seq     int
+	Content string
+	Flags   []string
+	Locator *cmi.Locator
+	// CutAfter: true when the chunk ends at a hard cut of a long line (the text goes on in the next chunk with nothing between),
+	// false when it ends at a line, a paragraph or a cut next to white space (one space), nil when that is not known: a chunk
+	// written before cut_after existed that looks like a cut (D77).
+	CutAfter *bool
 }
 
 // DocView is the version of a document the caller may read, with its chunks in document order.

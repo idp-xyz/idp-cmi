@@ -297,6 +297,20 @@ const readBatch = 16
 // Read gives the chunks of a document at a place (D72): the chunks the locator matches in document order - or, with no
 // locator, from the start of the document - and around chunks on each side of the matches, as far as the budget goes.
 func (r *Resolver) Read(ctx context.Context, tenant string, v postgres.Visibility, req ReadRequest) (*cmi.Package, *cmi.Envelope, error) {
+	pkg, env, err := r.read(ctx, tenant, v, req)
+	if changedWhileRead(err) { // the document was converted again between the two statements: once more (D77)
+		pkg, env, err = r.read(ctx, tenant, v, req)
+	}
+	return pkg, env, err
+}
+
+// changedWhileRead is the CONFLICT of a document that changed between the statements of one read or find.
+func changedWhileRead(err error) bool {
+	var pe *postgres.Error
+	return errors.As(err, &pe) && pe.Code == "CONFLICT"
+}
+
+func (r *Resolver) read(ctx context.Context, tenant string, v postgres.Visibility, req ReadRequest) (*cmi.Package, *cmi.Envelope, error) {
 	if err := req.Validate(); err != nil {
 		return nil, nil, err
 	}

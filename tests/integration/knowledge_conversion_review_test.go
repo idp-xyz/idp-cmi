@@ -459,3 +459,63 @@ func TestAVersionThatWasInForceKeepsItsText(t *testing.T) {
 	body["awaitsOriginal"] = true
 	c.e.must(503, "POST", "/v1/knowledge/documents", "bob", body)
 }
+
+// ADR-0001 D77: the conversion switch is no way round the rule: a version that holds converted text takes no other original than
+// the one its text came from, whether the service converts at the moment or not, and a conversion is repeated only from that one
+func TestTheConversionSwitchIsNoWayToReplaceTheTextOfAVersionInForce(t *testing.T) {
+	c := newConv(t)
+	c.output("ONE", convtest.Output{Markdown: "<!-- page: 1 -->\nZqxFromPdfOne text.\n"})
+	c.output("TWO", convtest.Output{Markdown: "<!-- page: 1 -->\nZqxFromPdfTwo text.\n"})
+	id := c.stub("bob", "doc", "placeholder")
+	c.put("bob", id, mediaPDF, "%PDF ONE")
+	c.drain()
+	time.Sleep(60 * time.Millisecond)
+	seen := time.Now()
+	time.Sleep(60 * time.Millisecond)
+	if len(c.hits("bob", "ZqxFromPdfOne")) != 1 {
+		t.Fatal("setup")
+	}
+	putStatus := func(body string) int {
+		st, _, _ := c.e.callBytes(http.MethodPut, "/v1/knowledge/documents/"+id+"/original", "bob", mediaPDF, []byte(body))
+		return st
+	}
+	// conversion switched off: another original is still refused, the same one is stored
+	c.e.store.Conversion.Enabled = false
+	if st := putStatus("%PDF TWO"); st != 409 {
+		t.Fatalf("another original while the service does not convert: %d", st)
+	}
+	if st := putStatus("%PDF ONE"); st != 200 {
+		t.Fatalf("the same original while the service does not convert: %d", st)
+	}
+	c.e.store.Conversion.Enabled = true
+	c.e.must(202, "POST", "/v1/knowledge/documents/"+id+"/ingest", "bob", nil)
+	c.drain()
+	if len(c.hits("bob", "ZqxFromPdfTwo")) != 0 {
+		t.Fatal("the text of another original replaced the text of the version")
+	}
+	asOf := map[string]any{"recorded": nano(seen)}
+	if got := excerpts(readDoc(c.e, "bob", map[string]any{"documentId": id, "purpose": "p", "asOf": asOf})); !strings.Contains(got, "ZqxFromPdfOne") || strings.Contains(got, "PdfTwo") {
+		t.Fatalf("a view of an earlier time: %q", got)
+	}
+	// data from before the digest was recorded can differ (the original was replaced while conversion was off): the retry is refused
+	sqlAsOwner(t, c.e, `UPDATE knowledge_documents SET original_sha256 = 'sha256:somethingelse' WHERE id = $1`, id)
+	c.e.must(409, "POST", "/v1/knowledge/documents/"+id+"/ingest", "bob", nil)
+}
+
+// what can be refused without the digest is refused before the body is read
+func TestAnOriginalIsRefusedBeforeItsBodyIsRead(t *testing.T) {
+	c := newConv(t)
+	id := c.plain("bob", "doc", "ZqxPlain text")
+	v := postgres.Visibility{Subject: "bob", Roles: []string{"cmi-writer"}, Ceiling: "confidential"}
+	r := &failingReader{}
+	if _, err := c.e.store.PutOriginal(context.Background(), c.e.tenantA, id, v, mediaPDF, r); err == nil || !strings.Contains(err.Error(), "its text does not change") {
+		t.Fatalf("%v", err)
+	}
+	if r.read {
+		t.Fatal("the body was read before the original was refused")
+	}
+}
+
+type failingReader struct{ read bool }
+
+func (f *failingReader) Read([]byte) (int, error) { f.read = true; return 0, io.EOF }

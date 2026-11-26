@@ -212,7 +212,8 @@ func TestFoldTextKeepsWhereEachCharacterWas(t *testing.T) {
 func chunksOf(loc *cmi.Locator, texts ...string) []postgres.DocChunk {
 	var out []postgres.DocChunk
 	for i, t := range texts {
-		out = append(out, postgres.DocChunk{Seq: i, Content: t, Locator: loc})
+		no := false // as the chunker writes a chunk that ends at a line or a paragraph
+		out = append(out, postgres.DocChunk{Seq: i, Content: t, Locator: loc, CutAfter: &no})
 	}
 	return out
 }
@@ -220,7 +221,8 @@ func chunksOf(loc *cmi.Locator, texts ...string) []postgres.DocChunk {
 // hardCut marks every chunk but the last as cut where the size limit was reached (D77).
 func hardCut(chunks []postgres.DocChunk) []postgres.DocChunk {
 	for i := 0; i+1 < len(chunks); i++ {
-		chunks[i].CutAfter = true
+		cut := true
+		chunks[i].CutAfter = &cut
 	}
 	return chunks
 }
@@ -229,7 +231,7 @@ func hardCut(chunks []postgres.DocChunk) []postgres.DocChunk {
 func TestFindCrossesTheSeamBetweenChunks(t *testing.T) {
 	cut := strings.Repeat("字", 100) + "取件时"
 	chunks := hardCut(chunksOf(&cmi.Locator{Headings: []string{"Rates"}}, cut, "间是上午七点。"+strings.Repeat("词", 50), "取件时间again"))
-	chunks[1].CutAfter = false
+	chunks[1].CutAfter = nil
 	got := findInChunks(chunks, foldText("取件时间"))
 	if len(got[0]) != 1 || got[0][0] != (cmi.TextHit{Offset: 100, Length: 3}) {
 		t.Fatalf("on the chunk where it begins, clipped to its end: %v", got)
@@ -275,6 +277,28 @@ func TestFindCrossesTheSeamBetweenChunks(t *testing.T) {
 	}
 	if got := findInChunks(hardCut(chunksOf(nil, "本条规定附加", "费用另计。")), foldText("附加费")); len(got[0]) != 1 {
 		t.Fatalf("a hard cut in the middle of a phrase: %v", got)
+	}
+	// a cut next to a space is one space, never nothing: the chunker marks it false (D77)
+	no := false
+	spaced := chunksOf(nil, "y qqqqq", "rrrrr z")
+	spaced[0].CutAfter = &no
+	if got := findInChunks(spaced, foldText("qqqqqrrrrr")); len(got) != 0 {
+		t.Fatalf("a cut that is not in a word: %v", got)
+	}
+	if got := findInChunks(spaced, foldText("qqqqq rrrrr")); len(got[0]) != 1 {
+		t.Fatalf("one space: %v", got)
+	}
+	// a seam of a chunk written before the cuts were recorded (nil) is tried both ways
+	unknown := chunksOf(nil, "the late", "pickup slot")
+	unknown[0].CutAfter = nil
+	if got := findInChunks(unknown, foldText("late pickup")); len(got[0]) != 1 {
+		t.Fatalf("with a space: %v", got)
+	}
+	if got := findInChunks(chunksOf(nil, "the lat", "e pickup"), foldText("late")); len(got) != 0 {
+		t.Fatalf("a false seam joined with nothing: %v", got)
+	}
+	if got := findInChunks(unknown, foldText("latepickup")); len(got[0]) != 1 {
+		t.Fatalf("with nothing: %v", got)
 	}
 	// two seams do not give a text the characters of a chunk twice (the chunks zab | ab | abz hold abab once)
 	got = findInChunks(hardCut(chunksOf(nil, "zab", "ab", "abz")), foldText("abab"))

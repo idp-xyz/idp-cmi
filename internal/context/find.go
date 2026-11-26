@@ -106,9 +106,9 @@ func findAll(text string, needle folded) []cmi.TextHit {
 // scanned is a chunk already searched, kept for the seam with the next one.
 type scanned struct {
 	f        folded
-	origLen  int  // characters of the original text
-	lastEnd  int  // where in f the last hit, or the last character a text begun before this chunk used, ended
-	cutAfter bool // the chunk ends at a hard cut (D77)
+	origLen  int   // characters of the original text
+	lastEnd  int   // where in f the last hit, or the last character a text begun before this chunk used, ended
+	cutAfter *bool // the chunk ends at a hard cut: true, a line or paragraph: false, not known: nil (D77)
 }
 
 // sameSection says two consecutive chunks are cuts of one run of text, so that a text may run across the seam between them:
@@ -135,8 +135,9 @@ func sameSection(a, b *cmi.Locator) bool {
 // long paragraph where the size is reached, in the middle of a word or a Chinese phrase, or between paragraphs. The end of
 // the first chunk and the start of the second are joined and searched: with nothing when the first was cut where the size
 // limit was reached (the text goes on with the next character), with exactly one space everywhere else (the chunk ended at
-// a line or a paragraph, whose white space is gone, as a run of white space inside a chunk is one space) (D77). It returns the hit in the first chunk, its length clipped to that chunk's end, and how many characters of
-// the second chunk the text used.
+// a line or a paragraph, whose white space is gone, as a run of white space inside a chunk is one space), and both ways when
+// it is not known which (D77). It returns the hit in the first chunk, its length clipped to that chunk's end, and how many
+// characters of the second chunk the text used.
 func seamHit(prev *scanned, next folded, needle folded, fail []int) (cmi.TextHit, int, bool) {
 	n := len(needle.runes)
 	tailFrom := max(0, len(prev.f.runes)-(n-1))
@@ -144,11 +145,14 @@ func seamHit(prev *scanned, next folded, needle folded, fail []int) (cmi.TextHit
 	head := next.runes[:min(n-1, len(next.runes))]
 	best, bestUsed, found := cmi.TextHit{}, 0, false
 	bestAt := 0
-	join := []rune{' '}
-	if prev.cutAfter {
-		join = nil
+	joins := [][]rune{{' '}}
+	switch {
+	case prev.cutAfter == nil:
+		joins = [][]rune{nil, {' '}} // a chunk written before the cut was recorded: both are tried
+	case *prev.cutAfter:
+		joins = [][]rune{nil}
 	}
-	{
+	for _, join := range joins {
 		joined := append(append(append([]rune{}, tail...), join...), head...)
 		for _, m := range kmpAll(joined, needle.runes, fail) {
 			used := m[1] - len(tail) - len(join)

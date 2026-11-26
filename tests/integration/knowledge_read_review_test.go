@@ -553,8 +553,16 @@ func TestAReadDoesNotMixWhatTwoStatementsSaw(t *testing.T) {
 			sqlAsOwner(t, e, `UPDATE knowledge_documents SET revision = revision + 1 WHERE id = $1`, id)
 		})
 	}
+	// the server reads once more, and the second read sees the new document whole
+	if got := readDoc(e, "carol", map[string]any{"documentId": id, "purpose": "p"}); !strings.Contains(excerpts(got), "REPLACED") || strings.Contains(excerpts(got), "first part") {
+		t.Fatalf("the retry: %v", items(got))
+	}
+	// a document that changes again at every attempt is a 409, and the caller reads again
+	e.store.OnChunkContents = func() {
+		sqlAsOwner(t, e, `UPDATE knowledge_documents SET revision = revision + 1 WHERE id = $1`, id)
+	}
 	st, out := e.call("POST", "/v1/context/read", "carol", map[string]any{"documentId": id, "purpose": "p"})
-	if st != 409 || errCode(out) != "CONFLICT" || strings.Contains(fmt.Sprint(out), "REPLACED") {
+	if st != 409 || errCode(out) != "CONFLICT" {
 		t.Fatalf("%d %v", st, out)
 	}
 	e.store.OnChunkContents = nil
@@ -598,7 +606,16 @@ func TestTheBackfillOfCutAfter(t *testing.T) {
 		rows := ""
 		for seq := 0; seq < 4; seq++ {
 			var f *bool
-			if err := ownerQuery(t, e.ownerURL, `SELECT cut_after FROM knowledge_chunks WHERE document_id = $1 AND seq = $2`, &f, id, seq); err == nil && f != nil {
+			var present int
+			if err := ownerQuery(t, e.ownerURL, `SELECT count(*) FROM knowledge_chunks WHERE document_id = $1 AND seq = $2`, &present, id, seq); err != nil || present == 0 {
+				continue
+			}
+			if err := ownerQuery(t, e.ownerURL, `SELECT cut_after FROM knowledge_chunks WHERE document_id = $1 AND seq = $2`, &f, id, seq); err != nil {
+				t.Fatal(err)
+			}
+			if f == nil {
+				rows += "null "
+			} else {
 				rows += fmt.Sprint(*f, " ")
 			}
 		}
@@ -618,10 +635,32 @@ func TestTheBackfillOfCutAfter(t *testing.T) {
 	backfill := text[strings.Index(text, "-- cut backfill begin")+len("-- cut backfill begin") : strings.Index(text, "-- cut backfill end")]
 	sqlAsOwner(t, e, `UPDATE knowledge_chunks SET cut_after = false`)
 	sqlAsOwner(t, e, backfill)
-	if got := flags(cut); got != "true true false" {
+	if got := flags(cut); got != "null null false" { // inferred cuts are unknown, never certain (D77)
 		t.Fatalf("the backfill infers the cuts: %q", got)
 	}
-	if got := flags(paras); strings.Contains(got, "true") {
+	if got := flags(paras); strings.Contains(got, "true") || strings.Contains(got, "null") {
 		t.Fatalf("the backfill takes paragraphs for cuts: %q", got)
+	}
+}
+
+// ADR-0001 D77: a hard cut next to white space is one space, not nothing; a cut of unknown kind is tried both ways
+func TestAHardCutNextToASpaceIsJoinedWithASpace(t *testing.T) {
+	e := newEnv(t)
+	kbSources(e)
+	line := strings.Repeat("y", 1494) + " qqqqq rrrrr " + strings.Repeat("z", 2000)
+	id := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://spaced", "", line))["documentId"].(string)
+	find := func(text string) int {
+		return len(items(findDoc(e, "carol", map[string]any{"documentId": id, "text": text, "purpose": "p"})))
+	}
+	if find("qqqqq rrrrr") != 1 {
+		t.Fatal("qqqqq rrrrr is in the text, across the cut")
+	}
+	if find("qqqqqrrrrr") != 0 {
+		t.Fatal("qqqqqrrrrr is not in the text")
+	}
+	// a chunk written before the cuts were recorded, that the backfill takes for a cut: unknown, tried both ways
+	sqlAsOwner(t, e, `UPDATE knowledge_chunks SET cut_after = NULL WHERE document_id = $1`, id)
+	if find("qqqqq rrrrr") != 1 || find("qqqqqrrrrr") != 1 {
+		t.Fatal("a seam of unknown kind is tried with a space and with nothing")
 	}
 }

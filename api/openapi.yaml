@@ -90,7 +90,11 @@ paths:
         at most two uploads per caller at once. Each upload has its own object key; a concurrent change of the original is 409. The object key is not returned.
         With knowledge.conversion configured (ADR-0001 D61 to D70) a pdf, docx, pptx or xlsx original queues the conversion of its text: a version that has no extracted text
         yet becomes status `pending` (not in force, not searched, replacing nothing) and `ingest` shows the job; its text, with page, slide, heading or sheet and cell locators,
-        replaces what the version had in one transaction when the conversion succeeds
+        replaces what the version had in one transaction when the conversion succeeds. A version that is or was in force keeps its text (ADR-0001 D77): a pdf, docx, pptx
+        or xlsx original for an active (writer-supplied text), superseded, revoked or expired version is 409, as is another original than the one its converted text came from
+        (whether this service converts at the moment or not); write a new version with `awaitsOriginal: true` (it starts pending and is in force from the commit of its text) and
+        store the original with it. The same original again (a conversion repeated) is accepted. What can be refused without the digest (the state of the version) is refused before
+        the body is read. Behaviour change from 1.6.0: an original for an active version used to turn it pending
       requestBody: {required: true, content: {'*/*': {schema: {type: string, format: binary}}}}
       responses: {'200': {description: document metadata including original}, '404': {$ref: '#/components/responses/Problem'}, '409': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}, '429': {$ref: '#/components/responses/Problem'}, '503': {$ref: '#/components/responses/Problem'}}
     get:
@@ -245,7 +249,7 @@ paths:
     post:
       summary: 'Read a place in one document (ADR-0001 D71, contract 1.7.0): the chunks a locator matches, in document order, with around chunks on each side, as far as the budget goes. The package is sealed and stored like resolve''s (purpose is the caller''s, default read)'
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReadRequest'}}}}
-      responses: {'200': {description: 'packageId, digest and the package (contract idp.telos.cmi ContextPackage); package.omitted.budget counts matched chunks the budget did not take. The document is the version current at asOf for the id''s base and uri; a pending version is never read'}, '404': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+      responses: {'200': {description: 'packageId, digest and the package (contract idp.telos.cmi ContextPackage); package.omitted.budget counts matched chunks the budget did not take. The document is the version current at asOf for the id''s base and uri; a pending version is never read'}, '404': {$ref: '#/components/responses/Problem'}, '409': {description: 'the document was converted again between the statements of the read and still differs after the one retry the server makes: read again (ADR-0001 D77)'}, '422': {$ref: '#/components/responses/Problem'}}
   /v1/context/find:
     post:
       summary: 'Find a text word for word in one document (ADR-0001 D72, contract 1.7.0): substring match, white space normalized, ASCII case-insensitive, other scripts by character. The items are the chunks that hold it, in document order, match exact, with hits (offsets into each item''s excerpt as returned, in characters) and hitCount (the hits in the chunk); a text that runs across the cut between two chunks of one section is reported once, on the chunk where it begins'

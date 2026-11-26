@@ -119,7 +119,7 @@ const conversionCols = `j.id::text, j.tenant_id::text, j.document_id::text, j.do
 // that waits for its first text (pending: it was written with awaitsOriginal) takes a convertible original; a version that
 // holds extracted text takes the conversion of the same original again (a retry, a converter that was upgraded), the one
 // in-place correction there is; every other version - active with the text its writer supplied, superseded, revoked, expired -
-// is refused: the writer writes a new version with the original. sameOriginal says the original is the one the document has.
+// is refused: the writer writes a new version with the original. sameOriginal says the original is the one the version's text was extracted from (text_original_sha256).
 func checkSourceTextUnchanged(docID, status, source string, sameOriginal bool) error {
 	switch {
 	case status == "pending":
@@ -134,11 +134,12 @@ func checkSourceTextUnchanged(docID, status, source string, sameOriginal bool) e
 // that waits for its first text is not in force until it is extracted (D64, D77); one that holds extracted text is corrected in
 // place. Earlier jobs of the document that are still open are given up.
 func enqueueConversion(ctx context.Context, tx pgx.Tx, tenant, docID, by, media, key, sum string, size int64) (stale []string, err error) {
-	var status, source string
-	if err := tx.QueryRow(ctx, `SELECT status, text_source FROM knowledge_documents WHERE id = $1`, docID).Scan(&status, &source); err != nil {
+	var status, source, textSum, original string
+	if err := tx.QueryRow(ctx, `SELECT status, text_source, coalesce(text_original_sha256, ''), coalesce(original_sha256, '') FROM knowledge_documents WHERE id = $1`, docID).Scan(&status, &source, &textSum, &original); err != nil {
 		return nil, err
 	}
-	if err := checkSourceTextUnchanged(docID, status, source, true); err != nil {
+	// converted again only from the original its text came from (D77)
+	if err := checkSourceTextUnchanged(docID, status, source, textSum == original); err != nil {
 		return nil, err
 	}
 	// the staged text of a job that is given up is plaintext under the document's prefix: its object goes after the commit
@@ -694,8 +695,8 @@ func (s *Store) CommitConversion(ctx context.Context, c Conversion, text string,
 			return err
 		}
 		if err := tx.QueryRow(ctx, `UPDATE knowledge_documents SET status = CASE WHEN status = 'pending' THEN 'active' ELSE status END, text_source = 'extracted',
-				content_sha256 = $2, byte_size = $3, chunk_count = $4, flags = $5, revision = revision + 1 WHERE id = $1 RETURNING revision`,
-			c.DocumentID, cmi.ContentSHA256(text), len(text), len(parts), docFlags).Scan(&revision); err != nil {
+				content_sha256 = $2, byte_size = $3, chunk_count = $4, flags = $5, text_original_sha256 = $6, revision = revision + 1 WHERE id = $1 RETURNING revision`,
+			c.DocumentID, cmi.ContentSHA256(text), len(text), len(parts), docFlags, c.OriginalSHA256).Scan(&revision); err != nil {
 			return err
 		}
 		batch := &pgx.Batch{}

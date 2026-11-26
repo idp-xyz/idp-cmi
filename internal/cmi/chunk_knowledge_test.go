@@ -358,3 +358,22 @@ func TestChunkCutsSaysWhichChunksEndAtAHardCut(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+// a cut next to white space is not marked: the space is one space between the chunks (D77)
+func TestAHardCutNextToWhiteSpaceIsNotMarked(t *testing.T) {
+	line := strings.Repeat("y", 1494) + " qqqqq rrrrr " + strings.Repeat("z", 2000)
+	bodies, cuts := ChunkCuts(line, KnowledgeChunkBytes)
+	if len(bodies) < 2 || !strings.HasSuffix(bodies[0], "qqqqq") || cuts[0] {
+		t.Fatalf("%d chunks, first ends %q, cuts %v", len(bodies), bodies[0][len(bodies[0])-8:], cuts)
+	}
+	before := strings.Repeat("y", 1499) + " " + strings.Repeat("q", 200) // the cut comes right after a space
+	_, cuts = ChunkCuts(before, KnowledgeChunkBytes)
+	if cuts[0] {
+		t.Fatalf("a cut after a space: %v", cuts)
+	}
+	inside := strings.Repeat("y", 1496) + " " + strings.Repeat("q", 100) // the cut falls inside the run of q
+	_, cuts = ChunkCuts(inside, KnowledgeChunkBytes)
+	if !cuts[0] {
+		t.Fatalf("a cut inside a word: %v", cuts)
+	}
+}
