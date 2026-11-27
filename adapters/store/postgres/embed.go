@@ -45,20 +45,21 @@ func (s *Store) BackfillEmbeddings(ctx context.Context, limit int) (int, error) 
 			return err
 		}
 		type row struct {
-			id   string
-			seq  int
-			text string
+			id      string
+			seq     int
+			text    string
+			version int // memory rows: the version the text was read at
 		}
 		var mem, chunks []row
 		ceiling := sensitivityRankSQL("coalesce(tp.external_model_ceiling, 'internal')")
-		rows, err := tx.Query(ctx, `SELECT m.id::text, m.content FROM memory_records m LEFT JOIN tenant_policies tp ON tp.tenant_id = m.tenant_id
+		rows, err := tx.Query(ctx, `SELECT m.id::text, m.content, m.version FROM memory_records m LEFT JOIN tenant_policies tp ON tp.tenant_id = m.tenant_id
 			WHERE m.status = 'active' AND m.erasure_id IS NULL AND (m.embedding IS NULL OR m.embedding_model IS DISTINCT FROM $1) AND `+sensitivityRankSQL("m.sensitivity")+` <= `+ceiling+` ORDER BY m.created_at LIMIT $2`, model, limit)
 		if err != nil {
 			return err
 		}
 		for rows.Next() {
 			var r row
-			if err := rows.Scan(&r.id, &r.text); err != nil {
+			if err := rows.Scan(&r.id, &r.text, &r.version); err != nil {
 				rows.Close()
 				return err
 			}
@@ -99,7 +100,9 @@ func (s *Store) BackfillEmbeddings(ctx context.Context, limit int) (int, error) 
 				return err
 			}
 			for i, r := range mem {
-				b.Queue(`UPDATE memory_records SET embedding = $2, embedding_model = $3 WHERE id = $1`, r.id, vecs[i], model)
+				// guarded by the version read and by the erasure barrier: the projection runs beside this loop (D79) and a row that moved on
+				// while the embedder worked is the projection's, not a stale vector's
+				b.Queue(`UPDATE memory_records SET embedding = $2, embedding_model = $3 WHERE id = $1 AND version = $4 AND erasure_id IS NULL`, r.id, vecs[i], model, r.version)
 			}
 		}
 		if len(chunks) > 0 { // a chunk the embedder cannot take is skipped with its reason, and the others go on

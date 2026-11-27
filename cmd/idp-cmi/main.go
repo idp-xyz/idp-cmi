@@ -337,27 +337,22 @@ func serve(log *slog.Logger) error {
 		if wired.Guard != nil {
 			go wired.Guard.Run(ctx) // does not hold up the start
 		}
-		go func() {
-			t := time.NewTicker(e.Backfill)
-			defer t.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-					if n, err := store.Project(ctx, 200); err != nil && ctx.Err() == nil { // ADR-0001 D26
-						log.Warn("embedding projection failed", "error", err)
-					} else if n > 0 {
+		workersDone := make(chan struct{})
+		go func() { // ADR-0001 D26, D79: projection and backfill are two loops, so a long backfill never delays the projection
+			defer close(workersDone)
+			store.RunEmbeddingWorkers(ctx, postgres.EmbeddingWorkers{Interval: e.Backfill, ProjectLimit: 200, BackfillLimit: 100,
+				Done: func(kind string, n int, err error) {
+					switch {
+					case err != nil:
+						log.Warn("embedding "+kind+" failed", "error", err)
+					case n > 0 && kind == "project":
 						log.Info("projected events", "events", n, "model", embedder.Model())
-					}
-					if n, err := store.BackfillEmbeddings(ctx, 100); err != nil && ctx.Err() == nil {
-						log.Warn("embedding backfill failed", "error", err)
-					} else if n > 0 {
+					case n > 0:
 						log.Info("embedded rows", "rows", n, "model", embedder.Model())
 					}
-				}
-			}
+				}})
 		}()
+		defer func() { stop(); <-workersDone }() // both loops stop with the process
 	}
 	resolver := &cmictx.Resolver{Store: store, Embedder: embedder, Log: log}
 	if e := cfg.Embedding; e != nil {

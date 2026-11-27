@@ -180,6 +180,9 @@ func (s *Store) RequestErasure(ctx context.Context, tenant string, sel ErasureSe
 				return err
 			}
 		}
+		if _, err := retireProjectionEvents(ctx, tx, recordIDs, documentIDs); err != nil { // D79: same transaction as the barrier
+			return err
+		}
 		selRaw, _ := json.Marshal(sel)
 		if _, err := tx.Exec(ctx, `INSERT INTO erasures (id, tenant_id, requested_by, reason, selector, record_ids, document_ids) VALUES ($1, $2, $3, $4, $5, $6::uuid[], $7::uuid[])`,
 			id, tenant, by, sel.Reason, selRaw, recordIDs, documentIDs); err != nil {
@@ -194,6 +197,18 @@ func (s *Store) RequestErasure(ctx context.Context, tenant string, sel ErasureSe
 		return err
 	})
 	return out, err
+}
+
+// retireProjectionEvents marks as processed, with the reason erased, every unprocessed projection event of the records and documents
+// (chunk events are keyed by document id, memory events by record id), in the caller's transaction and tenant (D79). Events hold
+// ids only; retiring them keeps the backlog and the projection lag from counting work that would end in a skip. Idempotent.
+func retireProjectionEvents(ctx context.Context, tx pgx.Tx, recordIDs, documentIDs []string) (int, error) {
+	if len(recordIDs)+len(documentIDs) == 0 {
+		return 0, nil
+	}
+	tag, err := tx.Exec(ctx, `UPDATE projection_events SET processed_at = now(), processed_reason = 'erased'
+		WHERE processed_at IS NULL AND ((kind = 'memory' AND object_id = ANY($1::uuid[])) OR (kind = 'chunk' AND object_id = ANY($2::uuid[])))`, recordIDs, documentIDs)
+	return int(tag.RowsAffected()), err
 }
 
 func unique(xs []string) []string {
@@ -431,6 +446,10 @@ func (s *Store) purgeDomain(ctx context.Context, tenant, domain string, e *Erasu
 			}
 			return s.verifyPersonalErased(ctx, tx, e, baseIDs)
 		case "vectors":
+			// an event a writer queued between the barrier and now (D79): retired too, so none waits behind the embedder
+			if _, err := retireProjectionEvents(ctx, tx, e.RecordIDs, e.DocumentIDs); err != nil {
+				return err
+			}
 			if err := count(`UPDATE memory_records SET embedding = NULL, embedding_model = 'erased' WHERE id = ANY($1::uuid[])`, e.RecordIDs); err != nil {
 				return err
 			}
