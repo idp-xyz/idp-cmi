@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 
@@ -115,7 +116,7 @@ func (s *Store) BackfillEmbeddings(ctx context.Context, limit int) (int, error) 
 				return err
 			}
 			for i, r := range chunks {
-				s.queueChunkEmbedding(b, r.id, r.seq, vecs[i], fails[i], model)
+				s.queueChunkEmbedding(b, r.id, r.seq, vecs[i], fails[i], model, &r.text)
 			}
 		}
 		if err := tx.SendBatch(ctx, b).Close(); err != nil {
@@ -130,15 +131,28 @@ func (s *Store) BackfillEmbeddings(ctx context.Context, limit int) (int, error) 
 // queueChunkEmbedding queues what an embedding attempt of one chunk leaves: the vector (clearing any earlier failure), a
 // permanent failure recorded with the model it was for (the chunk is skipped until the model changes or an administrator
 // clears it), or a transient failure that counts an attempt and sets the time of the next one (10 s, doubling, at most an hour).
-func (s *Store) queueChunkEmbedding(b *pgx.Batch, doc string, seq int, vec []float32, f embedFail, model string) {
+func (s *Store) queueChunkEmbedding(b *pgx.Batch, doc string, seq int, vec []float32, f embedFail, model string, ifText *string) {
+	// the backfill runs beside the projection (D79): its write lands only if the chunk still holds exactly the text that was embedded and
+	// no vector of this model is there yet; otherwise the projection owns the row now. The projection passes nil (it read the row in its own transaction)
+	guard, args := "", func(a ...any) []any { return a }
+	if ifText != nil {
+		guard = ` AND index_text = $%d AND (embedding IS NULL OR embedding_model IS DISTINCT FROM $%d)`
+		args = func(a ...any) []any { return append(a, *ifText, model) }
+	}
+	with := func(q string, n int) string { // n: how many parameters q has
+		if ifText == nil {
+			return q
+		}
+		return q + fmt.Sprintf(guard, n+1, n+2)
+	}
 	switch {
 	case vec != nil:
-		b.Queue(`UPDATE knowledge_chunks SET embedding = $3, embedding_model = $4, embed_error = NULL, embed_error_model = NULL, embed_attempts = 0, embed_retry_at = NULL WHERE document_id = $1 AND seq = $2`, doc, seq, vec, model)
+		b.Queue(with(`UPDATE knowledge_chunks SET embedding = $3, embedding_model = $4, embed_error = NULL, embed_error_model = NULL, embed_attempts = 0, embed_retry_at = NULL WHERE document_id = $1 AND seq = $2`, 4), args(doc, seq, vec, model)...)
 	case f.Permanent:
 		if s.OnEmbedFailure != nil {
 			s.OnEmbedFailure("permanent")
 		}
-		b.Queue(`UPDATE knowledge_chunks SET embed_error = $3, embed_error_model = $4 WHERE document_id = $1 AND seq = $2`, doc, seq, shortReason(f.Reason), model)
+		b.Queue(with(`UPDATE knowledge_chunks SET embed_error = $3, embed_error_model = $4 WHERE document_id = $1 AND seq = $2`, 4), args(doc, seq, shortReason(f.Reason), model)...)
 		if s.Log != nil {
 			s.Log.Warn("a chunk cannot be embedded and is skipped", "document", doc, "seq", seq, "reason", shortReason(f.Reason))
 		}
@@ -153,7 +167,7 @@ func (s *Store) queueChunkEmbedding(b *pgx.Batch, doc string, seq int, vec []flo
 		if s.OnEmbedFailure != nil {
 			s.OnEmbedFailure(kind)
 		}
-		b.Queue(`UPDATE knowledge_chunks SET embed_attempts = embed_attempts + 1, embed_retry_at = now() + least(interval '1 hour', interval '10 seconds' * power(2, least(embed_attempts, 12))) WHERE document_id = $1 AND seq = $2`, doc, seq)
+		b.Queue(with(`UPDATE knowledge_chunks SET embed_attempts = embed_attempts + 1, embed_retry_at = now() + least(interval '1 hour', interval '10 seconds' * power(2, least(embed_attempts, 12))) WHERE document_id = $1 AND seq = $2`, 2), args(doc, seq)...)
 		if s.Log != nil {
 			s.Log.Warn("a chunk could not be embedded this time; it will be tried again", "document", doc, "seq", seq, "reason", shortReason(f.Reason))
 		}

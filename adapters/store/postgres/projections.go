@@ -185,7 +185,7 @@ func (s *Store) Project(ctx context.Context, limit int) (int, error) {
 			if e.kind == "memory" {
 				b.Queue(`UPDATE memory_records SET embedding = $2, embedding_model = $3 WHERE id = $1 AND version = $4`, e.objectID, vecs[i], model, e.version)
 			} else if vecs[i] == nil { // a chunk the embedder did not take: recorded, its event is done, the backfill retries a transient one
-				s.queueChunkEmbedding(b, e.objectID, e.seq, nil, fails[i], model)
+				s.queueChunkEmbedding(b, e.objectID, e.seq, nil, fails[i], model, nil)
 			} else {
 				b.Queue(`UPDATE knowledge_chunks c SET embedding = $3, embedding_model = $4, embed_error = NULL, embed_error_model = NULL, embed_attempts = 0, embed_retry_at = NULL FROM knowledge_documents d WHERE c.document_id = $1 AND c.seq = $2 AND d.id = c.document_id AND d.revision = $5`, e.objectID, e.seq, vecs[i], model, e.version)
 			}

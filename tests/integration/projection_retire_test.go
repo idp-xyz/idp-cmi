@@ -282,3 +282,96 @@ func TestBackfillWritesNoVectorForARowThatChangedMeanwhile(t *testing.T) {
 		})
 	}
 }
+
+type permanentErr struct{}
+
+func (permanentErr) Error() string   { return "input refused" }
+func (permanentErr) Permanent() bool { return true }
+
+// A backfill that was embedding a chunk's old text must not write over what the projection did for the new text (D79).
+func TestBackfillChunkWriteIsConditionalOnTheTextItEmbedded(t *testing.T) {
+	for _, failure := range []bool{false, true} {
+		name := "vector"
+		if failure {
+			name = "embed error"
+		}
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			retireSetup(e)
+			ctx := context.Background()
+			conn := retireOwner(e, t)
+			e.store.Embedder = nil
+			doc := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://stale", "", "oldtext of the chunk"))["documentId"].(string)
+			e.store.Embedder = e.embedder
+			if _, err := conn.Exec(ctx, `UPDATE knowledge_chunks SET embedding = NULL, embedding_model = NULL WHERE document_id = $1`, doc); err != nil {
+				t.Fatal(err)
+			}
+			h := &hookEmbedder{blockingEmbedder: &blockingEmbedder{inner: e.embedder}}
+			h.during = func() {
+				// the commit of a re-conversion in place: new text, no vector yet (the projection has not run)
+				if _, err := conn.Exec(ctx, `UPDATE knowledge_chunks SET index_text = 'newtext after the re-conversion', content = 'newtext after the re-conversion', embedding = NULL, embedding_model = NULL, embed_error = NULL WHERE document_id = $1`, doc); err != nil {
+					t.Error(err)
+				}
+			}
+			var fail error
+			if failure {
+				fail = permanentErr{}
+			}
+			e.store.Embedder = &failingHook{hookEmbedder: h, err: fail}
+			if _, err := e.store.BackfillEmbeddings(ctx, 100); err != nil {
+				t.Fatal(err)
+			}
+			var got []float32
+			var model string
+			var embedErr *string
+			if err := conn.QueryRow(ctx, `SELECT embedding, coalesce(embedding_model, ''), embed_error FROM knowledge_chunks WHERE document_id = $1`, doc).Scan(&got, &model, &embedErr); err != nil {
+				t.Fatal(err)
+			}
+			if got != nil || model != "" {
+				t.Fatalf("a vector computed from the old text was written to the new text")
+			}
+			if embedErr != nil {
+				t.Fatalf("a stale embed error marks the new text: %q", *embedErr)
+			}
+		})
+	}
+}
+
+type failingHook struct {
+	*hookEmbedder
+	err error
+}
+
+func (f *failingHook) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	f.during()
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.inner.Embed(ctx, texts)
+}
+
+// A vector the projection has already written for the same text is not overwritten by the backfill that started earlier (D79).
+func TestBackfillDoesNotOverwriteAVectorThatIsThereNow(t *testing.T) {
+	e := newEnv(t)
+	retireSetup(e)
+	ctx := context.Background()
+	conn := retireOwner(e, t)
+	e.store.Embedder = nil
+	doc := e.must(201, "POST", "/api/v1/knowledge/documents", "alice", kbDoc("handbook", "handbook://same", "", "sametext of the chunk"))["documentId"].(string)
+	marker := make([]float32, 64)
+	marker[0] = 1
+	h := &hookEmbedder{blockingEmbedder: &blockingEmbedder{inner: e.embedder}}
+	h.during = func() {
+		if _, err := conn.Exec(ctx, `UPDATE knowledge_chunks SET embedding = $2, embedding_model = $3 WHERE document_id = $1`, doc, marker, e.embedder.Model()); err != nil {
+			t.Error(err)
+		}
+	}
+	e.store.Embedder = h
+	if _, err := e.store.BackfillEmbeddings(ctx, 100); err != nil {
+		t.Fatal(err)
+	}
+	var got []float32
+	if err := conn.QueryRow(ctx, `SELECT embedding FROM knowledge_chunks WHERE document_id = $1`, doc).Scan(&got); err != nil || fmt.Sprint(got) != fmt.Sprint(marker) {
+		t.Fatalf("overwritten: %v", err)
+	}
+}
